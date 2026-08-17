@@ -1,6 +1,6 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
-## Sesión Actual: Desinstalación Controlada de PostgreSQL 18.6 (2026-08-17)
+## Sesión Actual: Cuarentena del Cluster Residual de PostgreSQL 18 (2026-08-17)
 
 ### Estado de Cumplimiento ✓
 
@@ -29,6 +29,8 @@
 - ✓ Desviación contenida: servicio detenido y configurado para inicio manual
 - ✓ Plan de remediación documentado y desinstalación gráfica completada
 - ✓ Aplicación, servicio, binarios y listeners retirados; cluster residual preservado
+- ✓ Cluster residual movido íntegro a cuarentena con ACL restringida
+- ✓ Logs sensibles exactos eliminados permanentemente; Program Files sin restos PostgreSQL
 
 ### Completado en Esta Sesión
 
@@ -129,10 +131,20 @@
    - El usuario completó `Uninstall/Change` con `Entire application` desde el Panel de control
    - PostgreSQL 18 ya no aparece instalado y `postgresql-x64-18` no existe
    - No quedan procesos, listeners, binarios, Command Line Tools, Stack Builder ni pgAdmin
-   - `C:\Program Files\PostgreSQL\18\data` permanece intacto: 41,903,499 bytes, 976 archivos y `PG_VERSION=18`
+   - El cluster posterior a desinstalar conservó 41,903,499 bytes, 976 archivos y `PG_VERSION=18`
    - El instalador original conserva su SHA-256 y permanece fuera del repositorio
-   - Dos logs potencialmente sensibles fueron registrados solo por metadata y no fueron abiertos/eliminados
+   - Dos logs potencialmente sensibles fueron registrados solo por metadata y luego eliminados sin abrirlos
    - La contraseña retirada no debe reutilizarse
+
+10. **Cuarentena y Limpieza Exacta**
+   - Origen: `C:\Program Files\PostgreSQL\18\data`
+   - Destino: `C:\PerfectCatalogData\quarantine\postgresql-18-incorrect-20260817\data`
+   - Antes/después: 976 archivos, 41,903,499 bytes y `PG_VERSION=18`
+   - Hashes de `PG_VERSION`, `postgresql.conf` y `pg_hba.conf` coinciden antes/después
+   - ACL verificadas en 1,005 objetos: solo usuario actual, Administradores y SYSTEM
+   - `C:\Program Files\PostgreSQL\18` y su padre vacío fueron retirados sin recursión
+   - `install-postgresql.log` y `uninstall-postgresql.log` fueron eliminados por ruta literal, sin Papelera
+   - PostgreSQL sigue desinstalado; instalador original intacto y ruta de datos futura inexistente
 
 ### Próximos Pasos (Orden de Prioridad)
 
@@ -172,7 +184,9 @@
 - [x] Autorizar y completar la desinstalación gráfica controlada
 - [x] Validar ausencia de aplicación, servicio, procesos, listeners y binarios
 - [x] Preservar el cluster residual sin mover ni borrar
-- [ ] Inspeccionar, poner en cuarentena y limpiar restos mediante una compuerta separada
+- [x] Mover el cluster residual íntegro a cuarentena con ACL restringida
+- [x] Retirar carpetas vacías de Program Files sin eliminación recursiva
+- [x] Eliminar exclusivamente los dos logs sensibles autorizados
 - [ ] Reinstalar y validar red, datos, locale y componentes solo después de autorización
 - [ ] Ejecutar y validar el DDL en una base vacía de prueba
 
@@ -234,7 +248,7 @@
 
 - ❌ Crear roles o `perfect_catalog_dev` antes de corregir las desviaciones de instalación
 - ❌ Reinstalar PostgreSQL sin una autorización humana posterior y expresa
-- ❌ Borrar o mover `C:\Program Files\PostgreSQL\18\data`
+- ❌ Borrar o modificar la cuarentena `C:\PerfectCatalogData\quarantine\postgresql-18-incorrect-20260817\data`
 - ❌ Usar winget como única prueba de que una minor fue publicada oficialmente
 - ❌ Modificar `postgresql.conf`, `pg_hba.conf`, firewall o cluster sin una autorización separada
 - ❌ Instalar pgAdmin
@@ -295,8 +309,8 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 ### Última Actualización
 
 - **Fecha**: 2026-08-17
-- **Sesión**: Validación alternativa y desinstalación gráfica controlada de PostgreSQL 18.6
-- **Próxima Revisión**: Inspeccionar, poner en cuarentena y limpiar restos exactos antes de reinstalar
+- **Sesión**: Cuarentena íntegra del cluster residual y eliminación exacta de logs sensibles
+- **Próxima Revisión**: Reinstalación interactiva con directorio correcto y contraseña nueva
 
 ---
 

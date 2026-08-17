@@ -18,7 +18,7 @@
 - Adobe InDesign 2026 (para exportación) (verificado ✓)
 
 ### Requisitos instalados y pendientes
-- PostgreSQL 18.6 x64 desinstalado; cluster residual preservado y limpieza pendiente
+- PostgreSQL 18.6 x64 desinstalado; cluster residual en cuarentena y reinstalación pendiente
 - pgAdmin no instalado y aplazado
 
 ## Arquitectura Inicial
@@ -66,8 +66,8 @@ real. El Excel fuente y los reportes generados permanecen locales e ignorados po
 PostgreSQL, FastAPI y Jinja2 + HTML + CSS + JavaScript continúan siendo la arquitectura oficial.
 La arquitectura de datos v0.1 está aprobada y cuenta con un DDL v0.2 corregido, transaccional y
 aprobado después de la segunda revisión manual, y una estrategia documental de migraciones. El SQL
-no se ha ejecutado: PostgreSQL fue desinstalado y conserva un cluster residual, no existe ninguna
-tabla del proyecto y el importador tampoco está implementado.
+no se ha ejecutado: PostgreSQL fue desinstalado y su cluster residual está en cuarentena, no existe
+ninguna tabla del proyecto y el importador tampoco está implementado.
 
 ## Arquitectura de Datos v0.1
 
@@ -106,9 +106,11 @@ desinstalador sin firma. Ya no existen la aplicación, servicio, procesos, liste
 Consulte [docs/POSTGRESQL_INSTALLATION_RESULT.md](docs/POSTGRESQL_INSTALLATION_RESULT.md) y
 [docs/POSTGRESQL_REMEDIATION_PLAN.md](docs/POSTGRESQL_REMEDIATION_PLAN.md).
 
-No se creó ninguna base o rol de aplicación y no se ejecutó SQL. El cluster residual permanece en
-`C:\Program Files\PostgreSQL\18\data` sin borrar ni mover. La siguiente compuerta debe inspeccionar,
-poner en cuarentena y limpiar restos exactos antes de cualquier reinstalación.
+No se creó ninguna base o rol de aplicación y no se ejecutó SQL. El cluster residual se movió
+íntegro a `C:\PerfectCatalogData\quarantine\postgresql-18-incorrect-20260817\data`, con ACL
+restringida. Los dos logs sensibles exactos fueron eliminados sin leerlos o copiarlos y Program
+Files quedó sin restos PostgreSQL. La siguiente compuerta es la reinstalación interactiva con
+directorio correcto y contraseña nueva; la cuarentena no debe eliminarse.
 
 ## Documentación
 
@@ -123,7 +125,7 @@ poner en cuarentena y limpiar restos exactos antes de cualquier reinstalación.
 - **[docs/POSTGRESQL_INSTALL_PLAN.md](docs/POSTGRESQL_INSTALL_PLAN.md)** - Plan local, resultado real y correcciones pendientes
 - **[docs/POSTGRESQL_INSTALLER_VERIFICATION.md](docs/POSTGRESQL_INSTALLER_VERIFICATION.md)** - Evidencia del instalador PostgreSQL 18.6 verificado y no ejecutado
 - **[docs/POSTGRESQL_INSTALLATION_RESULT.md](docs/POSTGRESQL_INSTALLATION_RESULT.md)** - Instalación desviada, contención y desinstalación controlada
-- **[docs/POSTGRESQL_REMEDIATION_PLAN.md](docs/POSTGRESQL_REMEDIATION_PLAN.md)** - Remediación ejecutada hasta preservar los restos; limpieza/reinstalación pendientes
+- **[docs/POSTGRESQL_REMEDIATION_PLAN.md](docs/POSTGRESQL_REMEDIATION_PLAN.md)** - Cluster en cuarentena, logs retirados y reinstalación pendiente
 - **[db/migrations/0001_initial_schema.sql](db/migrations/0001_initial_schema.sql)** - DDL v0.2 no ejecutado
 - **[docs/ODOO_PROFILER.md](docs/ODOO_PROFILER.md)** - Uso y pruebas del perfilador de Odoo
 - **[README.md](README.md)** - Este archivo
@@ -181,7 +183,7 @@ git branch -a
 | Componente | Estado |
 |-----------|--------|
 | Documentación | ✓ Arquitectura, DDL, verificación e instalación documentadas |
-| Base de Datos | PostgreSQL 18.6 desinstalado; cluster residual preservado y sin base, roles, SQL ni tablas del proyecto |
+| Base de Datos | PostgreSQL 18.6 desinstalado; cluster en cuarentena y sin base, roles, SQL ni tablas del proyecto |
 | Importador | Flujo, staging versionado y plan aprobado documentalmente; no implementado |
 | Backend | FastAPI definido; implementación pendiente |
 | Frontend | Jinja2 + HTML + CSS + JavaScript definidos; implementación pendiente |
@@ -197,6 +199,6 @@ git branch -a
 
 **Última actualización**: 2026-08-17
 
-**Responsable sesión**: Validación alternativa y desinstalación controlada de PostgreSQL 18.6 x64
+**Responsable sesión**: Cuarentena del cluster residual y eliminación exacta de logs sensibles
 
-**Siguiente revisión**: Inspeccionar, poner en cuarentena y limpiar restos exactos antes de reinstalar
+**Siguiente revisión**: Reinstalar interactivamente PostgreSQL 18.6 con directorio correcto y contraseña nueva

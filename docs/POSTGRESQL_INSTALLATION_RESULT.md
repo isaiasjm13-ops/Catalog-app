@@ -1,8 +1,8 @@
 # Resultado de la instalación controlada de PostgreSQL 18.6
 
 > **Estado actualizado el 2026-08-17:** la aplicación PostgreSQL 18.6 x64 desviada fue desinstalada
-> mediante Programas y características de Windows. El cluster incorrecto permanece preservado. No
-> se autoriza limpiar restos, reinstalar, crear roles/base, ejecutar SQL ni aplicar el DDL.
+> y su cluster se movió íntegro a cuarentena. Los dos logs sensibles exactos fueron eliminados. No
+> se autoriza borrar la cuarentena, reinstalar, crear roles/base, ejecutar SQL ni aplicar el DDL.
 
 ## 1. Control previo
 
@@ -226,6 +226,9 @@ Permanecen exactamente estas carpetas, sin limpieza manual:
 El cluster residual conserva `41,903,499` bytes, aproximadamente `976` archivos y
 `PG_VERSION = 18`, iguales a la medición previa. No se borró ni movió el cluster.
 
+Este fue el estado inmediatamente posterior a desinstalar; el movimiento posterior a cuarentena se
+documenta en la sección 11.
+
 ### Logs potencialmente sensibles
 
 Se localizaron solo por nombre y metadata, sin abrir, copiar, mostrar contenido ni eliminar:
@@ -236,5 +239,34 @@ Se localizaron solo por nombre y metadata, sin abrir, copiar, mostrar contenido 
 | `C:\Users\Diseño2\AppData\Local\Temp\uninstall-postgresql.log` | 420190 bytes | 2026-08-17 14:48:12 | 2026-08-17 15:20:28 |
 
 La contraseña utilizada en la instalación retirada se considera retirada y no debe reutilizarse.
-La próxima compuerta es inspeccionar, poner en cuarentena y limpiar de forma exacta los restos antes
-de considerar una reinstalación.
+Los logs fueron eliminados posteriormente y el cluster se movió a cuarentena, como registra la
+sección 11.
+
+## 11. Cuarentena del cluster y eliminación de logs
+
+El cluster se movió mediante PowerShell desde:
+
+`C:\Program Files\PostgreSQL\18\data`
+
+hasta:
+
+`C:\PerfectCatalogData\quarantine\postgresql-18-incorrect-20260817\data`
+
+Antes y después se confirmaron 976 archivos, 41,903,499 bytes, `PG_VERSION=18` y estos hashes:
+
+- `PG_VERSION`: `7ee29791fc17e986b97128845622b077fb45e349fdb80523fac9dba879b4ad60`;
+- `postgresql.conf`: `5ecee44c5db8673f6f13a49ccfdfd48e6db566bc998f6e519286187cb4cac2ef`;
+- `pg_hba.conf`: `0c8dc6e6e57399790417a6e13b3a8e1b5e27aa19708a2122148fbfe3bdcecd42`.
+
+La cuarentena tiene ACL explícitas de control total solo para el usuario actual,
+`BUILTIN\Administradores` y `NT AUTHORITY\SYSTEM`; se verificaron 1,005 objetos sin identidades o
+propietarios inesperados. El cluster no fue borrado.
+
+Las carpetas vacías `C:\Program Files\PostgreSQL\18` y `C:\Program Files\PostgreSQL` fueron
+retiradas sin recursión. Los dos logs listados en la sección anterior fueron eliminados mediante sus
+rutas literales, sin leerlos, copiarlos ni usar la Papelera. Ya no existen.
+
+PostgreSQL continúa desinstalado; no hay servicio, procesos, listeners ni binarios. El instalador
+oficial permanece intacto fuera del repositorio y la ruta futura
+`C:\PerfectCatalogData\postgresql\18\data` todavía no existe. La siguiente compuerta es una
+reinstalación interactiva con ese directorio correcto y una contraseña nueva.

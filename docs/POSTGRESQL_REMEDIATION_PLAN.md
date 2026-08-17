@@ -1,8 +1,8 @@
 # Plan de remediación de la instalación PostgreSQL 18.6
 
-> **Estado al 2026-08-17:** la aplicación desviada fue desinstalada mediante la entrada registrada
-> de Windows. El cluster residual permanece intacto. Este documento no autoriza limpiar restos,
-> reinstalar, borrar, mover, ejecutar SQL ni modificar datos.
+> **Estado al 2026-08-17:** la aplicación desviada fue desinstalada y su cluster residual se movió
+> íntegro a una cuarentena con ACL restringida. Los dos logs sensibles identificados fueron
+> eliminados. La cuarentena no puede borrarse; reinstalar requiere una compuerta posterior.
 
 ## 1. Alcance y evidencia previa
 
@@ -114,8 +114,8 @@ borrará hasta que una comprobación futura autorizada confirme esa ausencia.
    opción que borre datos sin una autorización adicional y específica.
 5. **Completado:** verificar que servicio, binarios y listeners desaparecieron. Preservar temporalmente
    `C:\Program Files\PostgreSQL\18\data` si el desinstalador lo conserva.
-6. **Pendiente:** confirmar por un mecanismo seguro y sin contraseñas expuestas que el cluster no contiene datos
-   empresariales. Solo entonces preparar una compuerta separada para su eliminación exacta.
+6. **Completado parcialmente:** mover el cluster íntegro a cuarentena sin inspeccionar su contenido.
+   Su eliminación permanece pendiente hasta validar una nueva instalación y recibir otra autorización.
 7. **Pendiente:** revalidar el mismo instalador PostgreSQL 18.6 por SHA-256 y Authenticode antes de reinstalar.
 8. **Pendiente:** reinstalar interactivamente y seleccionar exclusivamente PostgreSQL Server y Command Line
    Tools; desmarcar pgAdmin y Stack Builder y no iniciar complementos al finalizar.
@@ -131,14 +131,59 @@ borrará hasta que una comprobación futura autorizada confirme esa ausencia.
 ## 7. Protecciones vigentes y siguiente compuerta
 
 - PostgreSQL 18.6 ya no aparece instalado; servicio, binarios y listeners fueron retirados.
-- El cluster residual `C:\Program Files\PostgreSQL\18\data` permanece intacto.
-- No se reinstaló ni se limpiaron/movieron manualmente restos.
+- El cluster residual permanece intacto en
+  `C:\PerfectCatalogData\quarantine\postgresql-18-incorrect-20260817\data`.
+- Las carpetas vacías `C:\Program Files\PostgreSQL\18` y `C:\Program Files\PostgreSQL` fueron
+  retiradas sin eliminación recursiva.
+- No se reinstaló ni se eliminó el cluster.
 - No se modificó contenido del cluster.
 - No se ejecutó SQL, DDL ni Stack Builder; el desinstalador se inició solamente desde la entrada
   registrada de Windows y ya fue retirado.
 - No se solicitaron ni usaron contraseñas.
 - El Excel maestro y el DDL no fueron modificados.
 
-La siguiente compuerta pendiente es la **inspección, cuarentena y limpieza exacta de restos** antes
-de reinstalar. Requiere autorización humana separada; esta documentación no permite borrar ni mover
-el cluster o los logs potencialmente sensibles.
+La siguiente compuerta pendiente es la **reinstalación interactiva con el directorio de datos
+correcto y una contraseña nueva**. La cuarentena deberá conservarse hasta validar esa instalación.
+
+## 8. Cuarentena y eliminación exacta de logs
+
+### Movimiento recuperable
+
+| Evidencia | Antes | Después |
+|---|---|---|
+| Ruta | `C:\Program Files\PostgreSQL\18\data` | `C:\PerfectCatalogData\quarantine\postgresql-18-incorrect-20260817\data` |
+| Archivos | 976 | 976 |
+| Tamaño | 41,903,499 bytes | 41,903,499 bytes |
+| `PG_VERSION` | `18` | `18` |
+| SHA-256 `PG_VERSION` | `7ee29791fc17e986b97128845622b077fb45e349fdb80523fac9dba879b4ad60` | Igual |
+| SHA-256 `postgresql.conf` | `5ecee44c5db8673f6f13a49ccfdfd48e6db566bc998f6e519286187cb4cac2ef` | Igual |
+| SHA-256 `pg_hba.conf` | `0c8dc6e6e57399790417a6e13b3a8e1b5e27aa19708a2122148fbfe3bdcecd42` | Igual |
+
+El origen era un directorio normal, sin enlace ni reparse point. El destino no existía, se creó
+fuera del repositorio y el movimiento se realizó con PowerShell. El origen ya no existe; el cluster
+no fue copiado ni borrado.
+
+### ACL de cuarentena
+
+Se revisaron 1,005 objetos. La herencia fue deshabilitada y solo conservan `FullControl`:
+
+- usuario actual `AzureAD\Diseño2`;
+- `BUILTIN\Administradores`;
+- `NT AUTHORITY\SYSTEM`.
+
+El usuario actual es propietario. No se detectaron ACL ni propietarios inesperados; los usuarios
+estándar generales no tienen permisos de modificación.
+
+### Carpetas y logs
+
+Tras el movimiento, `C:\Program Files\PostgreSQL\18` y `C:\Program Files\PostgreSQL` quedaron
+completamente vacías y se retiraron mediante eliminación no recursiva.
+
+Se revalidaron y eliminaron exclusivamente mediante rutas literales:
+
+- `C:\Users\Diseño2\AppData\Local\Temp\install-postgresql.log`;
+- `C:\Users\Diseño2\AppData\Local\Temp\uninstall-postgresql.log`.
+
+Eran archivos regulares, sin enlaces/reparse points y con fechas coherentes. No se abrieron, leyeron
+ni copiaron. La eliminación fue permanente, sin Papelera, y ambos dejaron de existir. La contraseña
+anterior continúa retirada y no debe reutilizarse.

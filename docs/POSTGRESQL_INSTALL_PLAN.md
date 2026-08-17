@@ -1,8 +1,8 @@
 # Plan de preparación para PostgreSQL local
 
-> **Estado al 2026-08-17:** PostgreSQL 18.6 x64 fue instalado con desviaciones, contenido y luego
-> desinstalado mediante la entrada registrada de Windows. El cluster residual permanece preservado.
-> Limpiar restos, reinstalar, crear roles/base o ejecutar SQL continúa bloqueado.
+> **Estado al 2026-08-17:** PostgreSQL 18.6 x64 fue instalado con desviaciones, contenido y
+> desinstalado. El cluster residual está íntegro en cuarentena y los logs sensibles fueron
+> eliminados. Reinstalar, borrar la cuarentena, crear roles/base o ejecutar SQL continúa bloqueado.
 
 Este documento conserva el plan aprobado para PostgreSQL local. La descarga, verificación y
 ejecución interactiva del artefacto exacto ya ocurrieron. El resultado real está en
@@ -429,14 +429,17 @@ automatizar después de autorización; **Verificación** es de solo lectura tras
 - [x] Recibir autorización humana y completar la desinstalación gráfica controlada.
 - [x] Confirmar eliminación de aplicación, servicio, binarios y listeners.
 - [x] Preservar sin borrar/mover `C:\Program Files\PostgreSQL\18\data`.
-- [ ] Inspeccionar y poner en cuarentena los restos mediante una compuerta separada.
+- [x] Mover el cluster íntegro a la cuarentena exacta con ACL restringida.
+- [x] Retirar las carpetas vacías de Program Files sin recursión.
+- [x] Eliminar exclusivamente los dos logs sensibles identificados.
+- [ ] Reinstalar interactivamente con ruta correcta y contraseña nueva tras autorización.
 
 ## 9. Decisiones que continúan abiertas
 
-- inspección y cuarentena del cluster incorrecto antes de cualquier eliminación;
-- tratamiento seguro de los logs potencialmente sensibles de instalación/desinstalación;
+- conservación de la cuarentena hasta validar una nueva instalación;
+- autorización humana para reinstalar con el directorio de datos correcto;
 - corrección autorizada de `listen_addresses = '*'` antes de crear la base;
-- decisión sobre el cluster ubicado en `C:\Program Files\PostgreSQL\18\data`;
+- autorización futura para retirar la cuarentena solo después de validar la reinstalación;
 - revisión de `Spanish_Spain.1252` frente al locale Panamá reportado;
 - decisión sobre el ejecutable Stack Builder presente;
 - aprobación operativa final de política de logs y memoria inicial;
@@ -445,6 +448,7 @@ automatizar después de autorización; **Verificación** es de solo lectura tras
 - versiones futuras de FastAPI, SQLAlchemy, Alembic y driver compatibles con Python 3.14.
 
 El siguiente paso autorizado es revisar
-[`POSTGRESQL_REMEDIATION_PLAN.md`](POSTGRESQL_REMEDIATION_PLAN.md) y preparar una compuerta exacta
-de inspección/cuarentena de restos. Limpiar/mover el cluster o logs, reinstalar, crear roles/base o
-ejecutar SQL continúa prohibido hasta solicitudes posteriores y expresas.
+[`POSTGRESQL_REMEDIATION_PLAN.md`](POSTGRESQL_REMEDIATION_PLAN.md) y preparar la reinstalación
+interactiva con `C:\PerfectCatalogData\postgresql\18\data` y una contraseña nueva. Reinstalar,
+borrar la cuarentena, crear roles/base o ejecutar SQL continúa prohibido hasta solicitudes
+posteriores y expresas.
