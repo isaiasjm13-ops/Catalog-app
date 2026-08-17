@@ -1,8 +1,8 @@
 # Plan de remediación de la instalación PostgreSQL 18.6
 
-> **Estado al 2026-08-17:** desviación contenida. El servicio exacto está detenido y configurado
-> para inicio manual. Este documento no autoriza desinstalar, reinstalar, borrar, mover, ejecutar
-> SQL ni modificar la configuración.
+> **Estado al 2026-08-17:** la aplicación desviada fue desinstalada mediante la entrada registrada
+> de Windows. El cluster residual permanece intacto. Este documento no autoriza limpiar restos,
+> reinstalar, borrar, mover, ejecutar SQL ni modificar datos.
 
 ## 1. Alcance y evidencia previa
 
@@ -77,9 +77,14 @@ La entrada registrada de Windows se inspeccionó sin ejecutarla:
 | Comando registrado | `"C:\Program Files\PostgreSQL\18\uninstall-postgresql.exe"` |
 | Desinstalación silenciosa registrada | No |
 
-El archivo del desinstalador existe. No fue abierto ni ejecutado.
+El archivo no tenía firma Authenticode. Antes de usarlo se validaron la entrada/ruta exactas,
+estructura PE, ausencia de reparse point, fechas, SHA-256
+`3d5d7393cb00b6eb00fae3f92d55ab566258fc20da7e6c1be1b91f2f52171194`, propietario
+`BUILTIN\Administradores`, ACL de solo lectura/ejecución para usuarios estándar y un escaneo
+Microsoft Defender con 0 detecciones. Se invocó exclusivamente desde Programas y características,
+no directamente.
 
-## 5. Componentes y cluster preservado
+## 5. Componentes antes de desinstalar y cluster preservado
 
 | Componente | Estado detectado |
 |---|---|
@@ -97,39 +102,43 @@ no se crearon bases, roles o tablas del proyecto. Por tanto, no existe informaci
 PostgreSQL atribuible a este proceso. Aun así, el cluster se preservará temporalmente y no se
 borrará hasta que una comprobación futura autorizada confirme esa ausencia.
 
-## 6. Procedimiento propuesto — no ejecutar todavía
+## 6. Procedimiento de remediación y estado
 
-1. Obtener autorización humana expresa para desinstalar PostgreSQL 18.6 mediante la interfaz
+1. **Completado:** obtener autorización humana expresa para desinstalar PostgreSQL 18.6 mediante la interfaz
    gráfica oficial.
-2. Reconfirmar servicio `Stopped/Manual`, ausencia de listeners, Git y hashes protegidos.
-3. Abrir exactamente `C:\Program Files\PostgreSQL\18\uninstall-postgresql.exe` de forma
-   interactiva; el usuario atenderá UAC y el asistente. No usar modo silencioso.
-4. Desinstalar los binarios y el servicio de PostgreSQL 18.6. No seleccionar ni aceptar ninguna
+2. **Completado:** reconfirmar servicio `Stopped/Manual`, ausencia de listeners, Git y hashes protegidos.
+3. **Completado:** abrir Programas y características de Windows e iniciar `Uninstall/Change` desde
+   la entrada registrada; el usuario atendió UAC y eligió `Entire application`. No se ejecutó el
+   archivo directamente ni se usó modo silencioso.
+4. **Completado:** desinstalar los binarios y el servicio de PostgreSQL 18.6. No seleccionar ni aceptar ninguna
    opción que borre datos sin una autorización adicional y específica.
-5. Verificar que servicio, binarios y listeners desaparecieron. Preservar temporalmente
+5. **Completado:** verificar que servicio, binarios y listeners desaparecieron. Preservar temporalmente
    `C:\Program Files\PostgreSQL\18\data` si el desinstalador lo conserva.
-6. Confirmar por un mecanismo seguro y sin contraseñas expuestas que el cluster no contiene datos
+6. **Pendiente:** confirmar por un mecanismo seguro y sin contraseñas expuestas que el cluster no contiene datos
    empresariales. Solo entonces preparar una compuerta separada para su eliminación exacta.
-7. Revalidar el mismo instalador PostgreSQL 18.6 por SHA-256 y Authenticode antes de reinstalar.
-8. Reinstalar interactivamente y seleccionar exclusivamente PostgreSQL Server y Command Line
+7. **Pendiente:** revalidar el mismo instalador PostgreSQL 18.6 por SHA-256 y Authenticode antes de reinstalar.
+8. **Pendiente:** reinstalar interactivamente y seleccionar exclusivamente PostgreSQL Server y Command Line
    Tools; desmarcar pgAdmin y Stack Builder y no iniciar complementos al finalizar.
-9. Usar binarios en `C:\Program Files\PostgreSQL\18` y datos en
+9. **Pendiente:** usar binarios en `C:\Program Files\PostgreSQL\18` y datos en
    `C:\PerfectCatalogData\postgresql\18\data`.
-10. Antes de crear bases, validar servicio, cuenta, ruta `-D`, inicio, puerto y locale. Exigir
+10. **Pendiente:** antes de crear bases, validar servicio, cuenta, ruta `-D`, inicio, puerto y locale. Exigir
     escucha exclusiva en `127.0.0.1` y `::1`; si el instalador vuelve a usar `*`, detener el servicio
     y abrir una compuerta específica para corregir `listen_addresses`.
-11. Verificar HBA local con SCRAM, ausencia de respuesta LAN, PATH sin cambios y opciones ICU.
-12. Solo después de una validación conforme, solicitar autorización independiente para crear roles
+11. **Pendiente:** verificar HBA local con SCRAM, ausencia de respuesta LAN, PATH sin cambios y opciones ICU.
+12. **Pendiente:** solo después de una validación conforme, solicitar autorización independiente para crear roles
     y `perfect_catalog_dev` desde `template0` con UTF8, proveedor ICU y locale `es-PA`.
 
 ## 7. Protecciones vigentes y siguiente compuerta
 
-- PostgreSQL permanece instalado, detenido y con inicio manual.
-- No se desinstaló, reinstaló, eliminó ni movió ningún archivo o carpeta.
-- No se modificó configuración del servidor.
-- No se ejecutó SQL, DDL, Stack Builder ni el desinstalador.
+- PostgreSQL 18.6 ya no aparece instalado; servicio, binarios y listeners fueron retirados.
+- El cluster residual `C:\Program Files\PostgreSQL\18\data` permanece intacto.
+- No se reinstaló ni se limpiaron/movieron manualmente restos.
+- No se modificó contenido del cluster.
+- No se ejecutó SQL, DDL ni Stack Builder; el desinstalador se inició solamente desde la entrada
+  registrada de Windows y ya fue retirado.
 - No se solicitaron ni usaron contraseñas.
 - El Excel maestro y el DDL no fueron modificados.
 
-La siguiente compuerta pendiente es una **autorización humana expresa para desinstalar** mediante
-el desinstalador gráfico exacto. Esta documentación no concede esa autorización.
+La siguiente compuerta pendiente es la **inspección, cuarentena y limpieza exacta de restos** antes
+de reinstalar. Requiere autorización humana separada; esta documentación no permite borrar ni mover
+el cluster o los logs potencialmente sensibles.

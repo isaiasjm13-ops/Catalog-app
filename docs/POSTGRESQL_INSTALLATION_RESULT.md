@@ -1,9 +1,8 @@
 # Resultado de la instalación controlada de PostgreSQL 18.6
 
-> **Estado actualizado el 2026-08-17:** PostgreSQL 18.6 x64 está instalado con desviaciones, pero
-> fue contenido mediante parada ordenada e inicio manual. No se autoriza crear roles, crear
-> `perfect_catalog_dev`, ejecutar SQL ni aplicar el DDL. La siguiente compuerta es autorizar la
-> desinstalación gráfica controlada descrita en `POSTGRESQL_REMEDIATION_PLAN.md`.
+> **Estado actualizado el 2026-08-17:** la aplicación PostgreSQL 18.6 x64 desviada fue desinstalada
+> mediante Programas y características de Windows. El cluster incorrecto permanece preservado. No
+> se autoriza limpiar restos, reinstalar, crear roles/base, ejecutar SQL ni aplicar el DDL.
 
 ## 1. Control previo
 
@@ -86,7 +85,7 @@ no-loopback. No se modificó `postgresql.conf`, `pg_hba.conf` ni el firewall en 
 ### Contención posterior
 
 Con autorización humana y UAC se detuvo ordenadamente solo `postgresql-x64-18` y su inicio cambió
-de automático a manual. El estado vigente es `Stopped/Manual`, PID `0`, sin procesos
+de automático a manual. El estado inmediatamente posterior fue `Stopped/Manual`, PID `0`, sin procesos
 `postgres.exe`, sin listeners en 5432 y con `pg_isready` sin respuesta en localhost y LAN. No se
 forzaron procesos ni se modificó configuración. La evidencia completa está en
 [`POSTGRESQL_REMEDIATION_PLAN.md`](POSTGRESQL_REMEDIATION_PLAN.md).
@@ -168,3 +167,74 @@ Hasta completar esa compuerta, no se autoriza crear la base, roles, tablas ni ej
 La contención exitosa permite versionar conjuntamente el resultado, el plan y la remediación sin
 afirmar que la instalación desviada esté aprobada. La configuración y los archivos del servidor no
 fueron alterados.
+
+## 10. Desinstalación controlada
+
+### Validación alternativa del desinstalador
+
+El desinstalador registrado no tenía firma Authenticode (`NotSigned`). La primera compuerta se
+detuvo sin ejecutarlo. Una autorización posterior aceptó esa condición exclusivamente tras validar
+su procedencia mediante controles alternativos:
+
+| Elemento | Resultado |
+|---|---|
+| Clave registrada | `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PostgreSQL 18` |
+| DisplayName | `PostgreSQL 18` |
+| DisplayVersion | `18.6-1` |
+| Publisher | `PostgreSQL Global Development Group` |
+| InstallLocation | `C:\Program Files\PostgreSQL\18` |
+| InstallDate | `20260817` |
+| UninstallString | `"C:\Program Files\PostgreSQL\18\uninstall-postgresql.exe"` |
+| SHA-256 del desinstalador | `3d5d7393cb00b6eb00fae3f92d55ab566258fc20da7e6c1be1b91f2f52171194` |
+| Formato | Ejecutable PE válido (`MZ` + `PE`) |
+| Reparse point/enlace | No |
+| Fecha del archivo | Creado 2026-08-17 14:51:10; modificado 14:51:15, UTC-05:00 |
+| Propietario | `BUILTIN\Administradores` |
+| ACL de usuarios estándar | `ReadAndExecute, Synchronize`; sin escritura ni modificación |
+| Microsoft Defender | Activo, protección en tiempo real activa, firmas `1.457.209.0`, 0 detecciones |
+
+El archivo estaba dentro de la instalación esperada y la ruta registrada coincidía exactamente.
+No se ejecutó directamente desde terminal o Explorador.
+
+### Ejecución y resultado
+
+Se abrió Programas y características mediante Windows. El usuario seleccionó la entrada registrada
+de PostgreSQL 18, inició `Uninstall/Change`, atendió UAC y completó el asistente con la selección
+indicada **Entire application**. No se autorizó eliminación manual de datos.
+
+| Verificación posterior | Resultado |
+|---|---|
+| Aplicación PostgreSQL 18 | Ya no registrada |
+| Servicio `postgresql-x64-18` | No existe |
+| Procesos PostgreSQL | Ninguno |
+| Listeners 5432/5433 | Ninguno |
+| `postgres.exe`, `psql.exe`, `pg_isready.exe` | Retirados |
+| pgAdmin | Ausente |
+| Stack Builder | Binario retirado; proceso ausente; sin complementos detectados |
+| Desinstalador | Retirado por el asistente |
+| Ruta aprobada futura | `C:\PerfectCatalogData\postgresql\18\data` no existe |
+| Instalador original | Fuera del repositorio, 375833688 bytes y SHA-256 esperado intacto |
+
+### Restos preservados
+
+Permanecen exactamente estas carpetas, sin limpieza manual:
+
+- `C:\Program Files\PostgreSQL`
+- `C:\Program Files\PostgreSQL\18`
+- `C:\Program Files\PostgreSQL\18\data`
+
+El cluster residual conserva `41,903,499` bytes, aproximadamente `976` archivos y
+`PG_VERSION = 18`, iguales a la medición previa. No se borró ni movió el cluster.
+
+### Logs potencialmente sensibles
+
+Se localizaron solo por nombre y metadata, sin abrir, copiar, mostrar contenido ni eliminar:
+
+| Ruta | Tamaño | Creación | Modificación |
+|---|---:|---|---|
+| `C:\Users\Diseño2\AppData\Local\Temp\install-postgresql.log` | 512790 bytes | 2026-08-17 14:39:52 | 2026-08-17 14:51:28 |
+| `C:\Users\Diseño2\AppData\Local\Temp\uninstall-postgresql.log` | 420190 bytes | 2026-08-17 14:48:12 | 2026-08-17 15:20:28 |
+
+La contraseña utilizada en la instalación retirada se considera retirada y no debe reutilizarse.
+La próxima compuerta es inspeccionar, poner en cuarentena y limpiar de forma exacta los restos antes
+de considerar una reinstalación.

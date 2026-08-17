@@ -1,8 +1,8 @@
 # Plan de preparación para PostgreSQL local
 
-> **Estado al 2026-08-17:** PostgreSQL 18.6 x64 fue instalado interactivamente con desviaciones y
-> luego contenido. El servicio está detenido con inicio manual. Crear roles/base, ejecutar SQL y
-> desinstalar o reinstalar continúan bloqueados hasta autorizaciones posteriores.
+> **Estado al 2026-08-17:** PostgreSQL 18.6 x64 fue instalado con desviaciones, contenido y luego
+> desinstalado mediante la entrada registrada de Windows. El cluster residual permanece preservado.
+> Limpiar restos, reinstalar, crear roles/base o ejecutar SQL continúa bloqueado.
 
 Este documento conserva el plan aprobado para PostgreSQL local. La descarga, verificación y
 ejecución interactiva del artefacto exacto ya ocurrieron. El resultado real está en
@@ -173,8 +173,8 @@ confirmar la descarga de complementos. Esta diferencia permanece pendiente de de
 la IP no-loopback `192.168.0.128`. `pg_hba.conf` conserva reglas host solo para loopback con SCRAM,
 pero la escucha externa incumple el plan y debe corregirse antes de crear la base.
 
-**Estado vigente:** `postgresql-x64-18` está `Stopped/Manual`, sin procesos PostgreSQL, listeners
-ni respuesta de `pg_isready`. Consulte
+**Estado posterior:** la aplicación, el servicio, los binarios y los listeners fueron retirados. El
+cluster incorrecto permanece preservado. Consulte
 [`POSTGRESQL_REMEDIATION_PLAN.md`](POSTGRESQL_REMEDIATION_PLAN.md).
 
 ### Rutas aprobadas y resultado
@@ -426,12 +426,15 @@ automatizar después de autorización; **Verificación** es de solo lectura tras
 - [ ] Resolver la desviación del directorio de datos.
 - [ ] Revisar la discrepancia de locale y el ejecutable Stack Builder.
 - [x] Contener `postgresql-x64-18` mediante parada ordenada e inicio manual.
-- [ ] Recibir autorización humana para la desinstalación gráfica controlada.
+- [x] Recibir autorización humana y completar la desinstalación gráfica controlada.
+- [x] Confirmar eliminación de aplicación, servicio, binarios y listeners.
+- [x] Preservar sin borrar/mover `C:\Program Files\PostgreSQL\18\data`.
+- [ ] Inspeccionar y poner en cuarentena los restos mediante una compuerta separada.
 
 ## 9. Decisiones que continúan abiertas
 
-- autorización humana para ejecutar el desinstalador oficial de PostgreSQL 18.6;
-- preservación y verificación temporal del cluster incorrecto antes de cualquier eliminación;
+- inspección y cuarentena del cluster incorrecto antes de cualquier eliminación;
+- tratamiento seguro de los logs potencialmente sensibles de instalación/desinstalación;
 - corrección autorizada de `listen_addresses = '*'` antes de crear la base;
 - decisión sobre el cluster ubicado en `C:\Program Files\PostgreSQL\18\data`;
 - revisión de `Spanish_Spain.1252` frente al locale Panamá reportado;
@@ -442,6 +445,6 @@ automatizar después de autorización; **Verificación** es de solo lectura tras
 - versiones futuras de FastAPI, SQLAlchemy, Alembic y driver compatibles con Python 3.14.
 
 El siguiente paso autorizado es revisar
-[`POSTGRESQL_REMEDIATION_PLAN.md`](POSTGRESQL_REMEDIATION_PLAN.md) y decidir si se autoriza la
-desinstalación gráfica controlada. Desinstalar, reinstalar, eliminar/mover el cluster, crear
-roles/base o ejecutar SQL continúa prohibido hasta solicitudes posteriores y expresas.
+[`POSTGRESQL_REMEDIATION_PLAN.md`](POSTGRESQL_REMEDIATION_PLAN.md) y preparar una compuerta exacta
+de inspección/cuarentena de restos. Limpiar/mover el cluster o logs, reinstalar, crear roles/base o
+ejecutar SQL continúa prohibido hasta solicitudes posteriores y expresas.
