@@ -64,18 +64,20 @@ La especificación preliminar de [docs/DATA_SPEC.md](docs/DATA_SPEC.md) se basa 
 real. El Excel fuente y los reportes generados permanecen locales e ignorados por Git.
 
 PostgreSQL, FastAPI y Jinja2 + HTML + CSS + JavaScript continúan siendo la arquitectura oficial.
-PostgreSQL todavía no debe instalarse ni implementarse. El siguiente paso es revisar y aprobar
-el diseño preliminar antes de construir el importador.
+La arquitectura de datos v0.1 está aprobada documentalmente, pero no implementada. PostgreSQL
+continúa sin instalar y todavía no existen DDL, tablas, migraciones ni importador. El siguiente
+paso es convertir el diseño aprobado en un DDL revisable y una estrategia de migraciones, antes
+de instalar el servicio.
 
-## Diseño Técnico Propuesto
+## Arquitectura de Datos v0.1
 
-- [docs/DATABASE_DESIGN.md](docs/DATABASE_DESIGN.md): propuesta v0.1 del modelo PostgreSQL,
-  trazabilidad, auditoría y versionado de catálogos.
-- [docs/IMPORTER_DESIGN.md](docs/IMPORTER_DESIGN.md): propuesta v0.1 del flujo del importador,
-  dry-run, conciliación y mapeo de las 13 columnas reales de Odoo.
+- [docs/DATABASE_DESIGN.md](docs/DATABASE_DESIGN.md): diseño v0.1 aprobado documentalmente de
+  24 tablas propuestas, trazabilidad, staging inmutable, planes exactos y versionado de catálogos.
+- [docs/IMPORTER_DESIGN.md](docs/IMPORTER_DESIGN.md): flujo v0.1 aprobado documentalmente del
+  importador, plan persistido, revisión/aprobación previa y mapeo de las 13 columnas reales.
 
-Ambas propuestas están en elaboración y pendientes de revisión. No están implementadas:
-PostgreSQL continúa sin instalar y todavía no existen tablas, migraciones ni importador.
+Ambos diseños están aprobados únicamente como arquitectura. No autorizan instalar PostgreSQL ni
+implementar el esquema o el importador.
 
 ## Documentación
 
@@ -138,9 +140,9 @@ git branch -a
 
 | Componente | Estado |
 |-----------|--------|
-| Documentación | ✓ Especificación real y propuestas técnicas v0.1 documentadas |
-| Base de Datos | PostgreSQL definido; propuesta v0.1 no implementada y pendiente de aprobación |
-| Importador | Flujo y mapeo propuestos; no implementado |
+| Documentación | ✓ Especificación real y arquitectura de datos v0.1 aprobada documentalmente |
+| Base de Datos | PostgreSQL definido; diseño de 24 tablas aprobado, no implementado |
+| Importador | Flujo, staging versionado y plan aprobado documentalmente; no implementado |
 | Backend | FastAPI definido; implementación pendiente |
 | Frontend | Jinja2 + HTML + CSS + JavaScript definidos; implementación pendiente |
 | Exportación | ⏳ Pendiente BD |
@@ -154,5 +156,5 @@ git branch -a
 ---
 
 **Última actualización**: 2026-08-17  
-**Responsable sesión**: Elaboración del diseño detallado de PostgreSQL e importador
-**Siguiente revisión**: Aprobación de `DATABASE_DESIGN.md` e `IMPORTER_DESIGN.md`
+**Responsable sesión**: Refinamiento y aprobación documental de arquitectura de datos v0.1
+**Siguiente revisión**: DDL revisable y estrategia de migraciones antes de instalar PostgreSQL

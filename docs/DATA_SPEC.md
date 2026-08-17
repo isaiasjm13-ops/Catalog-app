@@ -65,6 +65,8 @@ con y sin imagen.
 ## Nulos y completitud
 
 - `Estado de la actividad` está vacío en las 893 filas.
+- `Estado de la actividad` no equivale al booleano `Activo` de Odoo; la exportación actual no
+  contiene ese booleano y por tanto su estado de origen es desconocido (`source_active=NULL`).
 - `Imagen 128` está vacío en 182 filas y presente en 711.
 - Las otras 11 columnas están completas en las 893 filas.
 - Un valor vacío debe conservarse como ausencia explícita; no se deben inventar valores por defecto durante staging.
@@ -108,7 +110,9 @@ Esta exportación no contiene un ID estable de Odoo ni un ID externo. Por ello:
 
 - `Referencia interna` puede utilizarse provisionalmente como clave de conciliación porque las 893 referencias son únicas en esta muestra;
 - esta decisión no convierte la referencia en una clave definitiva y debe revisarse antes de construir el importador;
-- la identidad definitiva debe preferir el ID estable de producto o plantilla de Odoo cuando esté disponible;
+- la identidad interna definitiva utiliza UUID estable; los IDs de producto o plantilla de Odoo,
+  cuando estén disponibles, se conservan como identificadores contextuales para conciliación y
+  nunca se usan directamente como PK interna;
 - todas las referencias se almacenarán como texto, conservando ceros, guiones, espacios significativos y puntuación;
 - nunca se utilizará `Nombre`, las cantidades ni el estado de imagen como identidad.
 
@@ -138,10 +142,12 @@ Estos elementos no son hechos definitivos. Cada candidato extraído debe conserv
 Los separadores, abreviaturas y signos pueden tener significados múltiples. En particular,
 `/` no debe tratarse como separador universal.
 
-## Diseño preliminar para PostgreSQL y el importador
+## Correspondencia con la arquitectura de datos v0.1
 
-Las estructuras siguientes son conceptuales. Deben revisarse y aprobarse antes de crear DDL,
-tablas definitivas o código de importación.
+Esta especificación de evidencia sigue siendo preliminar como contrato de datos. La arquitectura
+v0.1 que interpreta estas estructuras ya está aprobada documentalmente en `DATABASE_DESIGN.md`
+y `IMPORTER_DESIGN.md`, pero no implementada. Antes de instalar PostgreSQL se debe producir y
+revisar el DDL y la estrategia de migraciones.
 
 ### Registro de importaciones
 
@@ -166,12 +172,17 @@ Cada fila de origen debe conservarse antes de transformar:
 - número de fila original;
 - encabezados y valores originales;
 - representación JSON completa de la fila;
-- hash de fila;
-- resultado de validación;
-- errores y advertencias.
+- hash de fila.
 
 El staging es inmutable. Las correcciones, normalizaciones y extracciones se guardarán en
 estructuras separadas y siempre apuntarán a la fila de origen.
+
+### Resultados de procesamiento separados
+
+Validación, normalización y conciliación se conservan en resultados append-only separados de
+staging, versionados por fila, importación, contrato, reglas y etapa. Una versión nueva nunca
+sobrescribe un resultado anterior. Los errores y advertencias permanecen en incidencias que
+referencian la fila o el resultado correspondiente.
 
 ### Producto normalizado
 
@@ -189,6 +200,10 @@ El diseño preliminar debe contemplar:
 - marca, familia e importación de procedencia;
 - estado de validación y revisión.
 
+El estado interno del catálogo debe permanecer separado en `catalog_status`
+(`pending_review/active/inactive/archived`). La presencia o ausencia en una exportación no
+establece ni modifica automáticamente `source_active` o `catalog_status`.
+
 ### Datos relacionados
 
 El modelo futuro debe poder relacionar con el producto:
@@ -203,21 +218,23 @@ El modelo futuro debe poder relacionar con el producto:
 
 ### Flujo y reglas del importador
 
-1. Ejecutar primero en modo simulación, sin escrituras definitivas.
-2. Registrar la importación y verificar el hash del archivo.
-3. Cargar todas las filas en staging inmutable.
-4. Validar antes de normalizar o escribir productos.
-5. Conservar siempre el dato original y su procedencia.
-6. Permitir nombres duplicados, productos sin imagen y stock cero o negativo.
-7. Realizar conciliación y `upsert` controlados, con cambios explícitos y auditables.
-8. Nunca eliminar productos automáticamente.
-9. Generar un reporte por importación.
-10. Registrar cambios, errores, advertencias y conflictos.
-11. Exigir revisión humana para coincidencias o extracciones ambiguas.
+1. Registrar la importación y verificar el hash del archivo.
+2. Cargar todas las filas en staging inmutable.
+3. Validar y persistir resultados versionados antes de normalizar o escribir productos.
+4. Normalizar fuera de staging, conservando siempre el dato original y su procedencia.
+5. Permitir nombres duplicados, productos sin imagen y stock cero o negativo.
+6. Generar siempre un plan persistido antes de cualquier escritura empresarial, incluso si el modo solicitado es `apply`.
+7. Someter el plan exacto a revisión y aprobación explícitas; `apply` solo puede ejecutar una vez
+   el plan aprobado para el hash de archivo y las versiones de contrato/reglas registrados.
+8. Realizar conciliación y `upsert` controlados, con cambios explícitos y auditables.
+9. Nunca eliminar productos automáticamente.
+10. Generar un reporte por importación.
+11. Registrar cambios, errores, advertencias y conflictos.
+12. Exigir revisión humana para coincidencias o extracciones ambiguas.
 
-## Información todavía pendiente
+## Campos de fuente deseables (no son decisiones abiertas de arquitectura)
 
-Antes del importador definitivo conviene solicitar, cuando Odoo lo permita:
+Para enriquecer futuras exportaciones conviene solicitar, cuando Odoo lo permita:
 
 - ID de Odoo, ID externo, ID de plantilla e ID de variante;
 - código de barras y estado activo;

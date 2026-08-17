@@ -1,9 +1,11 @@
 # Diseño del importador de Odoo
 
-> **Propuesta v0.1 — No implementada**
+> **Arquitectura del importador v0.1 — Aprobada documentalmente — No implementada**
 
-Este documento define un flujo revisable. No contiene código ejecutable, no crea tablas y no
-autoriza instalar PostgreSQL ni programar el importador definitivo.
+Este documento fija el flujo v0.1 aprobado. La aprobación es exclusivamente documental: no
+contiene código ejecutable, no crea tablas o migraciones y PostgreSQL continúa sin instalar.
+El siguiente paso es convertir el diseño en un DDL revisable y una estrategia de migraciones,
+todavía antes de instalar el servicio o programar el importador definitivo.
 
 ## 1. Alcance
 
@@ -22,7 +24,8 @@ Principios:
 - No se excluyen productos por stock cero/negativo o imagen ausente.
 - No se fusiona por nombre.
 - No se elimina ningún producto automáticamente.
-- Todo cambio aplicado es transaccional, idempotente y auditable.
+- La presencia o ausencia no infiere el estado activo ni cambia la vigencia del catálogo.
+- Todo cambio aplicado procede de un plan exacto, aprobado, transaccional, idempotente y auditable.
 
 ## 2. Entradas y salidas
 
@@ -39,9 +42,10 @@ Principios:
 
 - `import_batch` e `import_file` registrados;
 - filas inmutables en `staging_row`;
+- resultados versionados e inmutables en `staging_row_result`;
 - incidencias en `import_issue`;
 - candidatos de extracción/aplicación;
-- plan de cambios del dry-run;
+- `import_plan` e `import_plan_item` persistidos para todo modo;
 - cambios normalizados, snapshots y eventos solo en modo aprobado;
 - reporte JSON y Markdown con hash, métricas, decisiones y errores.
 
@@ -56,11 +60,12 @@ Principios:
 | `staging` | Filas originales en carga | `validating`, `failed` |
 | `validating` | Validaciones estructurales y por fila | `normalizing`, `blocked`, `failed` |
 | `normalizing` | Valores normalizados/candidatos | `reconciling`, `failed` |
-| `reconciling` | Búsqueda de productos existentes | `awaiting_review`, `ready`, `failed` |
-| `awaiting_review` | Conflictos requieren decisión humana | `ready`, `cancelled` |
-| `ready` | Plan coherente y aprobado para simular/aplicar | `dry_run_complete`, `applying` |
-| `dry_run_complete` | Simulación terminada sin cambios empresariales | `awaiting_review`, `applying`, `completed` |
-| `applying` | Upsert transaccional en curso | `completed`, `completed_with_warnings`, `rolled_back`, `failed` |
+| `reconciling` | Búsqueda de productos existentes | `planning`, `failed` |
+| `planning` | Construcción y persistencia del plan exacto | `awaiting_review`, `blocked`, `failed` |
+| `awaiting_review` | El plan espera revisión y decisión explícitas | `ready`, `dry_run_complete`, `cancelled`, `failed` |
+| `ready` | Existe un plan explícitamente aprobado | `applying` |
+| `dry_run_complete` | El plan fue entregado sin cambios empresariales; puede revisarse después | Estado final del batch |
+| `applying` | Aplicación del plan aprobado en curso | `completed`, `completed_with_warnings`, `rolled_back`, `failed` |
 | `completed` | Proceso terminado sin advertencias abiertas | Estado final |
 | `completed_with_warnings` | Terminado con advertencias aceptadas | Estado final |
 | `blocked` | Incidencia impide avanzar sin corrección/revisión | `validating`, `cancelled` |
@@ -69,6 +74,23 @@ Principios:
 | `cancelled` | Cancelación explícita y auditada | Estado final |
 
 Las transiciones inválidas deben rechazarse y registrarse en `audit_event`.
+
+### Estados de `import_plan`
+
+| Estado | Significado | Transiciones permitidas |
+|---|---|---|
+| `generated` | Items y hash fueron persistidos | `awaiting_review`, `invalidated`, `failed` |
+| `awaiting_review` | Espera decisión humana explícita | `approved`, `rejected`, `invalidated` |
+| `approved` | Archivo, contrato, reglas y plan exactos fueron aprobados | `applying`, `invalidated` |
+| `rejected` | Rechazo explícito | Final |
+| `invalidated` | Cambió cualquier entrada o decisión que altera el plan | Final; generar plan sucesor |
+| `applying` | Bloqueo atómico adquirido para una única aplicación | `applied`, `failed` |
+| `applied` | Plan aplicado exactamente una vez | Final |
+| `failed` | Generación o apply falló y quedó auditado | Final; generar plan sucesor si procede |
+
+La falta de conflictos no permite saltar revisión ni aprobar automáticamente. La aprobación
+corresponde al fingerprint de `file_sha256`, `contract_version`, `rules_version` y
+`plan_sha256`; cualquier cambio invalida la aprobación.
 
 ## 4. Severidad de incidencias y reglas de avance
 
@@ -107,22 +129,21 @@ flowchart TD
     J -- Sí --> Z
     J -- No --> K[Validación por fila]
     K --> L[Normalizar sin destruir originales]
-    L --> M[Crear candidatos con regla y confianza]
-    M --> N[Conciliar por origen + marca + referencia]
-    N --> O{¿Conflictos o ambigüedad?}
-    O -- Sí --> P[Revisión humana]
-    P --> Q{¿Aprobado?}
+    L --> M[Persistir resultados versionados]
+    M --> N[Crear candidatos y conciliar]
+    N --> O[Generar y persistir import_plan + items]
+    O --> T[Reporte del plan o dry-run sin cambios]
+    T --> P[Revisión humana explícita]
+    T -. dry_run puede terminar aquí .-> Y[Cerrar sin aplicar]
+    P --> Q{¿Plan exacto aprobado?}
     Q -- No --> Y
-    Q -- Sí --> R[Generar dry-run]
-    O -- No --> R
-    R --> S{¿Modo apply aprobado?}
-    S -- No --> T[Reporte de simulación]
-    S -- Sí --> U[Upsert transaccional]
+    Q -- Sí --> S[Revalidar fingerprint y adquirir aplicación única]
+    S --> U[Aplicar plan en transacción]
     U --> V[Snapshot de inventario]
     V --> W[Commit del catálogo]
     W --> X[Procesar imágenes por separado]
     X --> AA[Reporte final y cierre]
-    U -. fallo .-> AB[Rollback de cambios normalizados]
+    U -. fallo .-> AB[Rollback de cambios del plan]
     AB --> AC[Conservar staging, incidencias y auditoría]
 ```
 
@@ -163,7 +184,9 @@ flowchart TD
 - Insertar todas las filas, incluidas las vacías/anómalas si el archivo las declara usadas.
 - Crear `row_sha256` determinista sobre encabezados + valores originales canónicos.
 - Escribir por lotes; cada lote confirmado es un checkpoint recuperable.
-- Nunca corregir datos dentro de `staging_row`.
+- `staging_row` guarda solamente archivo, hoja, fila, encabezados, valores, seriales,
+  metadatos estructurales, hash y fecha de creación.
+- Nunca corregir, normalizar, validar ni cambiar estados dentro de `staging_row`; es append-only.
 
 ### 5.7 Validación estructural
 
@@ -179,10 +202,13 @@ flowchart TD
 - No exigir imagen.
 - Validar referencia como texto y preservar ceros/puntuación.
 - Crear una incidencia por problema con fila y columna exactas.
+- Persistir el resultado completado en `staging_row_result` con fila, batch, versiones de
+  contrato/reglas, etapa, estado, datos normalizados, fechas y hash de resultado.
+- Una reejecución o nueva versión crea otro resultado; jamás actualiza el anterior.
 
 ### 5.9 Normalización
 
-- Generar valores normalizados en memoria o tablas de trabajo, nunca en staging.
+- Generar valores normalizados fuera de staging y persistirlos en un nuevo `staging_row_result`.
 - Aplicar reglas versionadas y deterministas.
 - Mantener original, normalizado, regla, versión y confianza.
 - No transformar una inferencia en dato aprobado sin revisión.
@@ -208,9 +234,15 @@ Resultados posibles: `new`, `exact_match`, `possible_match`, `ambiguous`, `confl
 
 Los conflictos se registran; no se resuelven por “último archivo gana”.
 
-### 5.12 Simulación o dry-run
+### 5.12 Generación y persistencia del plan
 
-El dry-run debe producir, sin modificar catálogo:
+Todo modo, incluido `apply`, genera primero un `import_plan` y sus `import_plan_item`, sin
+modificar el catálogo. Cada item usa uno de estos tipos de operación:
+
+- `create`, `update`, `no_change`, `conflict`, `blocked`;
+- `inventory_snapshot`, `media_pending`, `extraction_candidate`.
+
+El plan conserva:
 
 - altas propuestas;
 - actualizaciones campo por campo;
@@ -219,27 +251,39 @@ El dry-run debe producir, sin modificar catálogo:
 - snapshots que se crearían;
 - medios que entrarían a cola;
 - incidencias por severidad;
-- checksum del plan para aprobar exactamente esa simulación.
+- `before_values`, `proposed_values`, incidencias, necesidad de revisión y decisión humana;
+- `item_sha256` por operación y `plan_sha256` sobre la serialización canónica completa;
+- hash del archivo, versión del contrato y versión de reglas.
+
+La generación termina en `awaiting_review`. El modo `dry_run` entrega este plan para revisión y
+no escribe datos empresariales. El modo solicitado no altera el contenido del plan.
 
 ### 5.13 Revisión humana
 
 - Mostrar evidencia original y propuestas lado a lado.
-- Registrar aprobar/rechazar/crear nuevo/enlazar existente.
+- Registrar aprobar/rechazar/crear nuevo/enlazar existente sin editar un plan generado.
 - Exigir comentario en conflictos y coincidencias ambiguas.
-- Invalidar la aprobación si cambia archivo, reglas o plan.
+- Una resolución humana genera un plan sucesor con items y hashes nuevos e invalida el anterior.
+- Aprobar explícitamente el fingerprint de archivo + contrato + reglas + plan completo.
+- La ausencia de conflictos no aprueba ni inicia apply automáticamente.
 
-### 5.14 Upsert transaccional
+### 5.14 Aprobación exacta y apply transaccional
 
-- Verificar nuevamente hash, versión de reglas y checksum aprobado.
+- Aceptar exclusivamente un `import_plan` en estado `approved`.
+- Recalcular el hash del archivo y el fingerprint de archivo, contrato, reglas y plan.
+- Cambiar atómicamente `approved -> applying`; si no se adquiere ese estado, detener.
+- Rechazar planes ya `applied` para impedir una segunda aplicación.
 - Bloquear únicamente productos afectados.
 - Insertar/actualizar por UUID interno y match aprobado.
-- Generar `audit_event` por cada cambio.
-- No desactivar registros ausentes en la exportación.
+- Generar `audit_event` por cada cambio con el `import_plan_id` aplicado.
+- Registrar el mismo `import_plan_id` en snapshots y cierre del proceso.
+- No alterar `source_active` ni `catalog_status` por ausencia en la exportación.
+- Marcar el plan `applied` solo tras commit; un fallo revierte el apply y queda auditado.
 
 ### 5.15 Snapshot de inventario
 
 - Crear una fila append-only por producto/fila aplicada.
-- Conservar cantidad real, disponible, unidad, importación y fecha de procedencia.
+- Conservar cantidad real, disponible, unidad, importación, plan aplicado y fecha de procedencia.
 - No sobrescribir el snapshot anterior.
 - No omitir valores cero o negativos.
 
@@ -249,7 +293,8 @@ El dry-run debe producir, sin modificar catálogo:
 - Clasificar `presente`, `ausente`, `error_de_exportacion`, `invalida` o `procesada`.
 - Validar Base64 y firma de archivo antes de decodificar.
 - Calcular SHA-256 del contenido y deduplicar por hash.
-- Guardar URI/metadatos en `media_asset`, no Base64 en el producto.
+- Almacenar físicamente por hash en un backend configurable, inicialmente filesystem.
+- Guardar URI, hash, tipo, tamaño, estado y metadatos en `media_asset`, no Base64 en el producto.
 - Una imagen inválida nunca revierte el producto.
 - Nunca modificar ni eliminar imágenes originales de Odoo.
 
@@ -263,7 +308,7 @@ Generar JSON y Markdown con:
 - matches, conflictos y decisiones humanas;
 - incidencias por código/severidad;
 - snapshots y medios creados/pendientes;
-- checksum del dry-run y resultado del commit/rollback;
+- ID/estado/fingerprint del plan exacto y resultado del commit/rollback;
 - rutas de reportes sin incluir datos sensibles en logs de consola.
 
 ### 5.18 Cierre o rollback
@@ -282,7 +327,7 @@ contexto declarado del batch, no columnas inventadas.
 | Columna exacta de origen | Tipo observado | Destino propuesto | Transformación | Validaciones | ¿Nulo aceptado? | Comportamiento ante error | ¿Conciliación? |
 |---|---|---|---|---|---|---|---|
 | Moneda | texto | `product_template.currency_code` | Trim conservando original; mapear a código validado sin reemplazar raw | Texto, longitud y código conocido | Sí en normalizado; no ocurrió en muestra | Warning; conservar raw y dejar normalizado nulo | No |
-| Estado de la actividad | vacío en 893 filas | `product_template.activity_state` | Ninguna si está vacío | Si aparece, tratar como texto y registrar valor nuevo | Sí | Info/Warning si aparece valor no contemplado; no bloquear | No |
+| Estado de la actividad | vacío en 893 filas | `product_template.activity_state`; nunca `source_active` | Ninguna si está vacío; conservarlo como concepto distinto de `Activo` | Si aparece, tratar como texto de actividad y registrar valor nuevo | Sí | Info/Warning si aparece valor no contemplado; no bloquear ni inferir vigencia | No |
 | Categoría de producto | texto | `product_category.source_path` + FK de `product_template` | Conservar ruta; segmentar/normalizar por regla versionada | No vacío en muestra; jerarquía sin ciclos | No para apply automático | Error de fila; staging continúa y producto queda bloqueado | No; solo señal auxiliar |
 | Favorito | booleano | `product_template.is_favorite` | Conversión estricta de booleano | Solo booleano o representación aprobada | Sí en normalizado | Warning y valor normalizado nulo | No |
 | Nombre | texto | `product_template.name_original`; candidatos en `extraction_candidate` | Conservar íntegro; normalización separada; extraer candidatos | No vacío, límites, caracteres de control | No para producto aplicable | Error de fila si vacío; nunca usar para fusionar | No |
@@ -294,6 +339,13 @@ contexto declarado del batch, no columnas inventadas.
 | Imagen 128 | texto o vacío | raw en `staging_row`; estado/URI/hash en `media_asset` y vínculo en `product_media` | Clasificar; validar Base64/formato; decodificar asincrónicamente | Vacío permitido; firma/tamaño/tipo antes de procesar | Sí | Warning; estado `ausente/error_de_exportacion/invalida`; nunca bloquear producto | No |
 | Última actualización el | serial decimal Excel | raw en `staging_row.raw_excel_serials`; `product_template.source_updated_at` | Convertir con sistema 1900/1904 y zona fuente confirmados | Rango plausible; conversión reversible; zona declarada | Sí en normalizado | Warning; conservar serial y dejar fecha nula | No |
 | Mostrar botón de estado de cantidad real | booleano | `product_template.show_quantity_status` | Conversión estricta de booleano | Solo booleano o representación aprobada | Sí en normalizado | Warning y valor normalizado nulo | No |
+
+La exportación actual no contiene el booleano `Activo` de Odoo. Por ello `source_active` queda
+`NULL`, que significa “estado de Odoo desconocido porque el campo no fue proporcionado”. El
+campo interno `catalog_status` es separado y admite `pending_review`, `active`, `inactive` y
+`archived`; una alta propuesta comienza en `pending_review`, no en `active`. Ni la presencia
+actual ni la ausencia futura modifican automáticamente ambos estados. Desactivar o archivar
+requiere una decisión explícita incluida en un plan aprobado y su auditoría.
 
 ## 7. Datos derivados de `Nombre`
 
@@ -309,26 +361,31 @@ observaciones se guardan como candidatos. Cada candidato incluye:
 
 Una regla nueva crea nuevos candidatos; no reescribe los anteriores. Los aprobados pueden
 alimentar entidades vehiculares, pero la evidencia y decisión permanecen auditables.
+La estrategia aprobada es híbrida: reglas deterministas y versionadas proponen candidatos con
+confianza; toda ambigüedad exige revisión humana. Las reglas empresariales concretas continúan
+pendientes de ejemplos y validación externa.
 
 ## 8. Idempotencia
 
 - **Archivo:** SHA-256 + sistema fuente detectan recepciones repetidas.
 - **Staging:** unique `(import_file_id, sheet_name, source_row_number)` y hash de fila.
-- **Reglas:** resultado identificado por fila + regla + versión; reejecutar no duplica candidatos.
+- **Resultados:** fila + batch + contrato + reglas + etapa + intento identifican resultados
+  append-only; reejecutar nunca los sobrescribe.
 - **Conciliación:** usa IDs estables cuando existan o clave provisional contextual.
-- **Apply:** un batch aplicado no se aplica de nuevo sin una autorización de reproceso distinta.
+- **Plan:** items y plan completo tienen hashes canónicos; todo cambio crea un plan sucesor.
+- **Apply:** la transición atómica `approved -> applying` impide aplicar dos veces el mismo plan.
 - **Inventario:** unique lógico por batch + fila + producto evita duplicar snapshots en reintentos.
 - **Auditoría:** `correlation_id` y hash de evento permiten detectar repeticiones.
 
 Un mismo archivo con una nueva versión de reglas puede reprocesarse para comparar resultados,
-pero no aplicar cambios hasta aprobar un dry-run nuevo.
+pero crea resultados y plan nuevos; no puede aplicar cambios hasta aprobar exactamente ese plan.
 
 ## 9. Límites de transacción
 
 1. **Registro:** transacción corta para batch/archivo.
 2. **Staging:** lotes configurables, cada uno con checkpoint; no mezcla productos normalizados.
 3. **Validación/extracción:** resultados durables por etapa y versión.
-4. **Apply:** para el volumen actual, una transacción atómica por batch aprobado que incluya
+4. **Apply:** para el volumen actual, una transacción atómica por plan aprobado que incluya
    productos, referencias, candidatos aprobados, snapshots y auditoría.
 5. **Medios:** transacciones independientes por recurso después del commit del producto.
 6. **Reporte/cierre:** transacción corta que reconcilia métricas y estado.
@@ -344,7 +401,7 @@ capacidad de identificar exactamente qué subconjunto fue confirmado o revertido
 | Staging por lote | Reanudar desde último checkpoint | Automático idempotente |
 | Validación determinista | Corregir contrato/regla, crear versión nueva | Manual/versionado |
 | Conexión PostgreSQL transitoria | Mantener estado previo y correlation ID | Máximo 3 con backoff |
-| Deadlock/serialización en apply | Rollback total del apply | Máximo 3 si el plan aprobado no cambió |
+| Deadlock/serialización en apply | Rollback total del apply | Nuevo intento controlado solo si conserva exactamente plan/fingerprint y el plan no quedó aplicado |
 | Conflicto de conciliación | `awaiting_review` | Tras decisión humana |
 | Imagen inválida | Producto permanece confirmado | Reintento solo si fue falla transitoria |
 | Escritura de reporte | Batch queda aplicado pero “cierre pendiente” | Regenerar desde DB/auditoría |
@@ -359,6 +416,7 @@ Registrar como mínimo:
 - recepción, hash, duplicado y cambio de estado;
 - versiones de contrato, perfilador y reglas;
 - actor que solicita, revisa y aprueba;
+- plan, items, fingerprint aprobado e `import_plan_id` efectivamente aplicado;
 - match seleccionado y alternativas descartadas;
 - before/after de cada upsert;
 - snapshot de inventario creado;
@@ -385,10 +443,10 @@ Cada reporte debe reconciliar: `filas leídas = filas staged = filas clasificada
 ## 13. Pseudocódigo
 
 ```text
-function import_odoo(file, context, mode, rules_version):
-    assert mode in {dry_run, apply}
+function generate_import_plan(file, context, requested_mode, contract_version, rules_version):
+    assert requested_mode in {dry_run, apply}
     initial_hash = sha256_stream(file)
-    batch = register_received_attempt(context, mode, rules_version)
+    batch = register_received_attempt(context, requested_mode, contract_version, rules_version)
 
     previous = find_previous_file(context.source_system, initial_hash)
     if previous and not context.reprocess_authorized:
@@ -402,60 +460,108 @@ function import_odoo(file, context, mode, rules_version):
         insert_staging_idempotently(import_file, chunk)
 
     assert sha256_stream(file) == initial_hash
-    structural_issues = validate_structure(import_file, contract_version)
-    row_issues = validate_rows(import_file, contract_version)
-    if has_open_fatal(structural_issues, row_issues):
-        mark_blocked(batch)
-        return final_report(batch)
+    validation_results = validate_to_new_results(
+        import_file, batch, contract_version, rules_version
+    )
+    record_issues(validation_results)
 
-    normalized = normalize_from_staging(import_file, rules_version)
-    candidates = extract_candidates(normalized, rules_version)
+    normalized_results = normalize_to_new_results(
+        validation_results, batch, contract_version, rules_version
+    )
+    candidates = extract_candidates(normalized_results, rules_version)
     reconciliation = reconcile(
-        normalized,
+        normalized_results,
         by=[odoo_id, external_id, source_system + brand + internal_reference],
     )
 
-    plan = build_change_plan(normalized, candidates, reconciliation)
-    dry_run = persist_dry_run(batch, plan, checksum(plan))
-    if mode == dry_run or plan.requires_human_review:
-        return final_report(batch, dry_run)
+    items = build_plan_items(
+        normalized_results, candidates, reconciliation, validation_results
+    )
+    plan = persist_immutable_plan(
+        batch=batch,
+        import_file=import_file,
+        file_sha256=initial_hash,
+        contract_version=contract_version,
+        rules_version=rules_version,
+        items=items,
+        plan_sha256=canonical_plan_sha256(items),
+        status=generated,
+    )
+    transition_plan(plan, from=generated, to=awaiting_review)
+    return review_package(plan)  # dry_run termina aquí; apply también espera aprobación
 
-    assert approval_matches(file_hash=initial_hash, rules_version, plan.checksum)
-    begin transaction:
-        upsert_approved_products(plan)
-        append_inventory_snapshots(plan)
-        append_audit_events(plan)
-    commit transaction
+function record_human_resolution(plan_id, decisions, actor):
+    original_plan = load_plan(plan_id)
+    assert original_plan.status == awaiting_review
+    successor_items = apply_decisions_without_mutating_original(original_plan.items, decisions)
+    successor_plan = persist_successor_plan(original_plan, successor_items)
+    invalidate(original_plan, reason="human_decision_changed_plan")
+    return review_package(successor_plan)
+
+function approve_plan(plan_id, actor):
+    plan = load_plan_with_items(plan_id)
+    assert plan.status == awaiting_review
+    assert canonical_plan_sha256(plan.items) == plan.plan_sha256
+    fingerprint = sha256_canonical(
+        plan.file_sha256,
+        plan.contract_version,
+        plan.rules_version,
+        plan.plan_sha256,
+    )
+    persist_explicit_approval(plan, fingerprint, actor)
+    return plan.import_plan_id
+
+function apply_approved_plan(plan_id, actor):
+    plan = load_plan_with_items(plan_id)
+    assert plan.status == approved
+    assert sha256_stream(plan.import_file.storage_uri) == plan.file_sha256
+    assert current_contract_version == plan.contract_version
+    assert current_rules_version == plan.rules_version
+    assert canonical_plan_sha256(plan.items) == plan.plan_sha256
+    assert approval_fingerprint_matches(plan)
+
+    acquired = compare_and_set_status(plan, from=approved, to=applying)
+    assert acquired  # evita concurrencia, reapply y aprobación implícita
+
+    try:
+        begin transaction:
+            upsert_approved_products(plan)
+            append_inventory_snapshots(plan, import_plan_id=plan_id)
+            append_audit_events(plan, import_plan_id=plan_id)
+            mark_plan_applied(plan, actor)
+        commit transaction
+    catch error:
+        rollback transaction
+        mark_plan_failed_and_audit(plan, error, import_plan_id=plan_id)
+        raise
 
     enqueue_media_processing(plan.media)
-    reconcile_metrics(batch)
-    return final_report(batch)
+    reconcile_metrics(plan.import_batch_id)
+    return final_report(plan.import_batch_id, plan_id)
 ```
 
-## 14. Criterios para aprobar v0.1
+## 14. Decisiones aprobadas para v0.1
 
-- Aprobar estados, severidades y reglas de detención.
-- Aprobar la matriz de las 13 columnas.
-- Confirmar identidad y reconciliación provisional.
-- Confirmar sistema de fechas/zona horaria.
-- Aprobar transacción atómica y política de reintentos.
-- Aprobar procesamiento/ubicación de imágenes.
-- Aprobar retención de staging, auditoría y reportes.
-- Solo después: diseñar pruebas de integración y programar el importador.
+- UUID interno estable; IDs Odoo solo como identificadores contextuales, nunca como PK interna.
+- Referencias duplicadas permitidas, sin fusión automática y con resolución humana contextual.
+- Imágenes físicas por hash, backend configurable (filesystem primero) y metadatos/URI en PostgreSQL.
+- Staging y resultados inmutables; staging retenido indefinidamente durante las fases iniciales.
+- Releases inmutables `draft/published/archived`, con snapshot JSON exacto y versionado.
+- XML de InDesign generado por adaptador; JSON es la fuente canónica interna.
+- Snapshot de inventario en cada importación, sin sobrescribir historia.
+- Timestamps normalizados a UTC conservando valor/zona originales; conversión definitiva aplazada.
+- Extracción vehicular híbrida con reglas deterministas/versionadas, confianza y revisión humana.
+- Todo modo genera un plan; apply exige aprobación exacta y solo puede ejecutarlo una vez.
+- `source_active` nullable y `catalog_status` separado; toda baja/archivo es explícita y auditada.
 
-## 15. Decisiones abiertas que afectan al importador
+## 15. Información externa todavía pendiente
 
-El análisis completo de ventajas, riesgos e impacto está en `DATABASE_DESIGN.md`. Estas
-recomendaciones son preliminares y **no están aprobadas**.
+- IDs estables reales de Odoo.
+- Zona horaria configurada en Odoo.
+- Sistema de fechas 1900/1904 del Excel.
+- Directorio inicial concreto de imágenes.
+- Política futura de archivado cuando existan métricas reales de volumen.
+- Reglas empresariales específicas para aplicaciones vehiculares.
 
-| Decisión | Alternativas | Recomendación preliminar | Ventaja | Riesgo | Impacto posterior |
-|---|---|---|---|---|---|
-| Identidad con IDs Odoo | ID Odoo como PK; UUID; híbrido | UUID + alias Odoo contextual | Identidad local estable | Reconciliación inicial compleja | Alto |
-| Referencias duplicadas | Rechazar; fusionar; permitir/revisar | Permitir y revisar por contexto | No pierde productos | Más flujo humano | Alto |
-| Almacenamiento de imágenes | DB; filesystem; object storage | Filesystem por hash + URI | Deduplica y aligera DB | Backups coordinados | Medio |
-| Retención de staging | Indefinida; ventana; archivo frío | Indefinida inicialmente | Reconstrucción completa | Crecimiento | Alto si se elimina temprano |
-| Publicaciones | Datos vivos; snapshot; híbrido | Snapshot inmutable | Reproducción exacta | Almacenamiento/versionado | Alto |
-| JSON/XML InDesign | XML; JSON; ambos | JSON canónico + adaptador XML | Reutilizable y testeable | Fidelidad del adaptador | Bajo/medio |
-| Historial de inventario | Actual; cada batch; cambios | Cada batch | Auditoría simple | Volumen | Medio |
-| Zona horaria | UTC; Panamá; zona Odoo | UTC + zona fuente confirmada | Consistencia | Conversión errónea | Alto |
-| Extracción vehicular | Automática; manual; híbrida | Híbrida con confianza/revisión | Escalable y prudente | Cola de revisión | Medio |
+La arquitectura v0.1 está aprobada documentalmente y no implementada. El siguiente paso es
+producir DDL y estrategia de migraciones revisables antes de instalar PostgreSQL.

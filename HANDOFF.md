@@ -1,6 +1,6 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
-## Sesión Actual: Diseño Detallado de PostgreSQL e Importador (2026-08-17)
+## Sesión Actual: Aprobación Documental de Arquitectura de Datos v0.1 (2026-08-17)
 
 ### Estado de Cumplimiento ✓
 
@@ -13,7 +13,9 @@
 - ✓ Integración de datos aprobada como base para el diseño preliminar
 - ✓ Odoo Profiler v0.1 integrado y validado
 - ✓ DATA_SPEC.md actualizado con evidencia real de 893 productos
-- ✓ Propuestas v0.1 de PostgreSQL e importador documentadas
+- ✓ Arquitectura de datos e importador v0.1 aprobada documentalmente
+- ✓ Staging inmutable y resultados versionados separados
+- ✓ Plan exacto de importación diseñado como persistente y sujeto a aprobación explícita
 
 ### Completado en Esta Sesión
 
@@ -49,14 +51,16 @@
    - `docs/DATA_SPEC.md` se basa ahora en esta evidencia real de Odoo
    - PostgreSQL, FastAPI y Jinja2 + HTML + CSS + JavaScript continúan siendo la arquitectura oficial
    - PostgreSQL no debe instalarse ni implementarse todavía; el schema y el importador definitivo siguen pendientes
-   - Próximo paso: revisar y aprobar el diseño preliminar antes de construir el importador
+   - La exportación no contiene el booleano `Activo`; `Estado de la actividad` está vacío en las 893 filas y no equivale a ese campo
 
-5. **Diseño Técnico en Elaboración**
-   - `docs/DATABASE_DESIGN.md` contiene la propuesta v0.1 del modelo PostgreSQL
-   - `docs/IMPORTER_DESIGN.md` contiene la propuesta v0.1 del flujo y mapeo del importador
-   - Ambos documentos son propuestas revisables y no implementadas
-   - PostgreSQL continúa sin instalar y no existen tablas, migraciones ni importador definitivo
-   - Las decisiones abiertas y recomendaciones todavía requieren aprobación
+5. **Arquitectura de Datos v0.1 Aprobada Documentalmente**
+   - `docs/DATABASE_DESIGN.md` fija 24 tablas propuestas, sus relaciones, trazabilidad y auditoría
+   - `docs/IMPORTER_DESIGN.md` fija el flujo, mapeo y aprobación exacta del plan antes de apply
+   - `staging_row` conserva solo evidencia append-only; `staging_row_result` conserva resultados versionados
+   - `import_plan` e `import_plan_item` están diseñados para garantizar que se aplique exactamente lo revisado y aprobado
+   - `source_active` es nullable y distinto de `catalog_status`; presencia/ausencia nunca cambia vigencia
+   - La arquitectura está aprobada documentalmente pero no implementada
+   - PostgreSQL continúa sin instalar y no existen DDL, tablas, migraciones ni importador definitivo
 
 ### Próximos Pasos (Orden de Prioridad)
 
@@ -66,20 +70,21 @@
 - [x] Documentar los 13 campos observados en `docs/DATA_SPEC.md`
 - [x] Documentar el diseño conceptual de staging e importación
 - [x] Redactar las propuestas detalladas `DATABASE_DESIGN.md` e `IMPORTER_DESIGN.md`
-- [ ] Revisar y aprobar el diseño preliminar de PostgreSQL y del importador
+- [x] Revisar y aprobar documentalmente la arquitectura de datos y del importador v0.1
 - [ ] Obtener IDs estables de Odoo y datos estructurados adicionales cuando estén disponibles
 - [ ] Identificar relaciones estructuradas de OEM, cross-reference, FMSI y aplicaciones
 - [ ] Completar DATA_SPEC.md como contrato definitivo de importación
 
 **Responsable**: Analista de Datos / Odoo  
-**Dependencias**: Revisión del diseño preliminar y campos adicionales de Odoo
+**Dependencias**: Campos adicionales y confirmaciones externas de Odoo
 **Estimación**: 2-4 horas  
 
 #### FASE 2: Diseño de Base de Datos
 - [x] Documentar propuesta v0.1 de tablas, relaciones, trazabilidad y auditoría
 - [x] Documentar propuesta v0.1 del importador y mapeo de las 13 columnas
-- [ ] Revisar y aprobar `docs/DATABASE_DESIGN.md` y `docs/IMPORTER_DESIGN.md`
-- [ ] Diseñar schema de PostgreSQL basado en Excel
+- [x] Revisar y aprobar documentalmente `docs/DATABASE_DESIGN.md` y `docs/IMPORTER_DESIGN.md`
+- [ ] Convertir el diseño aprobado en DDL revisable y una estrategia de migraciones
+- [ ] Diseñar schema físico de PostgreSQL basado en el DDL revisado
 - [ ] Definir tablas: productos, referencias, marcas, modelos, categorías, líneas
 - [ ] Relaciones y constraints
 - [ ] Índices para búsqueda rápida
@@ -146,9 +151,9 @@
 - ❌ Crear .venv
 - ❌ pip install de librerías
 - ❌ Programar FastAPI
-- ❌ Programar importador definitivo (esperar aprobación del diseño preliminar)
+- ❌ Programar importador definitivo (primero producir y revisar DDL/estrategia de migraciones)
 - ❌ Tocar fotografías originales
-- ❌ Crear schema de BD (esperar revisión y aprobación del diseño preliminar)
+- ❌ Crear schema de BD (primero producir y revisar DDL/estrategia de migraciones)
 
 ### Decisiones de Arquitectura Cerradas
 
@@ -158,6 +163,16 @@
 | Backend | Cerrada | FastAPI es el backend oficial. |
 | Frontend inicial | Cerrada | Jinja2 + HTML + CSS + JavaScript. React no se utilizará inicialmente. |
 | Evolución | Cerrada | La arquitectura podrá evolucionar hacia un frontend separado si una necesidad real lo justifica. |
+| Identidad de datos | Cerrada v0.1 | UUID interno estable; IDs Odoo contextuales cuando existan y nunca como PK interna. |
+| Referencias duplicadas | Cerrada v0.1 | Se permiten, no se fusionan automáticamente y la ambigüedad requiere contexto/revisión humana. |
+| Imágenes | Cerrada v0.1 | Contenido por hash, backend configurable con filesystem inicial y URI/hash/metadatos en PostgreSQL; originales intocables. |
+| Staging | Cerrada v0.1 | Evidencia append-only, resultados separados/versionados y retención indefinida inicialmente. |
+| Publicaciones e InDesign | Cerrada v0.1 | Releases inmutables; JSON versionado canónico y XML generado por adaptador. |
+| Inventario | Cerrada v0.1 | Snapshot por importación, sin sobrescritura; compactación solo con métricas reales. |
+| Tiempo | Cerrada v0.1 | UTC normalizado conservando valor/zona originales; conversión definitiva espera confirmaciones externas. |
+| Extracción vehicular | Cerrada v0.1 | Enfoque híbrido, reglas deterministas/versionadas, confianza y revisión humana. |
+| Plan de importación | Cerrada v0.1 | Todo modo genera plan; apply solo sobre el plan exacto aprobado y una sola vez. |
+| Vigencia de producto | Cerrada v0.1 | `source_active` nullable y `catalog_status` separado; baja/archivo explícitos y auditados. |
 
 El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La ausencia inicial de React reduce complejidad y no limita el diseño.
 
@@ -165,9 +180,12 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 
 | Decisión | Estado | Notas |
 |----------|--------|-------|
-| Formato Snapshots InDesign: XML vs JSON | Pendiente | Definir tras primer análisis de datos |
-| Control de Versiones de Catálogos | Pendiente | ¿Guardar historial de cambios? ¿Versiones por fecha? |
-| Propuestas PostgreSQL e importador v0.1 | Pendiente de aprobación | Revisar decisiones abiertas en `DATABASE_DESIGN.md` e `IMPORTER_DESIGN.md` |
+| IDs estables reales de Odoo | Pendiente externo | La exportación actual no los contiene |
+| Zona horaria configurada en Odoo | Pendiente externo | Requerida para interpretar timestamps de origen |
+| Sistema de fechas 1900/1904 del Excel | Pendiente externo | Requerido para conversión definitiva de seriales |
+| Directorio inicial concreto de imágenes | Pendiente externo | Debe definirse en configuración operativa |
+| Política futura de archivado | Pendiente externo | Definir con volumen real, preservando trazabilidad y hashes |
+| Reglas empresariales de aplicaciones vehiculares | Pendiente externo | Requieren ejemplos y validación del negocio |
 
 ### Notas Técnicas
 
@@ -185,8 +203,8 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 ### Última Actualización
 
 - **Fecha**: 2026-08-17
-- **Sesión**: Elaboración de propuestas detalladas de PostgreSQL e importador
-- **Próxima Revisión**: Revisión y aprobación de `DATABASE_DESIGN.md` e `IMPORTER_DESIGN.md`
+- **Sesión**: Refinamiento y aprobación documental de arquitectura de datos v0.1
+- **Próxima Revisión**: DDL revisable y estrategia de migraciones, antes de instalar PostgreSQL
 
 ---
 

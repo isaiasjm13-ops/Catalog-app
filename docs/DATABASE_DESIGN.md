@@ -1,9 +1,11 @@
 # Diseño de PostgreSQL
 
-> **Propuesta v0.1 — No implementada**
+> **Arquitectura de datos v0.1 — Aprobada documentalmente — No implementada**
 
-Este documento describe una propuesta revisable. No autoriza instalar PostgreSQL, crear
-tablas, generar migraciones ni programar el importador.
+Este documento fija la arquitectura de datos v0.1 aprobada. La aprobación es exclusivamente
+documental: PostgreSQL continúa sin instalar y todavía no existen DDL, tablas, migraciones ni
+importador. El siguiente paso es convertir este diseño en un DDL revisable y una estrategia de
+migraciones, aún antes de instalar el servicio.
 
 ## 1. Alcance y evidencia disponible
 
@@ -32,11 +34,14 @@ Los nombres y tipos siguientes son lógicos. La revisión debe cerrarlos antes d
 10. **Publicaciones reproducibles.** Una versión publicada conserva exactamente sus productos y datos.
 11. **Reconstrucción.** Staging, candidatos, snapshots y auditoría permiten reconstruir cada resultado.
 12. **Fallos parciales visibles.** Una imagen o fecha inválida genera una incidencia, no la pérdida del producto.
+13. **Planes exactos antes de aplicar.** Todo modo genera un plan persistido; solo se aplica el plan
+    explícitamente aprobado y ligado al archivo, contrato y reglas exactos.
+14. **Estado activo desconocido.** La presencia o ausencia en una exportación nunca decide la vigencia.
 
 ## 3. Convenciones propuestas
 
 - Claves internas: `uuid`, generadas independientemente de Odoo.
-- Fechas del sistema: `timestamptz`; valores de Excel originales permanecen en `jsonb` de staging.
+- Fechas del sistema: `timestamptz` normalizado a UTC; se conservan valor y zona originales.
 - Texto normalizado: columnas separadas; nunca reemplaza el texto original.
 - Estados: `text` con `CHECK` en v0.1, en vez de tipos `ENUM`, para facilitar evolución.
 - Hashes SHA-256: `char(64)` hexadecimal en minúsculas.
@@ -45,7 +50,7 @@ Los nombres y tipos siguientes son lógicos. La revisión debe cerrarlos antes d
 - Todas las tablas mutables incluyen `created_at` y `updated_at`; las append-only solo `created_at`.
 - FKs de evidencia, inventario, medios, auditoría y publicaciones usan `ON DELETE RESTRICT`.
 - No se propone `ON DELETE CASCADE` para datos empresariales o de trazabilidad.
-- Baja lógica mediante `is_active`, `archived_at` o estado; nunca por ausencia en una exportación.
+- Baja lógica de productos mediante `catalog_status`; nunca por ausencia en una exportación.
 
 Notación usada en columnas: **M** = obligatoria, **O** = opcional.
 
@@ -56,8 +61,17 @@ erDiagram
     source_system ||--o{ import_batch : origina
     import_batch ||--o{ import_file : contiene
     import_file ||--o{ staging_row : aporta
+    import_batch ||--o{ staging_row_result : ejecuta
+    staging_row ||--o{ staging_row_result : procesa
     import_batch ||--o{ import_issue : registra
     staging_row o|--o{ import_issue : contextualiza
+    staging_row_result o|--o{ import_issue : contextualiza
+    import_batch ||--o{ import_plan : genera
+    import_file ||--o{ import_plan : fija
+    import_plan ||--o{ import_plan_item : contiene
+    staging_row ||--o{ import_plan_item : fundamenta
+    product_template o|--o{ import_plan_item : afecta
+    product_variant o|--o{ import_plan_item : afecta
     source_system ||--o{ product_template : identifica
     brand ||--o{ product_template : agrupa
     product_category o|--o{ product_category : jerarquia
@@ -82,6 +96,7 @@ erDiagram
     product_template ||--o{ catalog_release_item : publica
     product_variant o|--o{ catalog_release_item : publica
     import_batch o|--o{ audit_event : origina
+    import_plan o|--o{ audit_event : aplica
     staging_row o|--o{ audit_event : evidencia
 ```
 
@@ -93,23 +108,26 @@ erDiagram
 | 2 | `import_batch` | Integración | Ejecución completa de una importación |
 | 3 | `import_file` | Integración | Archivo recibido, hash y metadatos |
 | 4 | `staging_row` | Integración | Fila original inmutable |
-| 5 | `import_issue` | Integración | Incidencias estructurales o por fila |
-| 6 | `brand` | Catálogo | Marcas del catálogo |
-| 7 | `product_category` | Catálogo | Jerarquía de categorías y familias |
-| 8 | `product_template` | Catálogo | Producto a nivel `product.template` |
-| 9 | `product_variant` | Catálogo | Variantes futuras de `product.product` |
-| 10 | `product_reference` | Catálogo | Referencias internas, OEM y cruzadas |
-| 11 | `inventory_snapshot` | Inventario | Fotografías históricas de cantidades |
-| 12 | `media_asset` | Medios | Metadatos, hash, ubicación y estado de imagen |
-| 13 | `product_media` | Medios | Asociación producto/variante con un recurso |
-| 14 | `vehicle_make` | Aplicaciones | Marcas de vehículos normalizadas |
-| 15 | `vehicle_model` | Aplicaciones | Modelos de vehículos normalizados |
-| 16 | `vehicle_engine` | Aplicaciones | Motores contextualizados por modelo |
-| 17 | `product_application_candidate` | Aplicaciones | Aplicaciones vehiculares aún no aprobadas |
-| 18 | `extraction_candidate` | Extracción | Candidatos derivados del nombre u otro texto |
-| 19 | `catalog_release` | Publicación | Versión inmutable del catálogo |
-| 20 | `catalog_release_item` | Publicación | Producto y snapshot exacto de una versión |
-| 21 | `audit_event` | Auditoría | Eventos append-only de cambios y decisiones |
+| 5 | `staging_row_result` | Integración | Resultado inmutable y versionado de procesar una fila |
+| 6 | `import_issue` | Integración | Incidencias estructurales o por fila/resultado |
+| 7 | `import_plan` | Integración | Plan exacto generado, revisado, aprobado y aplicado |
+| 8 | `import_plan_item` | Integración | Operación propuesta y evidencia de cada elemento del plan |
+| 9 | `brand` | Catálogo | Marcas del catálogo |
+| 10 | `product_category` | Catálogo | Jerarquía de categorías y familias |
+| 11 | `product_template` | Catálogo | Producto a nivel `product.template` |
+| 12 | `product_variant` | Catálogo | Variantes futuras de `product.product` |
+| 13 | `product_reference` | Catálogo | Referencias internas, OEM y cruzadas |
+| 14 | `inventory_snapshot` | Inventario | Fotografías históricas de cantidades |
+| 15 | `media_asset` | Medios | Metadatos, hash, ubicación y estado de imagen |
+| 16 | `product_media` | Medios | Asociación producto/variante con un recurso |
+| 17 | `vehicle_make` | Aplicaciones | Marcas de vehículos normalizadas |
+| 18 | `vehicle_model` | Aplicaciones | Modelos de vehículos normalizados |
+| 19 | `vehicle_engine` | Aplicaciones | Motores contextualizados por modelo |
+| 20 | `product_application_candidate` | Aplicaciones | Aplicaciones vehiculares aún no aprobadas |
+| 21 | `extraction_candidate` | Extracción | Candidatos derivados del nombre u otro texto |
+| 22 | `catalog_release` | Publicación | Versión inmutable del catálogo |
+| 23 | `catalog_release_item` | Publicación | Producto y snapshot exacto de una versión |
+| 24 | `audit_event` | Auditoría | Eventos append-only de cambios y decisiones |
 
 ## 6. Especificación de tablas
 
@@ -156,7 +174,7 @@ erDiagram
 | Restricciones | `size_bytes >= 0`; hash hexadecimal; nombre y URI no vacíos |
 | Índices | `sha256`; `(import_batch_id, original_name)`; `duplicate_of_file_id` |
 | Actualización | Hash, tamaño y URI son inmutables tras registro; solo se completan metadatos técnicos |
-| Eliminación | `RESTRICT`; retención física pendiente de aprobación |
+| Eliminación | `RESTRICT`; una política futura de archivo deberá preservar hash y trazabilidad |
 
 No se propone unicidad global del hash: una recepción repetida se registra y se enlaza a la
 anterior para auditar el intento, aunque el procesamiento pueda detenerse como duplicado.
@@ -168,15 +186,39 @@ anterior para auditar el intento, aunque el procesamiento pueda detenerse como d
 | Elemento | Propuesta |
 |---|---|
 | PK | `staging_row_id uuid` |
-| Columnas M | `import_file_id uuid`, `sheet_name text`, `source_row_number integer`, `raw_values jsonb`, `row_sha256 char(64)`, `validation_status text`, `created_at timestamptz` |
-| Columnas O | `raw_headers jsonb`, `raw_excel_serials jsonb`, `structural_metadata jsonb` |
+| Columnas M | `import_file_id uuid`, `sheet_name text`, `source_row_number integer`, `raw_headers jsonb`, `raw_values jsonb`, `raw_excel_serials jsonb`, `structural_metadata jsonb`, `row_sha256 char(64)`, `created_at timestamptz` |
+| Columnas O | Ninguna; las representaciones vacías se conservan explícitamente en los JSON originales |
 | FKs | `import_file_id -> import_file` |
 | Restricciones | Unique `(import_file_id, sheet_name, source_row_number)`; fila >= 1; JSON de valores obligatorio |
-| Índices | `(import_file_id, sheet_name, source_row_number)`, `row_sha256`, `validation_status`; GIN en `raw_values` solo si se demuestra necesario |
-| Actualización | Append-only; solo `validation_status` puede avanzar mediante procedimiento auditado, o separarse en tabla de resultados |
-| Eliminación | `RESTRICT`; política de retención abierta |
+| Índices | `(import_file_id, sheet_name, source_row_number)`, `row_sha256`; GIN en `raw_values` solo si se demuestra necesario |
+| Actualización | Ninguna. Es evidencia append-only y no admite correcciones, normalizaciones, estados ni actualizaciones empresariales |
+| Eliminación | `RESTRICT`; retención indefinida durante las fases iniciales |
 
-### 6.5 `import_issue`
+`staging_row` contiene únicamente evidencia original: archivo, hoja, fila, encabezados, valores,
+seriales, metadatos estructurales, hash y fecha de creación. Todo resultado de procesamiento
+vive fuera de esta tabla.
+
+### 6.5 `staging_row_result`
+
+**Propósito:** conservar cada resultado de validación, normalización o conciliación como una
+evidencia separada, inmutable y reproducible bajo versiones explícitas.
+
+| Elemento | Propuesta |
+|---|---|
+| PK | `staging_row_result_id uuid` |
+| Columnas M | `staging_row_id uuid`, `import_batch_id uuid`, `contract_version text`, `rules_version text`, `processing_stage text`, `attempt_number integer`, `status text`, `normalized_data jsonb`, `result_sha256 char(64)`, `created_at timestamptz`, `completed_at timestamptz` |
+| Columnas O | `processor_version text`, `metadata jsonb` |
+| FKs | `staging_row_id -> staging_row`; `import_batch_id -> import_batch` |
+| Restricciones | Unique `(staging_row_id, import_batch_id, contract_version, rules_version, processing_stage, attempt_number)`; intento >= 1; etapa/estado no vacíos; `completed_at >= created_at` |
+| Índices | `(staging_row_id, processing_stage, created_at DESC)`, `import_batch_id`, `(contract_version, rules_version)`, `status` |
+| Actualización | Ninguna: se inserta al completar la etapa. Una regla, contrato o reejecución nueva crea otra fila; nunca sobrescribe un resultado previo |
+| Eliminación | `RESTRICT`; conserva la trazabilidad de la ejecución |
+
+`normalized_data` es el resultado canónico de esa etapa, no una copia corregida de staging.
+`result_sha256` permite demostrar qué resultado alimentó el plan. Las incidencias se registran
+en `import_issue` y pueden referenciar esta fila o directamente la evidencia de origen.
+
+### 6.6 `import_issue`
 
 **Propósito:** registrar errores, advertencias e información sin perder la fila afectada.
 
@@ -184,14 +226,54 @@ anterior para auditar el intento, aunque el procesamiento pueda detenerse como d
 |---|---|
 | PK | `import_issue_id uuid` |
 | Columnas M | `import_batch_id uuid`, `severity text`, `code text`, `message text`, `status text`, `created_at timestamptz` |
-| Columnas O | `import_file_id uuid`, `staging_row_id uuid`, `column_name text`, `details jsonb`, `resolved_at timestamptz`, `resolved_by text`, `resolution_note text` |
-| FKs | `import_batch_id -> import_batch`; opcionales `import_file_id -> import_file` y `staging_row_id -> staging_row` |
+| Columnas O | `import_file_id uuid`, `staging_row_id uuid`, `staging_row_result_id uuid`, `column_name text`, `details jsonb`, `resolved_at timestamptz`, `resolved_by text`, `resolution_note text` |
+| FKs | `import_batch_id -> import_batch`; opcionales `import_file_id -> import_file`, `staging_row_id -> staging_row` y `staging_row_result_id -> staging_row_result` |
 | Restricciones | `severity IN ('info','warning','error','fatal')`; estado `open/resolved/accepted` |
-| Índices | `(import_batch_id, severity, status)`, `staging_row_id`, `code` |
+| Índices | `(import_batch_id, severity, status)`, `staging_row_id`, `staging_row_result_id`, `code` |
 | Actualización | Solo resolución/aceptación; mensaje y evidencia originales inmutables |
 | Eliminación | `RESTRICT`; no borrar incidencias |
 
-### 6.6 `brand`
+### 6.7 `import_plan`
+
+**Propósito:** persistir la simulación completa que se somete a revisión y garantizar que el
+apply ejecute exactamente el contenido aprobado.
+
+| Elemento | Propuesta |
+|---|---|
+| PK | `import_plan_id uuid` |
+| Columnas M | `import_batch_id uuid`, `import_file_id uuid`, `file_sha256 char(64)`, `contract_version text`, `rules_version text`, `plan_status text`, `plan_sha256 char(64)`, `approval_fingerprint_sha256 char(64)`, `generated_at timestamptz`, `generated_by text` |
+| Columnas O | `supersedes_plan_id uuid`, `approved_at timestamptz`, `approved_by text`, `rejected_at timestamptz`, `rejected_by text`, `invalidated_at timestamptz`, `invalidation_reason text`, `applied_at timestamptz`, `applied_by text`, `failure_summary text` |
+| FKs | `import_batch_id -> import_batch`; `import_file_id -> import_file`; `supersedes_plan_id -> import_plan` |
+| Restricciones | Estado en `generated/awaiting_review/approved/rejected/invalidated/applying/applied/failed`; hashes hexadecimales; fechas/actores coherentes con estado; un plan `applied` no vuelve a `applying` |
+| Índices | `(import_batch_id, generated_at DESC)`, `import_file_id`, `plan_status`, `plan_sha256`, `supersedes_plan_id` |
+| Actualización | Solo transiciones de estado auditadas. Archivo, versiones, hash y contenido quedan inmutables desde `generated` |
+| Eliminación | `RESTRICT`; planes rechazados, invalidados, fallidos y aplicados se conservan |
+
+`approval_fingerprint_sha256` se calcula canónicamente sobre `file_sha256 + contract_version +
+rules_version + plan_sha256`. La aprobación firma esa combinación exacta. Cualquier cambio en
+archivo, contrato, reglas, resolución humana o contenido crea un plan sucesor y deja el anterior
+`invalidated`; la ausencia de conflictos jamás produce aprobación automática.
+
+### 6.8 `import_plan_item`
+
+**Propósito:** congelar cada operación propuesta, sus valores y su evidencia dentro de un plan.
+
+| Elemento | Propuesta |
+|---|---|
+| PK | `import_plan_item_id uuid` |
+| Columnas M | `import_plan_id uuid`, `item_order integer`, `staging_row_id uuid`, `operation_type text`, `before_values jsonb`, `proposed_values jsonb`, `issues jsonb`, `requires_review boolean`, `item_sha256 char(64)`, `created_at timestamptz` |
+| Columnas O | `product_template_id uuid`, `product_variant_id uuid`, `human_decision text`, `decision_reason text`, `decided_at timestamptz`, `decided_by text` |
+| FKs | `import_plan_id -> import_plan`; `staging_row_id -> staging_row`; productos opcionales a `product_template` y `product_variant` |
+| Restricciones | Unique `(import_plan_id, item_order)`; operación en `create/update/no_change/conflict/blocked/inventory_snapshot/media_pending/extraction_candidate`; variante coherente con plantilla; decisión y actor coherentes |
+| Índices | `import_plan_id`, `staging_row_id`, productos afectados, `operation_type`, `requires_review` |
+| Actualización | Contenido inmutable. Una decisión humana se materializa en un plan sucesor con nuevos items y hashes; no se edita el plan ya generado |
+| Eliminación | `RESTRICT`; forma parte de la prueba de lo revisado |
+
+El `plan_sha256` se obtiene de una serialización JSON canónica de los items ordenados por
+`item_order`, incluyendo cada `item_sha256`. Así, una resolución de conflicto o cualquier cambio
+de valores produce un plan distinto que requiere revisión y aprobación nuevas.
+
+### 6.9 `brand`
 
 **Propósito:** representar marcas de producto independientes dentro de la infraestructura común.
 
@@ -206,7 +288,7 @@ anterior para auditar el intento, aunque el procesamiento pueda detenerse como d
 | Actualización | Nombre y metadatos editables con auditoría; código estable |
 | Eliminación | `RESTRICT`; baja lógica |
 
-### 6.7 `product_category`
+### 6.10 `product_category`
 
 **Propósito:** conservar la categoría de Odoo y una jerarquía normalizada por familia.
 
@@ -221,41 +303,52 @@ anterior para auditar el intento, aunque el procesamiento pueda detenerse como d
 | Actualización | Reparentado solo con revisión; conservar ruta original |
 | Eliminación | `RESTRICT`; baja lógica |
 
-### 6.8 `product_template`
+### 6.11 `product_template`
 
 **Propósito:** producto normalizado al nivel `product.template`, único nivel real de la exportación actual.
 
 | Elemento | Propuesta |
 |---|---|
 | PK | `product_template_id uuid` |
-| Columnas M | `source_system_id uuid`, `brand_id uuid`, `name_original text`, `variant_count_observed integer`, `is_active boolean`, `created_from_staging_row_id uuid`, `created_at timestamptz` |
-| Columnas O | `product_category_id uuid`, `odoo_template_id text`, `odoo_external_id text`, `name_normalized text`, `currency_code text`, `uom_original text`, `activity_state text`, `is_favorite boolean`, `show_quantity_status boolean`, `source_updated_at timestamptz`, `last_confirmed_batch_id uuid`, `updated_at timestamptz` |
+| Columnas M | `source_system_id uuid`, `brand_id uuid`, `name_original text`, `variant_count_observed integer`, `catalog_status text`, `created_from_staging_row_id uuid`, `created_at timestamptz` |
+| Columnas O | `product_category_id uuid`, `odoo_template_id text`, `odoo_external_id text`, `name_normalized text`, `currency_code text`, `uom_original text`, `activity_state text`, `is_favorite boolean`, `show_quantity_status boolean`, `source_active boolean NULL`, `source_updated_at timestamptz`, `last_confirmed_batch_id uuid`, `updated_at timestamptz` |
 | FKs | `source_system_id -> source_system`; `brand_id -> brand`; opcionales a `product_category`; `created_from_staging_row_id -> staging_row`; `last_confirmed_batch_id -> import_batch` |
-| Restricciones | `variant_count_observed >= 0`; nombre no es unique; IDs Odoo únicos solo dentro del sistema cuando existan |
-| Índices | `(source_system_id, brand_id)`, `product_category_id`, `name_normalized`, IDs Odoo parciales, `last_confirmed_batch_id` |
-| Actualización | Upsert controlado; cada cambio produce `audit_event`; ausencia en archivo no desactiva |
+| Restricciones | `variant_count_observed >= 0`; `catalog_status IN ('pending_review','active','inactive','archived')`; nombre no es unique; IDs Odoo únicos solo dentro del sistema cuando existan |
+| Índices | `(source_system_id, brand_id)`, `product_category_id`, `catalog_status`, `name_normalized`, IDs Odoo parciales, `last_confirmed_batch_id` |
+| Actualización | Upsert controlado; cada cambio produce `audit_event`; ausencia en archivo no modifica `source_active` ni `catalog_status` |
 | Eliminación | `RESTRICT`; baja lógica explícita y nunca automática |
 
-### 6.9 `product_variant`
+`source_active` representa exclusivamente el booleano `Activo` de Odoo cuando una exportación
+lo proporcione. `NULL` significa “estado de Odoo desconocido porque el campo no fue exportado”.
+`Estado de la actividad` no equivale a `Activo` y permanece separado en `activity_state`. La
+exportación actual lo tiene vacío en las 893 filas y no contiene `Activo`. `catalog_status` es
+una decisión interna distinta: un producto nuevo no se marca `active` solo por aparecer en el
+archivo; comienza en `pending_review` salvo decisión explícita. Toda baja o archivo es explícita
+y auditada.
+
+### 6.12 `product_variant`
 
 **Propósito:** preparar variantes de `product.product` sin inventarlas a partir del contador actual.
 
 | Elemento | Propuesta |
 |---|---|
 | PK | `product_variant_id uuid` |
-| Columnas M | `product_template_id uuid`, `source_system_id uuid`, `is_active boolean`, `created_from_staging_row_id uuid`, `created_at timestamptz` |
-| Columnas O | `odoo_variant_id text`, `odoo_external_id text`, `variant_name text`, `attributes jsonb`, `updated_at timestamptz` |
+| Columnas M | `product_template_id uuid`, `source_system_id uuid`, `catalog_status text`, `created_from_staging_row_id uuid`, `created_at timestamptz` |
+| Columnas O | `odoo_variant_id text`, `odoo_external_id text`, `variant_name text`, `attributes jsonb`, `source_active boolean NULL`, `updated_at timestamptz` |
 | FKs | Plantilla, origen y fila de procedencia |
-| Restricciones | No crear sin fila/ID de variante real; IDs Odoo únicos por sistema cuando existan |
-| Índices | `product_template_id`, IDs Odoo parciales |
-| Actualización | Solo desde exportación de variantes o revisión humana documentada |
+| Restricciones | No crear sin fila/ID de variante real; `catalog_status IN ('pending_review','active','inactive','archived')`; IDs Odoo únicos por sistema cuando existan |
+| Índices | `product_template_id`, `catalog_status`, IDs Odoo parciales |
+| Actualización | Solo desde exportación de variantes o revisión humana documentada; ausencia no cambia estados |
 | Eliminación | `RESTRICT`; baja lógica |
 
 `variant_count_observed` permanece en `product_template`. No se crean N filas de variante a
 partir de ese número. Cuando se exporte `product.product`, los IDs estables enlazarán cada
 variante a su `product_template` de Odoo; conflictos irán a revisión.
 
-### 6.10 `product_reference`
+`source_active` y `catalog_status` tienen la misma semántica separada que en la plantilla. Una
+variante tampoco se activa, desactiva ni archiva por mera presencia o ausencia en un archivo.
+
+### 6.13 `product_reference`
 
 **Propósito:** almacenar referencias internas, OEM, cruzadas y futuras referencias de proveedor.
 
@@ -274,22 +367,22 @@ La conciliación provisional usa `source_system + brand + referencia normalizada
 de restricción unique intencional permite detectar duplicados futuros y enviarlos a revisión
 en lugar de rechazar o fusionar datos.
 
-### 6.11 `inventory_snapshot`
+### 6.14 `inventory_snapshot`
 
 **Propósito:** conservar cada fotografía de inventario sin sobrescribir el historial.
 
 | Elemento | Propuesta |
 |---|---|
 | PK | `inventory_snapshot_id uuid` |
-| Columnas M | `product_template_id uuid`, `import_batch_id uuid`, `staging_row_id uuid`, `quantity_on_hand numeric`, `quantity_available numeric`, `uom_original text`, `captured_at timestamptz`, `created_at timestamptz` |
+| Columnas M | `product_template_id uuid`, `import_batch_id uuid`, `import_plan_id uuid`, `staging_row_id uuid`, `quantity_on_hand numeric`, `quantity_available numeric`, `uom_original text`, `captured_at timestamptz`, `created_at timestamptz` |
 | Columnas O | `product_variant_id uuid`, `source_updated_at timestamptz`, `source_date_serial numeric`, `metadata jsonb` |
-| FKs | `product_template_id -> product_template`; opcional `product_variant_id -> product_variant`; batch y fila a `import_batch` y `staging_row` |
+| FKs | `product_template_id -> product_template`; opcional `product_variant_id -> product_variant`; batch, plan y fila a `import_batch`, `import_plan` y `staging_row` |
 | Restricciones | Valores positivos, cero y negativos permitidos; variante coherente con plantilla |
-| Índices | `(product_template_id, captured_at DESC)`, `(product_variant_id, captured_at DESC)`, `import_batch_id` |
+| Índices | `(product_template_id, captured_at DESC)`, `(product_variant_id, captured_at DESC)`, `import_batch_id`, `import_plan_id` |
 | Actualización | Append-only; una corrección genera un nuevo snapshot o evento correctivo |
-| Eliminación | `RESTRICT`; retención pendiente de aprobación |
+| Eliminación | `RESTRICT`; historial completo por importación. Compactación solo tras medir volumen real y conservar trazabilidad |
 
-### 6.12 `media_asset`
+### 6.15 `media_asset`
 
 **Propósito:** separar el contenido multimedia del producto y controlar su validación/procesamiento.
 
@@ -297,7 +390,7 @@ en lugar de rechazar o fusionar datos.
 |---|---|
 | PK | `media_asset_id uuid` |
 | Columnas M | `source_system_id uuid`, `status text`, `created_from_staging_row_id uuid`, `created_at timestamptz` |
-| Columnas O | `content_sha256 char(64)`, `media_type text`, `byte_size bigint`, `storage_uri text`, `original_filename text`, `error_code text`, `error_message text`, `processed_at timestamptz`, `metadata jsonb` |
+| Columnas O | `content_sha256 char(64)`, `media_type text`, `byte_size bigint`, `storage_backend text`, `storage_uri text`, `original_filename text`, `error_code text`, `error_message text`, `processed_at timestamptz`, `metadata jsonb` |
 | FKs | Origen y fila de procedencia |
 | Restricciones | Estado en `presente/ausente/error_de_exportacion/invalida/procesada`; hash unique parcial cuando exista; tamaño >= 0 |
 | Índices | `content_sha256`, `status`, `created_from_staging_row_id` |
@@ -307,8 +400,11 @@ en lugar de rechazar o fusionar datos.
 El Base64 no se guarda en `product_template`. Primero se valida estructura/tipo, luego se
 decodifica fuera de la transacción principal, se calcula hash y se almacena por URI. Un error
 no bloquea el producto. El sistema nunca modifica ni elimina imágenes originales de Odoo.
+El almacenamiento físico es direccionado por `content_sha256` y configurable mediante
+`storage_backend`: comenzará en filesystem y podrá migrar a otro backend sin cambiar las
+relaciones empresariales. PostgreSQL conserva URI, hash, tipo, tamaño, estado y metadatos.
 
-### 6.13 `product_media`
+### 6.16 `product_media`
 
 **Propósito:** asociar recursos a plantilla o variante con rol y orden.
 
@@ -323,7 +419,7 @@ no bloquea el producto. El sistema nunca modifica ni elimina imágenes originale
 | Actualización | Rol/orden editables con auditoría; no reemplazar el recurso original |
 | Eliminación | `RESTRICT`; desasociación manual explícita, nunca por importación ausente |
 
-### 6.14 `vehicle_make`
+### 6.17 `vehicle_make`
 
 **Propósito:** vocabulario normalizado de marcas de vehículos.
 
@@ -338,7 +434,7 @@ no bloquea el producto. El sistema nunca modifica ni elimina imágenes originale
 | Actualización | Fusiones solo mediante decisión humana auditada |
 | Eliminación | `RESTRICT`; desactivar o fusionar con redirección auditada |
 
-### 6.15 `vehicle_model`
+### 6.18 `vehicle_model`
 
 **Propósito:** modelos de vehículo contextualizados por marca.
 
@@ -353,7 +449,7 @@ no bloquea el producto. El sistema nunca modifica ni elimina imágenes originale
 | Actualización | Normalización/fusión con revisión humana |
 | Eliminación | `RESTRICT` |
 
-### 6.16 `vehicle_engine`
+### 6.19 `vehicle_engine`
 
 **Propósito:** motores normalizados dentro del contexto conocido del modelo.
 
@@ -368,7 +464,7 @@ no bloquea el producto. El sistema nunca modifica ni elimina imágenes originale
 | Actualización | Candidatos no aprobados no consolidan motores automáticamente |
 | Eliminación | `RESTRICT` |
 
-### 6.17 `product_application_candidate`
+### 6.20 `product_application_candidate`
 
 **Propósito:** conservar una aplicación vehicular extraída o importada hasta su aprobación.
 
@@ -383,7 +479,7 @@ no bloquea el producto. El sistema nunca modifica ni elimina imágenes originale
 | Actualización | Evidencia/regla inmutables; solo revisión y resolución editables |
 | Eliminación | `RESTRICT`; candidatos rechazados se conservan |
 
-### 6.18 `extraction_candidate`
+### 6.21 `extraction_candidate`
 
 **Propósito:** registrar cualquier dato derivado de `Nombre` u otro texto con procedencia completa.
 
@@ -398,7 +494,7 @@ no bloquea el producto. El sistema nunca modifica ni elimina imágenes originale
 | Actualización | Evidencia, valores y regla inmutables; revisión append/auditada |
 | Eliminación | `RESTRICT` |
 
-### 6.19 `catalog_release`
+### 6.22 `catalog_release`
 
 **Propósito:** representar una versión del catálogo con ciclo `draft/published/archived`.
 
@@ -410,10 +506,10 @@ no bloquea el producto. El sistema nunca modifica ni elimina imágenes originale
 | FKs | `brand_id -> brand` |
 | Restricciones | Unique `(brand_id, version)`; estados `draft/published/archived`; publicación requiere hash |
 | Índices | `(brand_id, status)`, `published_at DESC`, `snapshot_sha256` |
-| Actualización | Draft editable; published inmutable; archived solo cambia estado/fecha |
+| Actualización | Definición inmutable desde creación; solo transiciones auditadas `draft -> published -> archived` |
 | Eliminación | `RESTRICT`; ninguna versión publicada se borra |
 
-### 6.20 `catalog_release_item`
+### 6.23 `catalog_release_item`
 
 **Propósito:** congelar exactamente qué producto y datos formaron parte de una publicación.
 
@@ -425,13 +521,13 @@ no bloquea el producto. El sistema nunca modifica ni elimina imágenes originale
 | FKs | `catalog_release_id -> catalog_release`; `product_template_id -> product_template`; opcionales a `product_variant` e `import_batch` |
 | Restricciones | Unique `(catalog_release_id, item_order)`; snapshot/hash obligatorios; variante coherente |
 | Índices | `catalog_release_id`, producto/variante, `section_key`, `snapshot_sha256` |
-| Actualización | Editable solo mientras release sea draft; inmutable al publicar |
-| Eliminación | Sin borrado en published/archived; cambios de draft son explícitos y auditados |
+| Actualización | Ninguna; cambiar un draft crea un release sucesor con nuevos items y hashes |
+| Eliminación | Sin borrado en ningún estado; un draft descartado se archiva y queda auditado |
 
-El `snapshot_data` canónico propuesto es JSON versionado. XML para InDesign se generaría con
-un adaptador, pero esta recomendación permanece abierta hasta aprobación.
+El `snapshot_data` canónico aprobado es JSON versionado. XML para InDesign se genera mediante
+un adaptador específico y nunca es la fuente maestra interna.
 
-### 6.21 `audit_event`
+### 6.24 `audit_event`
 
 **Propósito:** bitácora append-only de cambios, conciliaciones y decisiones humanas.
 
@@ -439,49 +535,55 @@ un adaptador, pero esta recomendación permanece abierta hasta aprobación.
 |---|---|
 | PK | `audit_event_id uuid` |
 | Columnas M | `event_type text`, `entity_type text`, `entity_id uuid`, `occurred_at timestamptz`, `actor_type text`, `actor_id text`, `after_data jsonb`, `event_sha256 char(64)` |
-| Columnas O | `import_batch_id uuid`, `staging_row_id uuid`, `before_data jsonb`, `reason text`, `correlation_id uuid`, `metadata jsonb` |
-| FKs | Batch y fila de evidencia; la entidad se valida en la capa de dominio por ser polimórfica |
+| Columnas O | `import_batch_id uuid`, `import_plan_id uuid`, `staging_row_id uuid`, `before_data jsonb`, `reason text`, `correlation_id uuid`, `metadata jsonb` |
+| FKs | Batch, plan aplicado y fila de evidencia; la entidad se valida en la capa de dominio por ser polimórfica |
 | Restricciones | Append-only; hash obligatorio; actor y razón requeridos para decisiones humanas |
-| Índices | `(entity_type, entity_id, occurred_at)`, `import_batch_id`, `correlation_id`, `event_type` |
+| Índices | `(entity_type, entity_id, occurred_at)`, `import_batch_id`, `import_plan_id`, `correlation_id`, `event_type` |
 | Actualización | Ninguna; las correcciones generan otro evento |
 | Eliminación | Prohibida salvo política legal aprobada y registrada externamente |
 
 ## 7. Identidad y conciliación
 
 1. Cada entidad del catálogo recibe un UUID interno estable.
-2. IDs de Odoo, externos, de plantilla y variante son opcionales hasta recibirlos.
+2. IDs de Odoo, externos, de plantilla y variante son identificadores contextuales opcionales
+   hasta recibirlos; nunca son la PK interna.
 3. `Nombre` nunca identifica un producto.
 4. Cantidades, imagen y fechas nunca participan en identidad.
 5. `Referencia interna` no se declara globalmente unique.
 6. La conciliación provisional usa sistema fuente + marca + referencia normalizada.
-7. Una coincidencia única puede proponerse; cero o varias coincidencias requieren revisión.
+7. Las referencias duplicadas se permiten y nunca se fusionan automáticamente. Una coincidencia
+   única puede proponerse; cero o varias coincidencias se resuelven por contexto y revisión humana.
 8. La normalización nunca destruye la referencia original.
 9. Un conflicto no se resuelve sobrescribiendo: queda en `import_issue` y `audit_event`.
 
 ## 8. Fechas y sistema de Excel
 
 - El serial original se conserva en `staging_row.raw_excel_serials`.
-- La conversión debe declarar explícitamente el sistema de fechas del libro: 1900 o 1904.
+- No se convierte definitivamente hasta confirmar el sistema de fechas del libro: 1900 o 1904,
+  y la zona horaria configurada en Odoo.
 - Debe corregirse de forma consciente la compatibilidad histórica del “29-02-1900”.
-- El origen debe declarar zona horaria; provisionalmente se evaluará `America/Panama`.
-- La salida normalizada se guarda como `timestamptz`, preferiblemente en UTC.
+- El origen debe declarar su zona; el valor original y la zona original se conservan.
+- Una vez confirmada la interpretación, la salida normalizada se guarda como `timestamptz` en UTC.
 - Una fecha inválida crea `import_issue`; no rechaza por sí sola toda la fila.
 
 ## 9. Inmutabilidad y eliminación
 
-- `staging_row`, `inventory_snapshot`, candidatos aprobados/rechazados, releases publicados y
-  `audit_event` son append-only.
+- `staging_row`, `staging_row_result`, `inventory_snapshot`, candidatos aprobados/rechazados,
+  items de planes generados, releases publicados y `audit_event` son append-only.
+- Staging se retiene indefinidamente en fases iniciales; cualquier archivo futuro debe preservar
+  trazabilidad, hashes y capacidad de reconstrucción.
 - Productos, marcas y categorías se desactivan lógicamente, nunca por ausencia en un archivo.
+- `source_active=NULL` conserva estado desconocido; una baja o archivo exige decisión explícita y auditada.
 - Ninguna FK empresarial usa cascada de borrado.
 - Una operación administrativa excepcional debe exigir autorización, respaldo y evento de auditoría.
 
 ## 10. Versionado de catálogos
 
-### Modelo propuesto
+### Modelo aprobado para v0.1
 
-1. Un release nace en `draft` con definición de filtros, agrupación, orden y plantilla.
+1. Un release nace en `draft` con definición de filtros, agrupación, orden y plantilla inmutables.
 2. Cada item guarda un snapshot JSON canónico, versión de esquema y SHA-256.
-3. Al publicar, se valida completitud, se calcula hash global y se bloquean release e items.
+3. Al publicar, se valida completitud y hash global; el contenido ya inmutable no se reescribe.
 4. `published` puede pasar a `archived`, pero su contenido no cambia.
 5. Una corrección crea una versión nueva; nunca reescribe una publicada.
 
@@ -497,33 +599,45 @@ un adaptador, pero esta recomendación permanece abierta hasta aprobación.
 - crecimiento de JSON e imágenes referenciadas;
 - necesidad de versionar el esquema del snapshot;
 - riesgo de inconsistencias si un adaptador omite campos;
-- políticas de retención y archivado todavía no aprobadas.
+- la política futura de archivado deberá definirse con métricas reales de volumen.
 
-### Recomendación preliminar no aprobada
+JSON versionado es el snapshot canónico interno aprobado. XML se genera mediante un adaptador
+específico para InDesign y no constituye la fuente maestra interna.
 
-Usar JSON inmutable como snapshot canónico interno y generar XML mediante un adaptador
-específico para InDesign. No se considera una decisión cerrada.
+## 11. Decisiones aprobadas para la arquitectura v0.1
 
-## 11. Criterios para aprobar v0.1
+1. **Identidad:** UUID interno estable; IDs de Odoo contextuales cuando existan; nunca usar un
+   identificador externo como PK interna.
+2. **Referencias duplicadas:** permitidas, sin fusión automática; la ambigüedad se resuelve por
+   contexto y revisión humana.
+3. **Imágenes:** contenido físico direccionado por hash, backend configurable (filesystem primero)
+   y PostgreSQL limitado a URI, hash, tipo, tamaño, estado y metadatos; originales intocables.
+4. **Staging:** retención indefinida inicialmente; un archivo futuro debe conservar trazabilidad y hashes.
+5. **Publicaciones:** releases inmutables `draft/published/archived` con snapshot exacto por producto.
+6. **InDesign:** JSON versionado canónico y adaptador XML; XML no es fuente maestra.
+7. **Inventario:** snapshot en cada importación, sin sobrescritura; compactación solo con métricas reales.
+8. **Tiempo:** normalización UTC con valor/zona originales; conversión definitiva pendiente de
+   confirmar sistema Excel y zona de Odoo.
+9. **Extracción vehicular:** enfoque híbrido con reglas deterministas/versionadas, confianza y
+   revisión humana ante ambigüedad.
+10. **Aplicación:** todo proceso genera `import_plan`; solo un plan exacto y aprobado puede aplicarse una vez.
+11. **Vigencia:** `source_active` nullable y `catalog_status` separado; presencia/ausencia no cambia estados.
 
-- Validar las 21 tablas y sus límites de responsabilidad.
-- Aprobar identidad provisional y tratamiento de duplicados.
-- Confirmar zona horaria y sistema de fechas de Excel.
-- Aprobar estrategia de imágenes y retención de staging.
-- Aprobar modelo de releases y snapshot JSON/XML.
-- Confirmar que el diseño soporta futuras exportaciones `product.product`.
-- Solo después: producir DDL/migraciones y plan de pruebas de base de datos.
+## 12. Información externa todavía pendiente
 
-## 12. Decisiones abiertas y recomendaciones no aprobadas
+Solo permanecen abiertos estos datos o reglas que el repositorio no puede determinar:
 
-| Decisión | Alternativas | Recomendación preliminar | Ventajas | Riesgos | Impacto de cambiar después |
-|---|---|---|---|---|---|
-| Identidad definitiva con IDs de Odoo | UUID interno; ID Odoo como PK; UUID + alias Odoo | UUID interno + IDs Odoo contextuales opcionales | Estabilidad local y desacoplamiento | Conciliación inicial más compleja | Alto si se usa ID externo como PK desde el inicio |
-| Referencias duplicadas futuras | Rechazar; fusionar; permitir y revisar | Permitir duplicados contextualizados y enviar ambigüedad a revisión | Evita pérdida y fusiones falsas | Más estados y UI de resolución | Alto si se impone unique antes de conocer casos reales |
-| Ubicación física de imágenes | `bytea`; filesystem; object storage | Filesystem local direccionado por hash, URI en DB; evaluar object storage después | DB liviana y deduplicación | Backup coordinado entre DB y archivos | Medio si se encapsula detrás de `storage_uri` |
-| Retención de staging | Indefinida; ventana fija; archivo frío | Indefinida durante fases iniciales; decidir archivado con métricas reales | Máxima trazabilidad | Crecimiento y posibles obligaciones de privacidad | Alto si se elimina evidencia antes de definir política |
-| Publicaciones de catálogo | Datos vivos; snapshot completo; modelo híbrido | Snapshot JSON inmutable por release | Reproducción exacta | Mayor almacenamiento y versionado de schema | Alto si primero se publican referencias dinámicas |
-| JSON canónico vs XML InDesign | XML canónico; JSON canónico; ambos | JSON canónico + adaptador XML para InDesign | Flexible, testeable y útil para web/API | Debe validarse fidelidad del adaptador | Bajo/medio si el adaptador es frontera explícita |
-| Historial de inventario | Solo actual; cada importación; solo cambios | Snapshot por importación; evaluar compactación posterior | Auditoría completa y simple | Volumen creciente | Medio si existe batch y timestamp desde el inicio |
-| Zona horaria oficial | UTC; `America/Panama`; zona Odoo | Guardar UTC y registrar zona fuente; usar `America/Panama` solo tras confirmación | Comparación consistente | Conversión incorrecta si la zona declarada es falsa | Alto: corregir timestamps históricos es costoso |
-| Extracción vehicular | Automática; manual; híbrida por confianza | Reglas versionadas + confianza + revisión humana | Escala sin convertir inferencias en hechos | Cola de revisión y calibración | Medio si evidencia/regla se conservan desde el inicio |
+| Pendiente | Motivo |
+|---|---|
+| IDs estables reales de Odoo | La exportación actual no los contiene |
+| Zona horaria configurada en Odoo | Necesaria para interpretar fechas de origen |
+| Sistema de fechas 1900/1904 del Excel | Necesario para conversión definitiva de seriales |
+| Directorio inicial concreto de imágenes | Debe definirse en configuración operativa |
+| Política futura de archivado | Se decidirá con métricas reales de volumen, preservando hashes/trazabilidad |
+| Reglas empresariales de aplicaciones vehiculares | Requieren conocimiento del negocio y ejemplos validados |
+
+## 13. Próximo paso
+
+Las 24 tablas y sus responsabilidades quedan aprobadas documentalmente para v0.1, no
+implementadas. Antes de instalar PostgreSQL se debe producir un DDL revisable y una estrategia
+de migraciones, acompañados por constraints, índices y pruebas de base de datos propuestos.
