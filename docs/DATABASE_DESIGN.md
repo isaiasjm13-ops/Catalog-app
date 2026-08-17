@@ -1,11 +1,12 @@
 # Diseño de PostgreSQL
 
-> **Arquitectura de datos v0.1 — Aprobada documentalmente — No implementada**
+> **Arquitectura de datos v0.1 aprobada — DDL v0.1 creado y no ejecutado**
 
-Este documento fija la arquitectura de datos v0.1 aprobada. La aprobación es exclusivamente
-documental: PostgreSQL continúa sin instalar y todavía no existen DDL, tablas, migraciones ni
-importador. El siguiente paso es convertir este diseño en un DDL revisable y una estrategia de
-migraciones, aún antes de instalar el servicio.
+Este documento fija la arquitectura de datos v0.1 aprobada. El borrador transaccional se encuentra
+en `db/migrations/0001_initial_schema.sql`, acompañado por `MIGRATION_STRATEGY.md` y
+`DDL_REVIEW.md`. El SQL no ha sido ejecutado: PostgreSQL continúa sin instalar, no existe ninguna
+tabla real y el importador tampoco está implementado. El siguiente paso es revisar el DDL y solo
+después preparar el entorno PostgreSQL local.
 
 ## 1. Alcance y evidencia disponible
 
@@ -18,7 +19,8 @@ La propuesta parte de:
 - nombres duplicados, cantidades con signo e imágenes opcionales;
 - arquitectura oficial PostgreSQL + FastAPI + Jinja2/HTML/CSS/JavaScript.
 
-Los nombres y tipos siguientes son lógicos. La revisión debe cerrarlos antes de producir DDL.
+Los nombres y tipos lógicos siguientes se mapearon al DDL v0.1 y permanecen sujetos a revisión
+antes de ejecutar el archivo en PostgreSQL.
 
 ## 2. Objetivos y principios
 
@@ -638,6 +640,22 @@ Solo permanecen abiertos estos datos o reglas que el repositorio no puede determ
 
 ## 13. Próximo paso
 
-Las 24 tablas y sus responsabilidades quedan aprobadas documentalmente para v0.1, no
-implementadas. Antes de instalar PostgreSQL se debe producir un DDL revisable y una estrategia
-de migraciones, acompañados por constraints, índices y pruebas de base de datos propuestos.
+Las 24 tablas y sus responsabilidades quedan aprobadas documentalmente. El DDL v0.1 y la
+estrategia de migraciones ya existen como borradores revisables, pero no se han ejecutado. Se debe
+completar `DDL_REVIEW.md`, revisar manualmente el SQL y después preparar PostgreSQL 16+ local para
+una validación real en una base vacía.
+
+## 14. Aclaraciones del mapeo físico v0.1
+
+- Las relaciones que incluyen plantilla y variante usan FKs compuestas para comprobar que la
+  variante pertenece a la plantilla indicada.
+- `import_plan` enlaza el archivo dentro del mismo batch; inventario enlaza el plan dentro del
+  mismo batch mediante claves compuestas.
+- `product_variant` exige un identificador real de Odoo o externo para impedir que
+  `variant_count_observed` produzca variantes inventadas.
+- La idempotencia del snapshot usa `UNIQUE NULLS NOT DISTINCT`, disponible en PostgreSQL 15+ y
+  compatible con el objetivo PostgreSQL 16+.
+- `audit_event.entity_id` no tiene una FK polimórfica imposible; la aplicación valida la pareja
+  `entity_type + entity_id`, mientras batch, plan y staging sí tienen FKs reales.
+- Transiciones, autorización, aprobación humana, cálculo de hashes, JSON canónico e inmutabilidad
+  operacional permanecen como garantías de aplicación y permisos, detalladas en `DDL_REVIEW.md`.

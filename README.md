@@ -18,7 +18,7 @@
 - Adobe InDesign 2026 (para exportación) (verificado ✓)
 
 ### Requisitos (Fase posterior)
-- PostgreSQL 14+
+- PostgreSQL 16+
 - pgAdmin (opcional)
 
 ## Arquitectura Inicial
@@ -64,10 +64,10 @@ La especificación preliminar de [docs/DATA_SPEC.md](docs/DATA_SPEC.md) se basa 
 real. El Excel fuente y los reportes generados permanecen locales e ignorados por Git.
 
 PostgreSQL, FastAPI y Jinja2 + HTML + CSS + JavaScript continúan siendo la arquitectura oficial.
-La arquitectura de datos v0.1 está aprobada documentalmente, pero no implementada. PostgreSQL
-continúa sin instalar y todavía no existen DDL, tablas, migraciones ni importador. El siguiente
-paso es convertir el diseño aprobado en un DDL revisable y una estrategia de migraciones, antes
-de instalar el servicio.
+La arquitectura de datos v0.1 está aprobada y ya cuenta con un DDL transaccional revisable y una
+estrategia documental de migraciones. El SQL no se ha ejecutado: PostgreSQL continúa sin instalar,
+no existe ninguna tabla real y el importador tampoco está implementado. El siguiente paso es
+revisar el DDL y después preparar el entorno PostgreSQL local.
 
 ## Arquitectura de Datos v0.1
 
@@ -75,9 +75,14 @@ de instalar el servicio.
   24 tablas propuestas, trazabilidad, staging inmutable, planes exactos y versionado de catálogos.
 - [docs/IMPORTER_DESIGN.md](docs/IMPORTER_DESIGN.md): flujo v0.1 aprobado documentalmente del
   importador, plan persistido, revisión/aprobación previa y mapeo de las 13 columnas reales.
+- [db/migrations/0001_initial_schema.sql](db/migrations/0001_initial_schema.sql): DDL v0.1
+  transaccional de las 24 tablas bajo el schema `perfect_catalog`; creado y no ejecutado.
+- [docs/MIGRATION_STRATEGY.md](docs/MIGRATION_STRATEGY.md): política forward-only, revisión,
+  backfills, expand/migrate/contract y futura adopción de Alembic.
+- [docs/DDL_REVIEW.md](docs/DDL_REVIEW.md): matriz de tablas, conteos, límites y checklist previo.
 
-Ambos diseños están aprobados únicamente como arquitectura. No autorizan instalar PostgreSQL ni
-implementar el esquema o el importador.
+El DDL tiene pruebas estáticas con la biblioteca estándar. Estas pruebas no autorizan instalar
+PostgreSQL ni sustituyen una ejecución futura en una base vacía de prueba.
 
 ## Documentación
 
@@ -85,8 +90,11 @@ implementar el esquema o el importador.
 - **[HANDOFF.md](HANDOFF.md)** - Estado actual, próximos pasos, bloqueadores
 - **[AGENTS.md](AGENTS.md)** - Roles y responsabilidades de equipos
 - **[docs/DATA_SPEC.md](docs/DATA_SPEC.md)** - Especificación preliminar de los datos de Odoo
-- **[docs/DATABASE_DESIGN.md](docs/DATABASE_DESIGN.md)** - Propuesta no implementada del modelo PostgreSQL
-- **[docs/IMPORTER_DESIGN.md](docs/IMPORTER_DESIGN.md)** - Propuesta no implementada del importador de Odoo
+- **[docs/DATABASE_DESIGN.md](docs/DATABASE_DESIGN.md)** - Arquitectura aprobada y mapeo al DDL no ejecutado
+- **[docs/IMPORTER_DESIGN.md](docs/IMPORTER_DESIGN.md)** - Diseño aprobado del importador, todavía sin código
+- **[docs/MIGRATION_STRATEGY.md](docs/MIGRATION_STRATEGY.md)** - Estrategia documental de migraciones
+- **[docs/DDL_REVIEW.md](docs/DDL_REVIEW.md)** - Revisión estática y manual del DDL v0.1
+- **[db/migrations/0001_initial_schema.sql](db/migrations/0001_initial_schema.sql)** - DDL v0.1 no ejecutado
 - **[docs/ODOO_PROFILER.md](docs/ODOO_PROFILER.md)** - Uso y pruebas del perfilador de Odoo
 - **[README.md](README.md)** - Este archivo
 
@@ -102,6 +110,8 @@ C:\PERFECT_CATALOG/
 ├── src/                  # Código fuente (fase posterior)
 ├── logs/                 # Logs de ejecución
 ├── docs/                 # Documentación adicional
+├── db/
+│   └── migrations/       # Migraciones PostgreSQL revisables
 │
 ├── PROJECT.md            # Especificación del proyecto
 ├── HANDOFF.md           # Estado y próximos pasos
@@ -140,8 +150,8 @@ git branch -a
 
 | Componente | Estado |
 |-----------|--------|
-| Documentación | ✓ Especificación real y arquitectura de datos v0.1 aprobada documentalmente |
-| Base de Datos | PostgreSQL definido; diseño de 24 tablas aprobado, no implementado |
+| Documentación | ✓ Arquitectura, estrategia de migraciones y revisión del DDL v0.1 documentadas |
+| Base de Datos | DDL de 24 tablas creado y probado estáticamente; no ejecutado, sin tablas reales |
 | Importador | Flujo, staging versionado y plan aprobado documentalmente; no implementado |
 | Backend | FastAPI definido; implementación pendiente |
 | Frontend | Jinja2 + HTML + CSS + JavaScript definidos; implementación pendiente |
@@ -156,5 +166,5 @@ git branch -a
 ---
 
 **Última actualización**: 2026-08-17  
-**Responsable sesión**: Refinamiento y aprobación documental de arquitectura de datos v0.1
-**Siguiente revisión**: DDL revisable y estrategia de migraciones antes de instalar PostgreSQL
+**Responsable sesión**: Creación del DDL PostgreSQL v0.1 y contrato SQL estático
+**Siguiente revisión**: Revisión manual del DDL antes de preparar PostgreSQL local

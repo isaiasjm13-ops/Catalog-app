@@ -1,6 +1,6 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
-## Sesión Actual: Aprobación Documental de Arquitectura de Datos v0.1 (2026-08-17)
+## Sesión Actual: DDL PostgreSQL v0.1 y Contrato SQL Estático (2026-08-17)
 
 ### Estado de Cumplimiento ✓
 
@@ -16,6 +16,9 @@
 - ✓ Arquitectura de datos e importador v0.1 aprobada documentalmente
 - ✓ Staging inmutable y resultados versionados separados
 - ✓ Plan exacto de importación diseñado como persistente y sujeto a aprobación explícita
+- ✓ DDL PostgreSQL v0.1 de 24 tablas creado y no ejecutado
+- ✓ Estrategia forward-only de migraciones documentada
+- ✓ Revisión y pruebas estáticas del contrato SQL documentadas
 
 ### Completado en Esta Sesión
 
@@ -60,7 +63,15 @@
    - `import_plan` e `import_plan_item` están diseñados para garantizar que se aplique exactamente lo revisado y aprobado
    - `source_active` es nullable y distinto de `catalog_status`; presencia/ausencia nunca cambia vigencia
    - La arquitectura está aprobada documentalmente pero no implementada
-   - PostgreSQL continúa sin instalar y no existen DDL, tablas, migraciones ni importador definitivo
+   - PostgreSQL continúa sin instalar y no existen tablas reales ni importador definitivo
+
+6. **DDL y Migraciones v0.1**
+   - `db/migrations/0001_initial_schema.sql` contiene las 24 tablas bajo `perfect_catalog`
+   - El DDL comienza con `BEGIN`, termina con `COMMIT` y no ha sido ejecutado
+   - `docs/MIGRATION_STRATEGY.md` define migraciones forward-only y futura adopción de Alembic
+   - `docs/DDL_REVIEW.md` contiene matriz, conteos, límites y checklist manual
+   - `tests/test_schema_contract.py` valida estáticamente el contrato sin conectarse a PostgreSQL
+   - PostgreSQL y pgAdmin siguen sin instalar; ninguna tabla real existe todavía
 
 ### Próximos Pasos (Orden de Prioridad)
 
@@ -83,12 +94,14 @@
 - [x] Documentar propuesta v0.1 de tablas, relaciones, trazabilidad y auditoría
 - [x] Documentar propuesta v0.1 del importador y mapeo de las 13 columnas
 - [x] Revisar y aprobar documentalmente `docs/DATABASE_DESIGN.md` y `docs/IMPORTER_DESIGN.md`
-- [ ] Convertir el diseño aprobado en DDL revisable y una estrategia de migraciones
-- [ ] Diseñar schema físico de PostgreSQL basado en el DDL revisado
-- [ ] Definir tablas: productos, referencias, marcas, modelos, categorías, líneas
-- [ ] Relaciones y constraints
-- [ ] Índices para búsqueda rápida
-- [ ] Script SQL de inicialización
+- [x] Convertir el diseño aprobado en DDL revisable y una estrategia de migraciones
+- [x] Diseñar el schema físico `perfect_catalog` para PostgreSQL 16+
+- [x] Definir las 24 tablas aprobadas
+- [x] Documentar relaciones, constraints e índices
+- [x] Crear pruebas estáticas del contrato SQL
+- [ ] Completar la revisión manual de `docs/DDL_REVIEW.md`
+- [ ] Preparar PostgreSQL local después de aprobar el DDL
+- [ ] Ejecutar y validar el DDL en una base vacía de prueba
 
 **Responsable**: Coordinador + Ingeniero Backend  
 **Dependencias**: DATA_SPEC.md  
@@ -146,14 +159,15 @@
 
 ### NO Hacer Todavía
 
-- ❌ Instalar PostgreSQL (la arquitectura está definida, pero la instalación aún no corresponde)
+- ❌ Instalar PostgreSQL (primero completar la revisión manual del DDL)
 - ❌ Instalar pgAdmin
 - ❌ Crear .venv
 - ❌ pip install de librerías
 - ❌ Programar FastAPI
-- ❌ Programar importador definitivo (primero producir y revisar DDL/estrategia de migraciones)
+- ❌ Programar importador definitivo (primero revisar y validar el DDL)
 - ❌ Tocar fotografías originales
-- ❌ Crear schema de BD (primero producir y revisar DDL/estrategia de migraciones)
+- ❌ Ejecutar el DDL o crear tablas reales antes de aprobar su revisión
+- ❌ Instalar o configurar Alembic todavía
 
 ### Decisiones de Arquitectura Cerradas
 
@@ -203,8 +217,8 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 ### Última Actualización
 
 - **Fecha**: 2026-08-17
-- **Sesión**: Refinamiento y aprobación documental de arquitectura de datos v0.1
-- **Próxima Revisión**: DDL revisable y estrategia de migraciones, antes de instalar PostgreSQL
+- **Sesión**: Creación del DDL PostgreSQL v0.1, estrategia y pruebas estáticas
+- **Próxima Revisión**: Revisión manual del DDL antes de preparar PostgreSQL local
 
 ---
 
