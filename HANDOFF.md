@@ -1,6 +1,6 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
-## Sesión Actual: Preparación Documental de PostgreSQL Local (2026-08-17)
+## Sesión Actual: Corrección de Versión y Locale de PostgreSQL (2026-08-17)
 
 ### Estado de Cumplimiento ✓
 
@@ -20,7 +20,8 @@
 - ✓ Estrategia forward-only de migraciones documentada
 - ✓ Revisión y pruebas estáticas del contrato SQL documentadas
 - ✓ Diagnóstico previo a la instalación de PostgreSQL realizado sin modificar el equipo
-- ✓ Plan exacto de instalación local y recuperación preparado, pendiente de aprobación
+- ✓ Plan de instalación corregido con compuerta de versión oficial, firma, hash y autorización
+- ✓ UTF8 + ICU `es-PA` + collation determinista aprobados para la base futura
 
 ### Completado en Esta Sesión
 
@@ -56,7 +57,7 @@
    - Contenido validado: 893 productos, 13 columnas, 893 referencias internas únicas y 0 filas duplicadas
    - `docs/DATA_SPEC.md` se basa ahora en esta evidencia real de Odoo
    - PostgreSQL, FastAPI y Jinja2 + HTML + CSS + JavaScript continúan siendo la arquitectura oficial
-   - PostgreSQL no debe instalarse hasta aprobar el plan; la validación real del schema y el importador definitivo siguen pendientes
+   - PostgreSQL no debe instalarse hasta completar la compuerta y recibir autorización humana; la validación real del schema y el importador definitivo siguen pendientes
    - La exportación no contiene el booleano `Activo`; `Estado de la actividad` está vacío en las 893 filas y no equivale a ese campo
 
 5. **Arquitectura de Datos v0.1 Aprobada Documentalmente**
@@ -86,9 +87,15 @@
    - El equipo fue diagnosticado mediante comprobaciones de solo lectura
    - No se encontraron binarios, servicios, procesos, rutas, registro, PATH ni puertos PostgreSQL activos
    - Los puertos 5432 y 5433 estaban libres durante el diagnóstico
-   - `docs/POSTGRESQL_INSTALL_PLAN.md` propone PostgreSQL 18.6 x64, fuente oficial, rutas externas a Git, configuración, roles y recuperación
+   - La versión mayor aprobada es PostgreSQL 18 x64; la minor se confirma en PostgreSQL.org justo antes de descargar
+   - Winget reportó `18.6-1`; no se acepta como prueba oficial de publicación
+   - La referencia oficial anterior era 18.4; PostgreSQL.org confirma actualmente 18.6 estable, publicada el 2026-08-13
+   - `perfect_catalog_dev` se creará desde `template0` con UTF8, proveedor ICU, locale `es-PA` y collation determinista
+   - Los checksums de datos permanecerán habilitados y `Spanish_Panama.1252` no será la collation definitiva
+   - Puerto, localhost, SCRAM, rutas, servicio, roles y aplazamiento de pgAdmin continúan aprobados como propuestas futuras
+   - La compuerta exige verificar minor oficial, obtener el instalador oficial, validar firma/SHA-256, presentar evidencia y recibir autorización humana
    - PostgreSQL y pgAdmin no fueron instalados; no se crearon servicios, roles, bases ni carpetas operativas
-   - No se ejecutó SQL; el siguiente paso es revisar y aprobar expresamente el plan
+   - No se ejecutó SQL; el siguiente paso es completar la compuerta en una tarea futura
 
 ### Próximos Pasos (Orden de Prioridad)
 
@@ -118,7 +125,9 @@
 - [x] Crear pruebas estáticas del contrato SQL
 - [x] Completar y aprobar la segunda revisión manual de `docs/DDL_REVIEW.md` y del DDL v0.2 corregido
 - [x] Diagnosticar el equipo y preparar `docs/POSTGRESQL_INSTALL_PLAN.md`
-- [ ] Revisar y aprobar expresamente el plan de instalación local
+- [x] Corregir y validar documentalmente versión, ICU/collation y compuerta de instalación
+- [ ] Reconfirmar minor estable oficial, firma y SHA-256 del instalador en una tarea futura
+- [ ] Presentar la evidencia y obtener autorización humana expresa para instalar
 - [ ] Instalar PostgreSQL local únicamente después de esa aprobación
 - [ ] Ejecutar y validar el DDL en una base vacía de prueba
 
@@ -178,7 +187,9 @@
 
 ### NO Hacer Todavía
 
-- ❌ Instalar PostgreSQL antes de revisar y aprobar `docs/POSTGRESQL_INSTALL_PLAN.md`
+- ❌ Instalar PostgreSQL antes de completar la compuerta de `docs/POSTGRESQL_INSTALL_PLAN.md`
+- ❌ Usar winget como única prueba de que una minor fue publicada oficialmente
+- ❌ Ejecutar un instalador antes de presentar versión, URL, publicador, firma y SHA-256
 - ❌ Instalar pgAdmin
 - ❌ Crear .venv
 - ❌ pip install de librerías
@@ -203,6 +214,8 @@
 | Publicaciones e InDesign | Cerrada v0.1 | Releases inmutables; JSON versionado canónico y XML generado por adaptador. |
 | Inventario | Cerrada v0.1 | Snapshot por importación, sin sobrescritura; compactación solo con métricas reales. |
 | Tiempo | Cerrada v0.1 | UTC normalizado conservando valor/zona originales; conversión definitiva espera confirmaciones externas. |
+| Locale PostgreSQL | Cerrada | `perfect_catalog_dev` usará UTF8, ICU `es-PA` y collation determinista; búsquedas insensibles serán explícitas. |
+| Rutas operativas | Cerrada para instalación local | Datos, backups, logs y medios bajo `C:\PerfectCatalogData`, fuera de Git. |
 | Extracción vehicular | Cerrada v0.1 | Enfoque híbrido, reglas deterministas/versionadas, confianza y revisión humana. |
 | Plan de importación | Cerrada v0.1 | Todo modo genera plan; apply solo sobre el plan exacto aprobado y una sola vez. |
 | Vigencia de producto | Cerrada v0.1 | `source_active` nullable y `catalog_status` separado; baja/archivo explícitos y auditados. |
@@ -216,7 +229,6 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 | IDs estables reales de Odoo | Pendiente externo | La exportación actual no los contiene |
 | Zona horaria configurada en Odoo | Pendiente externo | Requerida para interpretar timestamps de origen |
 | Sistema de fechas 1900/1904 del Excel | Pendiente externo | Requerido para conversión definitiva de seriales |
-| Directorio inicial concreto de imágenes | Pendiente externo | Debe definirse en configuración operativa |
 | Política futura de archivado | Pendiente externo | Definir con volumen real, preservando trazabilidad y hashes |
 | Reglas empresariales de aplicaciones vehiculares | Pendiente externo | Requieren ejemplos y validación del negocio |
 
@@ -224,7 +236,7 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 
 - Ruta del proyecto: `C:\PERFECT_CATALOG`
 - Usuario propietario: AzureAD\Diseño2
-- Política de ejecución PowerShell: Bypass
+- Política de ejecución PowerShell: `CurrentUser=RemoteSigned`, `LocalMachine=Restricted`
 - No se ejecuta como administrador (OK, no requerido)
 
 ### Contactos y Escalaciones
@@ -236,8 +248,8 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 ### Última Actualización
 
 - **Fecha**: 2026-08-17
-- **Sesión**: Diagnóstico y preparación documental de PostgreSQL local, sin instalación ni SQL
-- **Próxima Revisión**: Revisar y aprobar `docs/POSTGRESQL_INSTALL_PLAN.md` antes de instalar
+- **Sesión**: Corrección documental de versión, ICU/collation y compuerta previa a PostgreSQL
+- **Próxima Revisión**: Reconfirmar minor oficial, validar instalador y solicitar autorización humana
 
 ---
 

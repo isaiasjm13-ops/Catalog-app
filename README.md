@@ -18,7 +18,7 @@
 - Adobe InDesign 2026 (para exportación) (verificado ✓)
 
 ### Requisitos (Fase posterior)
-- PostgreSQL 18.6 x64 propuesto (el DDL requiere 16+)
+- PostgreSQL 18 x64; usar la minor estable vigente confirmada en PostgreSQL.org justo antes de descargar
 - pgAdmin opcional y aplazado hasta después de validar el servidor
 
 ## Arquitectura Inicial
@@ -91,8 +91,16 @@ binarios, servicios, procesos, rutas, claves de registro ni puertos PostgreSQL a
 [docs/POSTGRESQL_INSTALL_PLAN.md](docs/POSTGRESQL_INSTALL_PLAN.md) con la versión, fuente, rutas,
 configuración, roles, recuperación y checklist propuestos.
 
+La discrepancia entre la referencia oficial anterior 18.4 y `18.6-1` reportado por winget fue
+revisada contra fuentes primarias. PostgreSQL.org identifica actualmente 18.6 como publicación
+estable del 2026-08-13; winget queda solo como contraste y nunca como prueba oficial. La base futura
+`perfect_catalog_dev` usará UTF8, proveedor ICU, locale `es-PA` y collation determinista. Las
+búsquedas insensibles a mayúsculas/acentos se resolverán separadamente sin alterar la identidad
+exacta de las referencias internas.
+
 PostgreSQL y pgAdmin siguen sin instalar; no se creó ninguna base, rol o servicio y no se ejecutó
-SQL. El siguiente paso es revisar y aprobar expresamente el plan antes de cualquier instalación.
+SQL. Antes de instalar es obligatorio reconfirmar la minor oficial, obtener el instalador oficial,
+validar firma y SHA-256, presentar la evidencia y recibir autorización humana expresa.
 
 ## Documentación
 
@@ -104,7 +112,7 @@ SQL. El siguiente paso es revisar y aprobar expresamente el plan antes de cualqu
 - **[docs/IMPORTER_DESIGN.md](docs/IMPORTER_DESIGN.md)** - Diseño aprobado del importador, todavía sin código
 - **[docs/MIGRATION_STRATEGY.md](docs/MIGRATION_STRATEGY.md)** - Estrategia documental de migraciones
 - **[docs/DDL_REVIEW.md](docs/DDL_REVIEW.md)** - Revisión estática y correcciones del DDL v0.2
-- **[docs/POSTGRESQL_INSTALL_PLAN.md](docs/POSTGRESQL_INSTALL_PLAN.md)** - Diagnóstico y plan local pendiente de aprobación
+- **[docs/POSTGRESQL_INSTALL_PLAN.md](docs/POSTGRESQL_INSTALL_PLAN.md)** - Plan local validado; compuerta de instalador pendiente
 - **[db/migrations/0001_initial_schema.sql](db/migrations/0001_initial_schema.sql)** - DDL v0.2 no ejecutado
 - **[docs/ODOO_PROFILER.md](docs/ODOO_PROFILER.md)** - Uso y pruebas del perfilador de Odoo
 - **[README.md](README.md)** - Este archivo

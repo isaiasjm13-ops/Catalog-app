@@ -182,7 +182,17 @@ implementación.
 
 ## 8. Checklist manual previo a cualquier ejecución
 
-- [ ] Confirmar PostgreSQL 16 o superior.
+La instalación y la creación de `perfect_catalog_dev` son pasos externos a este DDL. La versión
+mayor aprobada es PostgreSQL 18 x64; la minor debe reconfirmarse en PostgreSQL.org justo antes de
+descargar. La base futura deberá crearse desde `template0`, con UTF8, proveedor ICU, locale `es-PA`
+y collation predeterminada determinista. El instalador gráfico puede usar un locale de Windows para
+el clúster, pero `Spanish_Panama.1252` no será la collation definitiva de la base del proyecto.
+
+- [ ] Confirmar en PostgreSQL.org la minor estable vigente de PostgreSQL 18 x64.
+- [ ] Verificar URL oficial PostgreSQL → EDB, publicador, firma digital y SHA-256 del instalador.
+- [ ] Presentar esa evidencia y obtener autorización humana antes de ejecutar el instalador.
+- [ ] Confirmar `perfect_catalog_dev`: UTF8, proveedor ICU, locale `es-PA` y collation determinista.
+- [ ] Confirmar checksums de datos habilitados y zona horaria del servidor en UTC.
 - [x] Verificar hash y segunda revisión manual aprobada de la migración.
 - [ ] Confirmar que la base de destino esté vacía y sea la correcta.
 - [ ] Confirmar respaldo y restauración cuando aplique.
