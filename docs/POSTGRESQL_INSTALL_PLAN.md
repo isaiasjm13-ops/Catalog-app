@@ -1,12 +1,14 @@
 # Plan de preparación para PostgreSQL local
 
-> **Estado al 2026-08-17:** diagnóstico completado y propuesta preparada. PostgreSQL no está
-> instalado, este procedimiento no se ha ejecutado y todavía requiere aprobación expresa.
+> **Estado al 2026-08-17:** diagnóstico completado; instalador PostgreSQL 18.6 x64 descargado
+> fuera del repositorio y verificado. PostgreSQL no está instalado, el archivo no fue ejecutado y
+> la siguiente compuerta requiere autorización humana expresa.
 
-Este documento define la instalación local futura de PostgreSQL para Perfect Catalog. No autoriza
-descargas, instalación, creación de servicios, directorios, roles, bases de datos ni ejecución del
-DDL. Las decisiones marcadas como aprobadas fijan la propuesta futura, pero no autorizan crear
-recursos ni ejecutar el instalador; la compuerta y la autorización final continúan pendientes.
+Este documento define la instalación local futura de PostgreSQL para Perfect Catalog. La descarga
+y verificación del artefacto exacto quedaron documentadas, pero no autorizan su ejecución,
+instalación, creación de servicios, directorios operativos, roles, bases de datos ni ejecución del
+DDL. Las decisiones marcadas como aprobadas fijan la propuesta futura; la autorización humana para
+ejecutar el instalador continúa pendiente.
 
 ## 1. Diagnóstico de la estación de trabajo
 
@@ -91,9 +93,11 @@ La consulta de solo lectura de winget encontró:
 - SHA-256 publicado en el manifiesto consultado:
   `cae561e98d09f3f4a1a95759249240f86f66d71dcf33d14b6f7be894078401d1`.
 
-El publicador, la URL y el hash anteriores son únicamente declaraciones del manifiesto de winget.
-No son prueba oficial de publicación ni están verificados contra un archivo local, porque no se
-descargó ningún instalador.
+El publicador, la URL y el hash anteriores siguen siendo únicamente declaraciones del manifiesto
+de winget y no constituyen prueba oficial de publicación. El archivo local se descargó después desde
+el origen oficial y se validó independientemente por tamaño, SHA-256, firma Authenticode y Microsoft
+Defender. La evidencia completa está en
+[`POSTGRESQL_INSTALLER_VERIFICATION.md`](POSTGRESQL_INSTALLER_VERIFICATION.md).
 
 ### Fuente propuesta
 
@@ -373,10 +377,10 @@ automatizar después de autorización; **Verificación** es de solo lectura tras
 ## 8. Checklist de autorización previa
 
 - [x] Versión mayor aprobada: PostgreSQL 18 x64.
-- [ ] Minor estable reconfirmada en PostgreSQL.org inmediatamente antes de descargar; referencia observada al 2026-08-17: 18.6.
+- [x] Minor estable reconfirmada en PostgreSQL.org inmediatamente antes de descargar: 18.6 al 2026-08-17.
 - [x] Fuente oficial definida: PostgreSQL para Windows → instalador EDB.
-- [ ] Firma/hash del instalador verificados contra el archivo descargado.
-- [ ] Versión, URL, publicador, firma y SHA-256 presentados al usuario.
+- [x] Firma/hash del instalador verificados contra el archivo descargado.
+- [x] Versión, URL, publicador, firma y SHA-256 documentados para revisión del usuario.
 - [x] Puerto libre confirmado: 5432 y 5433 sin listener al 2026-08-17; revalidar inmediatamente antes.
 - [x] Directorio de datos aprobado como propuesta futura.
 - [x] Directorio de respaldos aprobado como propuesta futura.
@@ -392,13 +396,13 @@ automatizar después de autorización; **Verificación** es de solo lectura tras
 
 ## 9. Decisiones que continúan abiertas
 
-- confirmación de la minor estable oficial de PostgreSQL 18 inmediatamente antes de descargar;
-- verificación y presentación de URL, publicador, firma digital y SHA-256 del instalador exacto;
 - autorización humana expresa para ejecutar ese instalador después de presentar la evidencia;
 - aprobación operativa final de política de logs y memoria inicial;
 - selección privada de contraseñas y aceptación del UAC por el usuario;
 - zona horaria real de Odoo y sistema de fechas 1900/1904 del Excel;
 - versiones futuras de FastAPI, SQLAlchemy, Alembic y driver compatibles con Python 3.14.
 
-El siguiente paso autorizado es revisar este documento y completar las aprobaciones. Instalar,
-crear roles/base o ejecutar SQL exige una solicitud posterior y expresa.
+El siguiente paso autorizado es revisar la evidencia de
+[`POSTGRESQL_INSTALLER_VERIFICATION.md`](POSTGRESQL_INSTALLER_VERIFICATION.md) y solicitar
+autorización humana expresa para ejecutar ese archivo exacto. Instalar, crear roles/base o ejecutar
+SQL exige una solicitud posterior y expresa.

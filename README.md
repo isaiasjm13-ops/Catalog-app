@@ -18,7 +18,7 @@
 - Adobe InDesign 2026 (para exportación) (verificado ✓)
 
 ### Requisitos (Fase posterior)
-- PostgreSQL 18 x64; usar la minor estable vigente confirmada en PostgreSQL.org justo antes de descargar
+- PostgreSQL 18 x64; el instalador 18.6 fue verificado, pero el servidor continúa sin instalar
 - pgAdmin opcional y aplazado hasta después de validar el servidor
 
 ## Arquitectura Inicial
@@ -98,9 +98,12 @@ estable del 2026-08-13; winget queda solo como contraste y nunca como prueba ofi
 búsquedas insensibles a mayúsculas/acentos se resolverán separadamente sin alterar la identidad
 exacta de las referencias internas.
 
-PostgreSQL y pgAdmin siguen sin instalar; no se creó ninguna base, rol o servicio y no se ejecutó
-SQL. Antes de instalar es obligatorio reconfirmar la minor oficial, obtener el instalador oficial,
-validar firma y SHA-256, presentar la evidencia y recibir autorización humana expresa.
+El instalador PostgreSQL 18.6 x64 se descargó fuera del repositorio y se verificó por SHA-256,
+firma Authenticode y Microsoft Defender. La evidencia está en
+[docs/POSTGRESQL_INSTALLER_VERIFICATION.md](docs/POSTGRESQL_INSTALLER_VERIFICATION.md).
+El archivo no fue ejecutado: PostgreSQL y pgAdmin siguen sin instalar, no se creó ninguna base,
+rol, servicio o directorio operativo y no se ejecutó SQL. La siguiente compuerta es la autorización
+humana expresa y separada para ejecutar el archivo exacto verificado.
 
 ## Documentación
 
@@ -112,7 +115,8 @@ validar firma y SHA-256, presentar la evidencia y recibir autorización humana e
 - **[docs/IMPORTER_DESIGN.md](docs/IMPORTER_DESIGN.md)** - Diseño aprobado del importador, todavía sin código
 - **[docs/MIGRATION_STRATEGY.md](docs/MIGRATION_STRATEGY.md)** - Estrategia documental de migraciones
 - **[docs/DDL_REVIEW.md](docs/DDL_REVIEW.md)** - Revisión estática y correcciones del DDL v0.2
-- **[docs/POSTGRESQL_INSTALL_PLAN.md](docs/POSTGRESQL_INSTALL_PLAN.md)** - Plan local validado; compuerta de instalador pendiente
+- **[docs/POSTGRESQL_INSTALL_PLAN.md](docs/POSTGRESQL_INSTALL_PLAN.md)** - Plan local validado; autorización de ejecución pendiente
+- **[docs/POSTGRESQL_INSTALLER_VERIFICATION.md](docs/POSTGRESQL_INSTALLER_VERIFICATION.md)** - Evidencia del instalador PostgreSQL 18.6 verificado y no ejecutado
 - **[db/migrations/0001_initial_schema.sql](db/migrations/0001_initial_schema.sql)** - DDL v0.2 no ejecutado
 - **[docs/ODOO_PROFILER.md](docs/ODOO_PROFILER.md)** - Uso y pruebas del perfilador de Odoo
 - **[README.md](README.md)** - Este archivo
@@ -169,8 +173,8 @@ git branch -a
 
 | Componente | Estado |
 |-----------|--------|
-| Documentación | ✓ Arquitectura, segunda revisión del DDL y plan de instalación local documentados |
-| Base de Datos | DDL v0.2 de 24 tablas aprobado manualmente y probado estáticamente; PostgreSQL no instalado, SQL no ejecutado y sin tablas reales |
+| Documentación | ✓ Arquitectura, segunda revisión del DDL y verificación del instalador documentadas |
+| Base de Datos | Instalador PostgreSQL 18.6 verificado y no ejecutado; DDL v0.2 aprobado estáticamente, SQL no ejecutado y sin tablas reales |
 | Importador | Flujo, staging versionado y plan aprobado documentalmente; no implementado |
 | Backend | FastAPI definido; implementación pendiente |
 | Frontend | Jinja2 + HTML + CSS + JavaScript definidos; implementación pendiente |
@@ -186,6 +190,6 @@ git branch -a
 
 **Última actualización**: 2026-08-17
 
-**Responsable sesión**: Diagnóstico y preparación documental de PostgreSQL local
+**Responsable sesión**: Descarga y verificación controlada del instalador PostgreSQL 18.6 x64
 
-**Siguiente revisión**: Revisar y aprobar `docs/POSTGRESQL_INSTALL_PLAN.md` antes de instalar
+**Siguiente revisión**: Revisar `docs/POSTGRESQL_INSTALLER_VERIFICATION.md` y autorizar expresamente, si corresponde, la ejecución del instalador exacto

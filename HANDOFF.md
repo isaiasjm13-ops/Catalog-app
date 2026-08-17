@@ -1,6 +1,6 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
-## Sesión Actual: Corrección de Versión y Locale de PostgreSQL (2026-08-17)
+## Sesión Actual: Verificación del Instalador de PostgreSQL 18.6 (2026-08-17)
 
 ### Estado de Cumplimiento ✓
 
@@ -22,6 +22,8 @@
 - ✓ Diagnóstico previo a la instalación de PostgreSQL realizado sin modificar el equipo
 - ✓ Plan de instalación corregido con compuerta de versión oficial, firma, hash y autorización
 - ✓ UTF8 + ICU `es-PA` + collation determinista aprobados para la base futura
+- ✓ Instalador PostgreSQL 18.6 x64 descargado fuera del repositorio y verificado sin ejecutarlo
+- ✓ SHA-256, firma Authenticode y Microsoft Defender validados; autorización de ejecución pendiente
 
 ### Completado en Esta Sesión
 
@@ -94,8 +96,12 @@
    - Los checksums de datos permanecerán habilitados y `Spanish_Panama.1252` no será la collation definitiva
    - Puerto, localhost, SCRAM, rutas, servicio, roles y aplazamiento de pgAdmin continúan aprobados como propuestas futuras
    - La compuerta exige verificar minor oficial, obtener el instalador oficial, validar firma/SHA-256, presentar evidencia y recibir autorización humana
-   - PostgreSQL y pgAdmin no fueron instalados; no se crearon servicios, roles, bases ni carpetas operativas
-   - No se ejecutó SQL; el siguiente paso es completar la compuerta en una tarea futura
+   - El instalador `postgresql-18.6-1-windows-x64.exe` se descargó fuera del repositorio desde EDB
+   - SHA-256 local: `cae561e98d09f3f4a1a95759249240f86f66d71dcf33d14b6f7be894078401d1`, coincidencia exacta
+   - Firma Authenticode válida de EnterpriseDB Corporation y escaneo Microsoft Defender sin detecciones
+   - La evidencia completa está en `docs/POSTGRESQL_INSTALLER_VERIFICATION.md`
+   - El archivo no fue ejecutado; PostgreSQL y pgAdmin no fueron instalados y no se crearon servicios, roles, bases ni carpetas operativas
+   - No se ejecutó SQL; el siguiente paso es obtener autorización humana expresa para ejecutar el archivo exacto verificado
 
 ### Próximos Pasos (Orden de Prioridad)
 
@@ -126,8 +132,9 @@
 - [x] Completar y aprobar la segunda revisión manual de `docs/DDL_REVIEW.md` y del DDL v0.2 corregido
 - [x] Diagnosticar el equipo y preparar `docs/POSTGRESQL_INSTALL_PLAN.md`
 - [x] Corregir y validar documentalmente versión, ICU/collation y compuerta de instalación
-- [ ] Reconfirmar minor estable oficial, firma y SHA-256 del instalador en una tarea futura
-- [ ] Presentar la evidencia y obtener autorización humana expresa para instalar
+- [x] Reconfirmar minor estable oficial, firma y SHA-256 del instalador exacto
+- [x] Documentar y presentar la evidencia del artefacto verificado
+- [ ] Obtener autorización humana expresa para ejecutar el instalador exacto
 - [ ] Instalar PostgreSQL local únicamente después de esa aprobación
 - [ ] Ejecutar y validar el DDL en una base vacía de prueba
 
@@ -189,7 +196,7 @@
 
 - ❌ Instalar PostgreSQL antes de completar la compuerta de `docs/POSTGRESQL_INSTALL_PLAN.md`
 - ❌ Usar winget como única prueba de que una minor fue publicada oficialmente
-- ❌ Ejecutar un instalador antes de presentar versión, URL, publicador, firma y SHA-256
+- ❌ Ejecutar el instalador verificado sin una autorización humana expresa y separada
 - ❌ Instalar pgAdmin
 - ❌ Crear .venv
 - ❌ pip install de librerías
@@ -248,8 +255,8 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 ### Última Actualización
 
 - **Fecha**: 2026-08-17
-- **Sesión**: Corrección documental de versión, ICU/collation y compuerta previa a PostgreSQL
-- **Próxima Revisión**: Reconfirmar minor oficial, validar instalador y solicitar autorización humana
+- **Sesión**: Descarga y verificación controlada del instalador PostgreSQL 18.6 x64
+- **Próxima Revisión**: Revisar la evidencia y solicitar autorización humana expresa para ejecutar el instalador exacto
 
 ---
 
