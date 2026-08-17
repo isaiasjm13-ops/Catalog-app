@@ -1,6 +1,6 @@
 # Revisión del DDL PostgreSQL v0.2
 
-> **DDL v0.2 corregido — pendiente de segunda revisión manual y ejecución real en PostgreSQL**
+> **DDL v0.2 aprobado después de la segunda revisión manual — pendiente de ejecución real en PostgreSQL**
 
 Archivo revisado: `db/migrations/0001_initial_schema.sql`
 
@@ -145,6 +145,26 @@ ofrece una FK polimórfica real. Crear una FK falsa o incompleta daría una gara
 aplicación debe validar `entity_type + entity_id`; las FKs concretas de batch, plan y staging sí
 están implementadas.
 
+### Seguimiento para la capa de aplicación
+
+La segunda revisión manual aprueba el DDL v0.2 sin trasladar al motor garantías que requieren
+contexto, identidad o una secuencia histórica. El importador y los servicios deberán garantizar:
+
+- transiciones válidas de estados;
+- autorización y separación de funciones;
+- valores permitidos para decisiones humanas;
+- coherencia temporal de `decided_at`;
+- que un plan sucesor pertenezca al mismo contexto empresarial;
+- candidatos vehiculares parciales que no puedan resolverse solamente mediante FKs;
+- coincidencia entre el origen declarado del producto y su evidencia de creación;
+- cálculo y verificación de hashes;
+- JSON canónico;
+- inmutabilidad mediante permisos y servicios;
+- ciclos de categorías de más de un nivel.
+
+Estas observaciones no bloquean la validación sintáctica del DDL, pero deben conservarse para la
+implementación.
+
 ## 7. Riesgos y limitaciones
 
 - El DDL aún no ha sido interpretado por un servidor PostgreSQL real.
@@ -163,7 +183,7 @@ están implementadas.
 ## 8. Checklist manual previo a cualquier ejecución
 
 - [ ] Confirmar PostgreSQL 16 o superior.
-- [ ] Verificar hash y revisión aprobada de la migración.
+- [x] Verificar hash y segunda revisión manual aprobada de la migración.
 - [ ] Confirmar que la base de destino esté vacía y sea la correcta.
 - [ ] Confirmar respaldo y restauración cuando aplique.
 - [ ] Revisar las 24 tablas y que no exista ninguna adicional.

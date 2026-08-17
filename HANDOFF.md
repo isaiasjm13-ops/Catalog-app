@@ -1,6 +1,6 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
-## Sesión Actual: Correcciones de Integridad del DDL PostgreSQL v0.2 (2026-08-17)
+## Sesión Actual: Preparación Documental de PostgreSQL Local (2026-08-17)
 
 ### Estado de Cumplimiento ✓
 
@@ -16,15 +16,18 @@
 - ✓ Arquitectura de datos e importador v0.1 aprobada documentalmente
 - ✓ Staging inmutable y resultados versionados separados
 - ✓ Plan exacto de importación diseñado como persistente y sujeto a aprobación explícita
-- ✓ DDL PostgreSQL v0.2 corregido de 24 tablas, no ejecutado y pendiente de segunda revisión manual
+- ✓ DDL PostgreSQL v0.2 de 24 tablas aprobado después de la segunda revisión manual y no ejecutado
 - ✓ Estrategia forward-only de migraciones documentada
 - ✓ Revisión y pruebas estáticas del contrato SQL documentadas
+- ✓ Diagnóstico previo a la instalación de PostgreSQL realizado sin modificar el equipo
+- ✓ Plan exacto de instalación local y recuperación preparado, pendiente de aprobación
 
 ### Completado en Esta Sesión
 
 1. **Diagnóstico de Entorno**
    - Windows 11 Pro (Build 26200) - 64 bits
-   - 237.41 GB libres en C:\
+   - 239.72 GiB libres en C:\ durante el diagnóstico actual
+   - Intel Core Ultra 7 265, 20 procesadores lógicos y 31.43 GiB de RAM
    - VS Code 1.133.0
    - Git 2.54.0
    - Python 3.14.5 disponible
@@ -53,7 +56,7 @@
    - Contenido validado: 893 productos, 13 columnas, 893 referencias internas únicas y 0 filas duplicadas
    - `docs/DATA_SPEC.md` se basa ahora en esta evidencia real de Odoo
    - PostgreSQL, FastAPI y Jinja2 + HTML + CSS + JavaScript continúan siendo la arquitectura oficial
-   - PostgreSQL no debe instalarse ni implementarse todavía; el schema y el importador definitivo siguen pendientes
+   - PostgreSQL no debe instalarse hasta aprobar el plan; la validación real del schema y el importador definitivo siguen pendientes
    - La exportación no contiene el booleano `Activo`; `Estado de la actividad` está vacío en las 893 filas y no equivale a ese campo
 
 5. **Arquitectura de Datos v0.1 Aprobada Documentalmente**
@@ -69,7 +72,7 @@
    - `db/migrations/0001_initial_schema.sql` contiene las 24 tablas bajo `perfect_catalog`
    - El DDL comienza con `BEGIN`, termina con `COMMIT` y no ha sido ejecutado
    - `docs/MIGRATION_STRATEGY.md` define migraciones forward-only y futura adopción de Alembic
-   - `docs/DDL_REVIEW.md` documenta la primera revisión, sus correcciones, conteos, índices y límites
+   - `docs/DDL_REVIEW.md` documenta las dos revisiones manuales, sus correcciones, conteos, índices y límites
    - Conteo estático v0.2: 24 tablas, 57 FKs, 171 checks, 21 unique constraints y 80 índices explícitos
    - IDs opcionales no aceptan blanco; variantes y referencias conservan contexto de origen/marca
    - Plan, archivo, fila, item y snapshots están ligados mediante FKs compuestas verificables
@@ -77,6 +80,15 @@
    - Estados revisados/resueltos exigen actor y fecha; `product_media.is_primary` ya no es nullable
    - `tests/test_schema_contract.py` valida semánticamente estas garantías sin conectarse a PostgreSQL
    - PostgreSQL y pgAdmin siguen sin instalar; ninguna tabla real existe todavía
+
+7. **Preparación de PostgreSQL Local**
+   - La segunda revisión manual del DDL v0.2 quedó aprobada
+   - El equipo fue diagnosticado mediante comprobaciones de solo lectura
+   - No se encontraron binarios, servicios, procesos, rutas, registro, PATH ni puertos PostgreSQL activos
+   - Los puertos 5432 y 5433 estaban libres durante el diagnóstico
+   - `docs/POSTGRESQL_INSTALL_PLAN.md` propone PostgreSQL 18.6 x64, fuente oficial, rutas externas a Git, configuración, roles y recuperación
+   - PostgreSQL y pgAdmin no fueron instalados; no se crearon servicios, roles, bases ni carpetas operativas
+   - No se ejecutó SQL; el siguiente paso es revisar y aprobar expresamente el plan
 
 ### Próximos Pasos (Orden de Prioridad)
 
@@ -104,8 +116,10 @@
 - [x] Definir las 24 tablas aprobadas
 - [x] Documentar relaciones, constraints e índices
 - [x] Crear pruebas estáticas del contrato SQL
-- [ ] Completar la segunda revisión manual de `docs/DDL_REVIEW.md` y del DDL v0.2 corregido
-- [ ] Preparar PostgreSQL local después de aprobar el DDL
+- [x] Completar y aprobar la segunda revisión manual de `docs/DDL_REVIEW.md` y del DDL v0.2 corregido
+- [x] Diagnosticar el equipo y preparar `docs/POSTGRESQL_INSTALL_PLAN.md`
+- [ ] Revisar y aprobar expresamente el plan de instalación local
+- [ ] Instalar PostgreSQL local únicamente después de esa aprobación
 - [ ] Ejecutar y validar el DDL en una base vacía de prueba
 
 **Responsable**: Coordinador + Ingeniero Backend  
@@ -164,14 +178,14 @@
 
 ### NO Hacer Todavía
 
-- ❌ Instalar PostgreSQL (primero completar la revisión manual del DDL)
+- ❌ Instalar PostgreSQL antes de revisar y aprobar `docs/POSTGRESQL_INSTALL_PLAN.md`
 - ❌ Instalar pgAdmin
 - ❌ Crear .venv
 - ❌ pip install de librerías
 - ❌ Programar FastAPI
-- ❌ Programar importador definitivo (primero revisar y validar el DDL)
+- ❌ Programar importador definitivo (primero validar el DDL en PostgreSQL real)
 - ❌ Tocar fotografías originales
-- ❌ Ejecutar el DDL o crear tablas reales antes de aprobar su revisión
+- ❌ Ejecutar el DDL o crear tablas reales sin una autorización posterior y específica
 - ❌ Instalar o configurar Alembic todavía
 
 ### Decisiones de Arquitectura Cerradas
@@ -222,8 +236,8 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 ### Última Actualización
 
 - **Fecha**: 2026-08-17
-- **Sesión**: Corrección de vacíos de integridad del DDL PostgreSQL v0.2 y pruebas semánticas
-- **Próxima Revisión**: Segunda revisión manual del DDL antes de preparar PostgreSQL local
+- **Sesión**: Diagnóstico y preparación documental de PostgreSQL local, sin instalación ni SQL
+- **Próxima Revisión**: Revisar y aprobar `docs/POSTGRESQL_INSTALL_PLAN.md` antes de instalar
 
 ---
 

@@ -18,8 +18,8 @@
 - Adobe InDesign 2026 (para exportación) (verificado ✓)
 
 ### Requisitos (Fase posterior)
-- PostgreSQL 16+
-- pgAdmin (opcional)
+- PostgreSQL 18.6 x64 propuesto (el DDL requiere 16+)
+- pgAdmin opcional y aplazado hasta después de validar el servidor
 
 ## Arquitectura Inicial
 
@@ -65,9 +65,9 @@ real. El Excel fuente y los reportes generados permanecen locales e ignorados po
 
 PostgreSQL, FastAPI y Jinja2 + HTML + CSS + JavaScript continúan siendo la arquitectura oficial.
 La arquitectura de datos v0.1 está aprobada y cuenta con un DDL v0.2 corregido, transaccional y
-revisable, y una estrategia documental de migraciones. El SQL no se ha ejecutado: PostgreSQL continúa sin instalar,
-no existe ninguna tabla real y el importador tampoco está implementado. El siguiente paso es
-realizar una segunda revisión manual del DDL y después preparar el entorno PostgreSQL local.
+aprobado después de la segunda revisión manual, y una estrategia documental de migraciones. El SQL
+no se ha ejecutado: PostgreSQL continúa sin instalar, no existe ninguna tabla real y el importador
+tampoco está implementado.
 
 ## Arquitectura de Datos v0.1
 
@@ -76,13 +76,23 @@ realizar una segunda revisión manual del DDL y después preparar el entorno Pos
 - [docs/IMPORTER_DESIGN.md](docs/IMPORTER_DESIGN.md): flujo v0.1 aprobado documentalmente del
   importador, plan persistido, revisión/aprobación previa y mapeo de las 13 columnas reales.
 - [db/migrations/0001_initial_schema.sql](db/migrations/0001_initial_schema.sql): DDL v0.2 corregido
-  de las 24 tablas bajo `perfect_catalog`; pendiente de segunda revisión manual y no ejecutado.
+  de las 24 tablas bajo `perfect_catalog`; segunda revisión manual aprobada y no ejecutado.
 - [docs/MIGRATION_STRATEGY.md](docs/MIGRATION_STRATEGY.md): política forward-only, revisión,
   backfills, expand/migrate/contract y futura adopción de Alembic.
 - [docs/DDL_REVIEW.md](docs/DDL_REVIEW.md): matriz de tablas, conteos, límites y checklist previo.
 
 El DDL tiene pruebas estáticas con la biblioteca estándar. Estas pruebas no autorizan instalar
 PostgreSQL ni sustituyen una ejecución futura en una base vacía de prueba.
+
+## Preparación de PostgreSQL local
+
+El diagnóstico previo a la instalación fue realizado sin modificar el equipo. No se encontraron
+binarios, servicios, procesos, rutas, claves de registro ni puertos PostgreSQL activos. Se preparó
+[docs/POSTGRESQL_INSTALL_PLAN.md](docs/POSTGRESQL_INSTALL_PLAN.md) con la versión, fuente, rutas,
+configuración, roles, recuperación y checklist propuestos.
+
+PostgreSQL y pgAdmin siguen sin instalar; no se creó ninguna base, rol o servicio y no se ejecutó
+SQL. El siguiente paso es revisar y aprobar expresamente el plan antes de cualquier instalación.
 
 ## Documentación
 
@@ -94,6 +104,7 @@ PostgreSQL ni sustituyen una ejecución futura en una base vacía de prueba.
 - **[docs/IMPORTER_DESIGN.md](docs/IMPORTER_DESIGN.md)** - Diseño aprobado del importador, todavía sin código
 - **[docs/MIGRATION_STRATEGY.md](docs/MIGRATION_STRATEGY.md)** - Estrategia documental de migraciones
 - **[docs/DDL_REVIEW.md](docs/DDL_REVIEW.md)** - Revisión estática y correcciones del DDL v0.2
+- **[docs/POSTGRESQL_INSTALL_PLAN.md](docs/POSTGRESQL_INSTALL_PLAN.md)** - Diagnóstico y plan local pendiente de aprobación
 - **[db/migrations/0001_initial_schema.sql](db/migrations/0001_initial_schema.sql)** - DDL v0.2 no ejecutado
 - **[docs/ODOO_PROFILER.md](docs/ODOO_PROFILER.md)** - Uso y pruebas del perfilador de Odoo
 - **[README.md](README.md)** - Este archivo
@@ -150,8 +161,8 @@ git branch -a
 
 | Componente | Estado |
 |-----------|--------|
-| Documentación | ✓ Arquitectura, estrategia y correcciones de integridad del DDL v0.2 documentadas |
-| Base de Datos | DDL v0.2 de 24 tablas probado estáticamente; pendiente de segunda revisión, no ejecutado y sin tablas reales |
+| Documentación | ✓ Arquitectura, segunda revisión del DDL y plan de instalación local documentados |
+| Base de Datos | DDL v0.2 de 24 tablas aprobado manualmente y probado estáticamente; PostgreSQL no instalado, SQL no ejecutado y sin tablas reales |
 | Importador | Flujo, staging versionado y plan aprobado documentalmente; no implementado |
 | Backend | FastAPI definido; implementación pendiente |
 | Frontend | Jinja2 + HTML + CSS + JavaScript definidos; implementación pendiente |
@@ -165,6 +176,8 @@ git branch -a
 
 ---
 
-**Última actualización**: 2026-08-17  
-**Responsable sesión**: Corrección de integridad del DDL PostgreSQL v0.2 y contrato SQL estático
-**Siguiente revisión**: Segunda revisión manual del DDL antes de preparar PostgreSQL local
+**Última actualización**: 2026-08-17
+
+**Responsable sesión**: Diagnóstico y preparación documental de PostgreSQL local
+
+**Siguiente revisión**: Revisar y aprobar `docs/POSTGRESQL_INSTALL_PLAN.md` antes de instalar
