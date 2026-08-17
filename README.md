@@ -17,9 +17,9 @@
 - Python 3.14.5+ (verificado ✓)
 - Adobe InDesign 2026 (para exportación) (verificado ✓)
 
-### Requisitos (Fase posterior)
-- PostgreSQL 18 x64; el instalador 18.6 fue verificado, pero el servidor continúa sin instalar
-- pgAdmin opcional y aplazado hasta después de validar el servidor
+### Requisitos instalados y pendientes
+- PostgreSQL 18.6 x64 instalado pero contenido: servicio detenido, inicio manual y remediación pendiente
+- pgAdmin no instalado y aplazado
 
 ## Arquitectura Inicial
 
@@ -66,8 +66,8 @@ real. El Excel fuente y los reportes generados permanecen locales e ignorados po
 PostgreSQL, FastAPI y Jinja2 + HTML + CSS + JavaScript continúan siendo la arquitectura oficial.
 La arquitectura de datos v0.1 está aprobada y cuenta con un DDL v0.2 corregido, transaccional y
 aprobado después de la segunda revisión manual, y una estrategia documental de migraciones. El SQL
-no se ha ejecutado: PostgreSQL continúa sin instalar, no existe ninguna tabla real y el importador
-tampoco está implementado.
+no se ha ejecutado: PostgreSQL está instalado con desviaciones pendientes, no existe ninguna tabla
+del proyecto y el importador tampoco está implementado.
 
 ## Arquitectura de Datos v0.1
 
@@ -98,12 +98,17 @@ estable del 2026-08-13; winget queda solo como contraste y nunca como prueba ofi
 búsquedas insensibles a mayúsculas/acentos se resolverán separadamente sin alterar la identidad
 exacta de las referencias internas.
 
-El instalador PostgreSQL 18.6 x64 se descargó fuera del repositorio y se verificó por SHA-256,
-firma Authenticode y Microsoft Defender. La evidencia está en
-[docs/POSTGRESQL_INSTALLER_VERIFICATION.md](docs/POSTGRESQL_INSTALLER_VERIFICATION.md).
-El archivo no fue ejecutado: PostgreSQL y pgAdmin siguen sin instalar, no se creó ninguna base,
-rol, servicio o directorio operativo y no se ejecutó SQL. La siguiente compuerta es la autorización
-humana expresa y separada para ejecutar el archivo exacto verificado.
+El instalador PostgreSQL 18.6 x64 se verificó y después se ejecutó interactivamente con
+autorización humana expresa. La instalación presentó desviaciones: datos bajo `Program Files`,
+escucha en interfaces no-loopback, Stack Builder presente/abierto y parámetros regionales de
+España pese al locale Panamá reportado. El servicio exacto se detuvo ordenadamente y quedó con
+inicio manual, sin procesos, listeners ni respuesta de `pg_isready`.
+
+Consulte [docs/POSTGRESQL_INSTALLATION_RESULT.md](docs/POSTGRESQL_INSTALLATION_RESULT.md) y
+[docs/POSTGRESQL_REMEDIATION_PLAN.md](docs/POSTGRESQL_REMEDIATION_PLAN.md).
+
+No se creó ninguna base o rol de aplicación y no se ejecutó SQL. La siguiente compuerta requiere
+autorización humana expresa para desinstalar; no se eliminó ni movió ningún archivo.
 
 ## Documentación
 
@@ -115,8 +120,10 @@ humana expresa y separada para ejecutar el archivo exacto verificado.
 - **[docs/IMPORTER_DESIGN.md](docs/IMPORTER_DESIGN.md)** - Diseño aprobado del importador, todavía sin código
 - **[docs/MIGRATION_STRATEGY.md](docs/MIGRATION_STRATEGY.md)** - Estrategia documental de migraciones
 - **[docs/DDL_REVIEW.md](docs/DDL_REVIEW.md)** - Revisión estática y correcciones del DDL v0.2
-- **[docs/POSTGRESQL_INSTALL_PLAN.md](docs/POSTGRESQL_INSTALL_PLAN.md)** - Plan local validado; autorización de ejecución pendiente
+- **[docs/POSTGRESQL_INSTALL_PLAN.md](docs/POSTGRESQL_INSTALL_PLAN.md)** - Plan local, resultado real y correcciones pendientes
 - **[docs/POSTGRESQL_INSTALLER_VERIFICATION.md](docs/POSTGRESQL_INSTALLER_VERIFICATION.md)** - Evidencia del instalador PostgreSQL 18.6 verificado y no ejecutado
+- **[docs/POSTGRESQL_INSTALLATION_RESULT.md](docs/POSTGRESQL_INSTALLATION_RESULT.md)** - Resultado instalado, validaciones y desviaciones bloqueantes
+- **[docs/POSTGRESQL_REMEDIATION_PLAN.md](docs/POSTGRESQL_REMEDIATION_PLAN.md)** - Contención aplicada y procedimiento de desinstalación/reinstalación no ejecutado
 - **[db/migrations/0001_initial_schema.sql](db/migrations/0001_initial_schema.sql)** - DDL v0.2 no ejecutado
 - **[docs/ODOO_PROFILER.md](docs/ODOO_PROFILER.md)** - Uso y pruebas del perfilador de Odoo
 - **[README.md](README.md)** - Este archivo
@@ -173,8 +180,8 @@ git branch -a
 
 | Componente | Estado |
 |-----------|--------|
-| Documentación | ✓ Arquitectura, segunda revisión del DDL y verificación del instalador documentadas |
-| Base de Datos | Instalador PostgreSQL 18.6 verificado y no ejecutado; DDL v0.2 aprobado estáticamente, SQL no ejecutado y sin tablas reales |
+| Documentación | ✓ Arquitectura, DDL, verificación e instalación documentadas |
+| Base de Datos | PostgreSQL 18.6 instalado pero detenido/manual; remediación pendiente y sin base, roles, SQL ni tablas del proyecto |
 | Importador | Flujo, staging versionado y plan aprobado documentalmente; no implementado |
 | Backend | FastAPI definido; implementación pendiente |
 | Frontend | Jinja2 + HTML + CSS + JavaScript definidos; implementación pendiente |
@@ -190,6 +197,6 @@ git branch -a
 
 **Última actualización**: 2026-08-17
 
-**Responsable sesión**: Descarga y verificación controlada del instalador PostgreSQL 18.6 x64
+**Responsable sesión**: Instalación interactiva y validación posterior de PostgreSQL 18.6 x64
 
-**Siguiente revisión**: Revisar `docs/POSTGRESQL_INSTALLER_VERIFICATION.md` y autorizar expresamente, si corresponde, la ejecución del instalador exacto
+**Siguiente revisión**: Revisar el plan de remediación y decidir si se autoriza la desinstalación gráfica controlada

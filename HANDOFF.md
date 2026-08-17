@@ -1,6 +1,6 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
-## Sesión Actual: Verificación del Instalador de PostgreSQL 18.6 (2026-08-17)
+## Sesión Actual: Instalación Controlada de PostgreSQL 18.6 (2026-08-17)
 
 ### Estado de Cumplimiento ✓
 
@@ -23,7 +23,11 @@
 - ✓ Plan de instalación corregido con compuerta de versión oficial, firma, hash y autorización
 - ✓ UTF8 + ICU `es-PA` + collation determinista aprobados para la base futura
 - ✓ Instalador PostgreSQL 18.6 x64 descargado fuera del repositorio y verificado sin ejecutarlo
-- ✓ SHA-256, firma Authenticode y Microsoft Defender validados; autorización de ejecución pendiente
+- ✓ SHA-256, firma Authenticode y Microsoft Defender validados antes de la ejecución autorizada
+- ✓ Autorización humana recibida e instalación interactiva completada
+- ⚠ PostgreSQL funciona, pero rutas, escucha, Stack Builder y locale difieren del plan
+- ✓ Desviación contenida: servicio detenido y configurado para inicio manual
+- ✓ Plan de remediación documentado; desinstalación pendiente de autorización
 
 ### Completado en Esta Sesión
 
@@ -69,7 +73,7 @@
    - `import_plan` e `import_plan_item` están diseñados para garantizar que se aplique exactamente lo revisado y aprobado
    - `source_active` es nullable y distinto de `catalog_status`; presencia/ausencia nunca cambia vigencia
    - La arquitectura está aprobada documentalmente pero no implementada
-   - PostgreSQL continúa sin instalar y no existen tablas reales ni importador definitivo
+   - PostgreSQL ya está instalado; no existen tablas del proyecto ni importador definitivo
 
 6. **DDL y Migraciones v0.2**
    - `db/migrations/0001_initial_schema.sql` contiene las 24 tablas bajo `perfect_catalog`
@@ -82,7 +86,7 @@
    - Releases no mezclan marcas y las combinaciones vehiculares estructuradas conservan jerarquía
    - Estados revisados/resueltos exigen actor y fecha; `product_media.is_primary` ya no es nullable
    - `tests/test_schema_contract.py` valida semánticamente estas garantías sin conectarse a PostgreSQL
-   - PostgreSQL y pgAdmin siguen sin instalar; ninguna tabla real existe todavía
+   - PostgreSQL ya está instalado y pgAdmin no; ninguna tabla del proyecto existe todavía
 
 7. **Preparación de PostgreSQL Local**
    - La segunda revisión manual del DDL v0.2 quedó aprobada
@@ -100,8 +104,23 @@
    - SHA-256 local: `cae561e98d09f3f4a1a95759249240f86f66d71dcf33d14b6f7be894078401d1`, coincidencia exacta
    - Firma Authenticode válida de EnterpriseDB Corporation y escaneo Microsoft Defender sin detecciones
    - La evidencia completa está en `docs/POSTGRESQL_INSTALLER_VERIFICATION.md`
-   - El archivo no fue ejecutado; PostgreSQL y pgAdmin no fueron instalados y no se crearon servicios, roles, bases ni carpetas operativas
-   - No se ejecutó SQL; el siguiente paso es obtener autorización humana expresa para ejecutar el archivo exacto verificado
+   - El archivo fue ejecutado posteriormente con autorización humana expresa y PostgreSQL 18.6 quedó instalado
+   - El resultado y sus desviaciones están en `docs/POSTGRESQL_INSTALLATION_RESULT.md`
+   - No se ejecutó SQL; no se crearon la base del proyecto, roles de aplicación ni tablas
+
+8. **Resultado de Instalación PostgreSQL 18.6**
+   - `psql` y `pg_isready` reportan PostgreSQL 18.6
+   - Antes de contener: servicio iniciado/automático y `pg_isready` aceptando conexiones en localhost y LAN
+   - Binarios instalados en `C:\Program Files\PostgreSQL\18`
+   - El cluster quedó en `C:\Program Files\PostgreSQL\18\data`, no en la ruta aprobada
+   - `listen_addresses = '*'`; también responde en `192.168.0.128:5432`
+   - HBA mantiene solo loopback con SCRAM, pero la escucha externa debe corregirse
+   - Usuario reportó locale Panamá; `lc_*` observados muestran `Spanish_Spain.1252`
+   - pgAdmin no está instalado; Stack Builder está presente y fue abierto, sin complementos detectados
+   - PATH no fue modificado y `initdb --help` reconoce proveedor ICU e ICU locale
+   - Contención aplicada solo a `postgresql-x64-18`: estado `Stopped`, inicio `Manual`, PID `0`
+   - No quedan procesos PostgreSQL, listeners en 5432 ni respuesta de `pg_isready`
+   - Desinstalador oficial localizado pero no ejecutado; cluster incorrecto preservado sin mover ni borrar
 
 ### Próximos Pasos (Orden de Prioridad)
 
@@ -134,8 +153,12 @@
 - [x] Corregir y validar documentalmente versión, ICU/collation y compuerta de instalación
 - [x] Reconfirmar minor estable oficial, firma y SHA-256 del instalador exacto
 - [x] Documentar y presentar la evidencia del artefacto verificado
-- [ ] Obtener autorización humana expresa para ejecutar el instalador exacto
-- [ ] Instalar PostgreSQL local únicamente después de esa aprobación
+- [x] Obtener autorización humana expresa para ejecutar el instalador exacto
+- [x] Instalar PostgreSQL 18.6 local de forma interactiva
+- [x] Contener la desviación mediante parada ordenada e inicio manual del servicio exacto
+- [x] Documentar `docs/POSTGRESQL_REMEDIATION_PLAN.md`
+- [ ] Autorizar la desinstalación gráfica controlada en una compuerta separada
+- [ ] Reinstalar y validar red, datos, locale y componentes solo después de autorización
 - [ ] Ejecutar y validar el DDL en una base vacía de prueba
 
 **Responsable**: Coordinador + Ingeniero Backend  
@@ -194,9 +217,11 @@
 
 ### NO Hacer Todavía
 
-- ❌ Instalar PostgreSQL antes de completar la compuerta de `docs/POSTGRESQL_INSTALL_PLAN.md`
+- ❌ Crear roles o `perfect_catalog_dev` antes de corregir las desviaciones de instalación
+- ❌ Desinstalar o reinstalar PostgreSQL sin una autorización humana posterior y expresa
+- ❌ Borrar o mover `C:\Program Files\PostgreSQL\18\data`
 - ❌ Usar winget como única prueba de que una minor fue publicada oficialmente
-- ❌ Ejecutar el instalador verificado sin una autorización humana expresa y separada
+- ❌ Modificar `postgresql.conf`, `pg_hba.conf`, firewall o cluster sin una autorización separada
 - ❌ Instalar pgAdmin
 - ❌ Crear .venv
 - ❌ pip install de librerías
@@ -255,8 +280,8 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 ### Última Actualización
 
 - **Fecha**: 2026-08-17
-- **Sesión**: Descarga y verificación controlada del instalador PostgreSQL 18.6 x64
-- **Próxima Revisión**: Revisar la evidencia y solicitar autorización humana expresa para ejecutar el instalador exacto
+- **Sesión**: Instalación interactiva y validación posterior de PostgreSQL 18.6 x64
+- **Próxima Revisión**: Revisar el plan de remediación y decidir si se autoriza desinstalar PostgreSQL 18.6
 
 ---
 

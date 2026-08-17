@@ -1,16 +1,19 @@
 # Plan de preparación para PostgreSQL local
 
-> **Estado al 2026-08-17:** diagnóstico completado; instalador PostgreSQL 18.6 x64 descargado
-> fuera del repositorio y verificado. PostgreSQL no está instalado, el archivo no fue ejecutado y
-> la siguiente compuerta requiere autorización humana expresa.
+> **Estado al 2026-08-17:** PostgreSQL 18.6 x64 fue instalado interactivamente con desviaciones y
+> luego contenido. El servicio está detenido con inicio manual. Crear roles/base, ejecutar SQL y
+> desinstalar o reinstalar continúan bloqueados hasta autorizaciones posteriores.
 
-Este documento define la instalación local futura de PostgreSQL para Perfect Catalog. La descarga
-y verificación del artefacto exacto quedaron documentadas, pero no autorizan su ejecución,
-instalación, creación de servicios, directorios operativos, roles, bases de datos ni ejecución del
-DDL. Las decisiones marcadas como aprobadas fijan la propuesta futura; la autorización humana para
-ejecutar el instalador continúa pendiente.
+Este documento conserva el plan aprobado para PostgreSQL local. La descarga, verificación y
+ejecución interactiva del artefacto exacto ya ocurrieron. El resultado real está en
+[`POSTGRESQL_INSTALLATION_RESULT.md`](POSTGRESQL_INSTALLATION_RESULT.md) y no autoriza crear roles,
+bases de datos, directorios adicionales ni ejecutar SQL o el DDL. Las desviaciones observadas deben
+resolverse mediante una autorización posterior.
 
 ## 1. Diagnóstico de la estación de trabajo
+
+Esta sección conserva la fotografía previa a la instalación. El estado posterior vigente está en
+`POSTGRESQL_INSTALLATION_RESULT.md`.
 
 ### Windows y hardware
 
@@ -149,6 +152,10 @@ Referencias oficiales: [política de versiones](https://www.postgresql.org/suppo
    componentes y menor superficie de actualización. Si la operación diaria demuestra que la GUI
    aporta valor, se revisará e instalará por separado.
 
+**Resultado observado:** servidor y herramientas de línea de comandos instalados; pgAdmin ausente.
+El ejecutable Stack Builder está presente y fue abierto accidentalmente, aunque se cerró antes de
+confirmar la descarga de complementos. Esta diferencia permanece pendiente de decisión.
+
 ### Red y servicio
 
 | Elemento | Propuesta |
@@ -161,7 +168,16 @@ Referencias oficiales: [política de versiones](https://www.postgresql.org/suppo
 | Servicio esperado | `postgresql-x64-18`; confirmar el nombre real antes de usarlo |
 | Inicio | Automático, condicionado a la validación posterior del servicio |
 
-### Rutas propuestas, todavía inexistentes
+**Resultado previo a la contención:** el servicio estaba activo y automático en 5432, pero
+`listen_addresses = '*'`; Windows mostraba escucha en `0.0.0.0` y `::`, y `pg_isready` respondía en
+la IP no-loopback `192.168.0.128`. `pg_hba.conf` conserva reglas host solo para loopback con SCRAM,
+pero la escucha externa incumple el plan y debe corregirse antes de crear la base.
+
+**Estado vigente:** `postgresql-x64-18` está `Stopped/Manual`, sin procesos PostgreSQL, listeners
+ni respuesta de `pg_isready`. Consulte
+[`POSTGRESQL_REMEDIATION_PLAN.md`](POSTGRESQL_REMEDIATION_PLAN.md).
+
+### Rutas aprobadas y resultado
 
 | Uso | Ruta propuesta |
 |---|---|
@@ -174,6 +190,10 @@ Referencias oficiales: [política de versiones](https://www.postgresql.org/suppo
 `C:\PerfectCatalogData` queda fuera de `C:\PERFECT_CATALOG`, por lo que datos, respaldos, medios
 y logs operativos no estarán dentro del repositorio. Las carpetas solo se crearán después de la
 aprobación, con permisos limitados a la cuenta del servicio y a los administradores necesarios.
+
+**Resultado observado:** el servicio usa `C:\Program Files\PostgreSQL\18\data` y la ruta aprobada
+`C:\PerfectCatalogData\postgresql\18\data` no existe. No mover, borrar ni reinicializar el cluster
+sin una compuerta específica de recuperación.
 
 ## 4. Configuración inicial propuesta
 
@@ -193,6 +213,11 @@ aprobación, con permisos limitados a la cuenta del servicio y a los administrad
   todavía los seriales 1900/1904 del Excel.
 - Los checksums de páginas de datos permanecerán habilitados. PostgreSQL 18 los habilita por
   defecto; no se usará `--no-data-checksums` y se validará posteriormente con `SHOW data_checksums`.
+
+El usuario reportó haber elegido Español de Panamá en el asistente, pero la configuración observada
+contiene `Spanish_Spain.1252` en `lc_messages`, `lc_monetary`, `lc_numeric` y `lc_time`. El locale
+administrativo real debe revisarse en la siguiente compuerta; no sustituye ICU `es-PA` para la base
+futura.
 
 El instalador gráfico podría inicializar el clúster con un locale de Windows. Ese locale del
 clúster no se aceptará como collation definitiva de `perfect_catalog_dev`. Una vez creado el rol
@@ -300,7 +325,11 @@ Reglas obligatorias:
   sintéticos antes de permitir una conexión de aplicación.
 - No se crearán roles ni base hasta completar la compuerta y autorizar expresamente otra tarea.
 
-## 6. Procedimiento futuro de instalación — no ejecutar ahora
+## 6. Procedimiento de instalación y validación
+
+La ejecución interactiva ocurrió el 2026-08-17. Los pasos siguientes se conservan como contrato y
+registro del proceso previsto; las diferencias se detallan en `POSTGRESQL_INSTALLATION_RESULT.md`.
+No repetir ni continuar el procedimiento sin una nueva autorización.
 
 Leyenda: **Usuario** decide o introduce secretos; **Elevación** requiere UAC; **Codex** puede
 automatizar después de autorización; **Verificación** es de solo lectura tras cada acción.
@@ -387,22 +416,32 @@ automatizar después de autorización; **Verificación** es de solo lectura tras
 - [x] Directorio de imágenes aprobado como propuesta futura.
 - [x] UTF8, ICU `es-PA` y collation determinista aprobados para `perfect_catalog_dev`.
 - [x] Checksums de datos habilitados como decisión de instalación.
-- [ ] Política de contraseña comprendida.
+- [x] Política de contraseña comprendida; secreto introducido personalmente y no registrado.
 - [x] Roles futuros aprobados.
 - [x] Base de desarrollo `perfect_catalog_dev` aprobada.
 - [ ] Plan de recuperación revisado.
 - [x] DDL v0.2 y hash confirmados: `8602d170e3345c9694bd498bd9f23162b72bd740e582fa3caa6a2bad3a1d660c`.
-- [ ] Autorización expresa del usuario para instalar.
+- [x] Autorización expresa del usuario para instalar recibida y utilizada el 2026-08-17.
+- [ ] Corregir la escucha externa y revalidar localhost/HBA.
+- [ ] Resolver la desviación del directorio de datos.
+- [ ] Revisar la discrepancia de locale y el ejecutable Stack Builder.
+- [x] Contener `postgresql-x64-18` mediante parada ordenada e inicio manual.
+- [ ] Recibir autorización humana para la desinstalación gráfica controlada.
 
 ## 9. Decisiones que continúan abiertas
 
-- autorización humana expresa para ejecutar ese instalador después de presentar la evidencia;
+- autorización humana para ejecutar el desinstalador oficial de PostgreSQL 18.6;
+- preservación y verificación temporal del cluster incorrecto antes de cualquier eliminación;
+- corrección autorizada de `listen_addresses = '*'` antes de crear la base;
+- decisión sobre el cluster ubicado en `C:\Program Files\PostgreSQL\18\data`;
+- revisión de `Spanish_Spain.1252` frente al locale Panamá reportado;
+- decisión sobre el ejecutable Stack Builder presente;
 - aprobación operativa final de política de logs y memoria inicial;
 - selección privada de contraseñas y aceptación del UAC por el usuario;
 - zona horaria real de Odoo y sistema de fechas 1900/1904 del Excel;
 - versiones futuras de FastAPI, SQLAlchemy, Alembic y driver compatibles con Python 3.14.
 
-El siguiente paso autorizado es revisar la evidencia de
-[`POSTGRESQL_INSTALLER_VERIFICATION.md`](POSTGRESQL_INSTALLER_VERIFICATION.md) y solicitar
-autorización humana expresa para ejecutar ese archivo exacto. Instalar, crear roles/base o ejecutar
-SQL exige una solicitud posterior y expresa.
+El siguiente paso autorizado es revisar
+[`POSTGRESQL_REMEDIATION_PLAN.md`](POSTGRESQL_REMEDIATION_PLAN.md) y decidir si se autoriza la
+desinstalación gráfica controlada. Desinstalar, reinstalar, eliminar/mover el cluster, crear
+roles/base o ejecutar SQL continúa prohibido hasta solicitudes posteriores y expresas.
