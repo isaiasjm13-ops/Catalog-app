@@ -1,6 +1,6 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
-## Sesión Actual: Cuarentena del Cluster Residual de PostgreSQL 18 (2026-08-17)
+## Sesión Actual: Reubicación y Seguridad del Cluster PostgreSQL 18.6 (2026-08-17)
 
 ### Estado de Cumplimiento ✓
 
@@ -31,6 +31,11 @@
 - ✓ Aplicación, servicio, binarios y listeners retirados; cluster residual preservado
 - ✓ Cluster residual movido íntegro a cuarentena con ACL restringida
 - ✓ Logs sensibles exactos eliminados permanentemente; Program Files sin restos PostgreSQL
+- ✓ PostgreSQL 18.6 reinstalado con binarios y herramientas de línea de comandos
+- ✓ Cluster operativo reubicado íntegramente en la ruta aprobada
+- ✓ Servicio registrado con NetworkService, inicio automático y `-D` explícito correcto
+- ✓ Escucha exclusiva en localhost, SCRAM, UTC, checksums e ICU validados
+- ✓ pgAdmin ausente; Stack Builder no registrado, no ejecutándose y sin complementos
 
 ### Completado en Esta Sesión
 
@@ -42,7 +47,7 @@
    - Git 2.54.0
    - Python 3.14.5 disponible
    - Adobe InDesign 2026 presente
-   - PostgreSQL y pgAdmin: NO instalados (fase posterior)
+   - Durante el diagnóstico inicial, PostgreSQL y pgAdmin no estaban instalados
 
 2. **Inicialización de Repositorio**
    - git init ejecutado
@@ -66,7 +71,7 @@
    - Contenido validado: 893 productos, 13 columnas, 893 referencias internas únicas y 0 filas duplicadas
    - `docs/DATA_SPEC.md` se basa ahora en esta evidencia real de Odoo
    - PostgreSQL, FastAPI y Jinja2 + HTML + CSS + JavaScript continúan siendo la arquitectura oficial
-   - PostgreSQL no debe instalarse hasta completar la compuerta y recibir autorización humana; la validación real del schema y el importador definitivo siguen pendientes
+   - PostgreSQL fue instalado posteriormente mediante compuertas autorizadas; la validación real del schema y el importador definitivo siguen pendientes
    - La exportación no contiene el booleano `Activo`; `Estado de la actividad` está vacío en las 893 filas y no equivale a ese campo
 
 5. **Arquitectura de Datos v0.1 Aprobada Documentalmente**
@@ -76,7 +81,7 @@
    - `import_plan` e `import_plan_item` están diseñados para garantizar que se aplique exactamente lo revisado y aprobado
    - `source_active` es nullable y distinto de `catalog_status`; presencia/ausencia nunca cambia vigencia
    - La arquitectura está aprobada documentalmente pero no implementada
-   - PostgreSQL fue desinstalado; no existen tablas del proyecto ni importador definitivo
+   - PostgreSQL está operativo; no existen tablas del proyecto ni importador definitivo
 
 6. **DDL y Migraciones v0.2**
    - `db/migrations/0001_initial_schema.sql` contiene las 24 tablas bajo `perfect_catalog`
@@ -89,7 +94,7 @@
    - Releases no mezclan marcas y las combinaciones vehiculares estructuradas conservan jerarquía
    - Estados revisados/resueltos exigen actor y fecha; `product_media.is_primary` ya no es nullable
    - `tests/test_schema_contract.py` valida semánticamente estas garantías sin conectarse a PostgreSQL
-   - PostgreSQL y pgAdmin no están instalados; ninguna tabla del proyecto existe todavía
+   - PostgreSQL está instalado y pgAdmin permanece ausente; ninguna tabla del proyecto existe todavía
 
 7. **Preparación de PostgreSQL Local**
    - La segunda revisión manual del DDL v0.2 quedó aprobada
@@ -144,7 +149,26 @@
    - ACL verificadas en 1,005 objetos: solo usuario actual, Administradores y SYSTEM
    - `C:\Program Files\PostgreSQL\18` y su padre vacío fueron retirados sin recursión
    - `install-postgresql.log` y `uninstall-postgresql.log` fueron eliminados por ruta literal, sin Papelera
-   - PostgreSQL sigue desinstalado; instalador original intacto y ruta de datos futura inexistente
+   - Al cerrar esa compuerta, PostgreSQL estaba desinstalado, el instalador intacto y la ruta futura inexistente
+
+11. **Segunda Instalación y Corrección Directa**
+   - El instalador exacto volvió a validarse por SHA-256, firma Authenticode y Defender
+   - La segunda instalación creó un cluster nuevo de 974 archivos y 41,713,484 bytes
+   - El servicio volvió a usar inicialmente `C:\Program Files\PostgreSQL\18\data`; se contuvo en `Stopped/Manual`
+   - Se respaldaron `postgresql.conf`, `pg_hba.conf` y `postgresql.auto.conf` fuera del cluster
+   - `pg_ctl.exe unregister` retiró solo el servicio y el cluster se movió directamente a `C:\PerfectCatalogData\postgresql\18\data`
+   - Conteo, tamaño, `PG_VERSION=18` y tres hashes coincidieron antes/después del movimiento
+   - Medición apagada: 974 archivos y 41,713,484 bytes; en ejecución: 977 archivos y 41,787,272 bytes
+   - ACL: NetworkService, SYSTEM y Administradores con control total; sin modificación para grupos estándar generales
+   - `postgresql.conf`: localhost, 5432, UTC, SCRAM, 30 conexiones y memoria conservadora aprobada
+   - HBA: solo SCRAM local y loopback IPv4/IPv6, incluidas reglas equivalentes de replicación
+   - Servicio final `postgresql-x64-18`: `Running/Auto`, NetworkService y `-D` exacto al destino
+   - Listeners solo `127.0.0.1:5432` y `[::1]:5432`; localhost acepta y la IP LAN no responde
+   - PostgreSQL 18.6, checksums versión 1 y soporte ICU confirmados
+   - pgAdmin ausente; `stackbuilder.exe` no registrado, no ejecutándose y sin complementos
+   - Log exacto de la segunda instalación eliminado por ruta literal; cuarentena anterior intacta
+   - `lc_*` administrativo continúa en `Spanish_Spain.1252`; la base futura seguirá usando ICU `es-PA`
+   - No se ejecutó SQL ni se crearon bases, roles, tablas o extensiones del proyecto
 
 ### Próximos Pasos (Orden de Prioridad)
 
@@ -187,7 +211,8 @@
 - [x] Mover el cluster residual íntegro a cuarentena con ACL restringida
 - [x] Retirar carpetas vacías de Program Files sin eliminación recursiva
 - [x] Eliminar exclusivamente los dos logs sensibles autorizados
-- [ ] Reinstalar y validar red, datos, locale y componentes solo después de autorización
+- [x] Reinstalar y validar red, datos, servicio y componentes mediante autorización expresa
+- [x] Reubicar el cluster nuevo y asegurar localhost, SCRAM, UTC, checksums e ICU
 - [ ] Ejecutar y validar el DDL en una base vacía de prueba
 
 **Responsable**: Coordinador + Ingeniero Backend  
@@ -246,8 +271,8 @@
 
 ### NO Hacer Todavía
 
-- ❌ Crear roles o `perfect_catalog_dev` antes de corregir las desviaciones de instalación
-- ❌ Reinstalar PostgreSQL sin una autorización humana posterior y expresa
+- ❌ Crear roles o `perfect_catalog_dev` sin una autorización humana posterior y expresa
+- ❌ Desregistrar, mover, reinstalar o reinicializar el PostgreSQL operativo sin autorización
 - ❌ Borrar o modificar la cuarentena `C:\PerfectCatalogData\quarantine\postgresql-18-incorrect-20260817\data`
 - ❌ Usar winget como única prueba de que una minor fue publicada oficialmente
 - ❌ Modificar `postgresql.conf`, `pg_hba.conf`, firewall o cluster sin una autorización separada
@@ -309,8 +334,8 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 ### Última Actualización
 
 - **Fecha**: 2026-08-17
-- **Sesión**: Cuarentena íntegra del cluster residual y eliminación exacta de logs sensibles
-- **Próxima Revisión**: Reinstalación interactiva con directorio correcto y contraseña nueva
+- **Sesión**: Reubicación íntegra del cluster nuevo y configuración segura de PostgreSQL 18.6
+- **Próxima Revisión**: Autorizar por separado roles y `perfect_catalog_dev` con UTF8 + ICU `es-PA`
 
 ---
 

@@ -1,8 +1,8 @@
 # Plan de remediación de la instalación PostgreSQL 18.6
 
-> **Estado al 2026-08-17:** la aplicación desviada fue desinstalada y su cluster residual se movió
-> íntegro a una cuarentena con ACL restringida. Los dos logs sensibles identificados fueron
-> eliminados. La cuarentena no puede borrarse; reinstalar requiere una compuerta posterior.
+> **Estado al 2026-08-17:** PostgreSQL 18.6 está instalado y operativo con el cluster nuevo en la
+> ruta aprobada, servicio explícito, escucha exclusiva en localhost y configuración local segura.
+> La cuarentena de la primera instalación permanece intacta y no puede borrarse.
 
 ## 1. Alcance y evidencia previa
 
@@ -116,34 +116,34 @@ borrará hasta que una comprobación futura autorizada confirme esa ausencia.
    `C:\Program Files\PostgreSQL\18\data` si el desinstalador lo conserva.
 6. **Completado parcialmente:** mover el cluster íntegro a cuarentena sin inspeccionar su contenido.
    Su eliminación permanece pendiente hasta validar una nueva instalación y recibir otra autorización.
-7. **Pendiente:** revalidar el mismo instalador PostgreSQL 18.6 por SHA-256 y Authenticode antes de reinstalar.
-8. **Pendiente:** reinstalar interactivamente y seleccionar exclusivamente PostgreSQL Server y Command Line
-   Tools; desmarcar pgAdmin y Stack Builder y no iniciar complementos al finalizar.
-9. **Pendiente:** usar binarios en `C:\Program Files\PostgreSQL\18` y datos en
-   `C:\PerfectCatalogData\postgresql\18\data`.
-10. **Pendiente:** antes de crear bases, validar servicio, cuenta, ruta `-D`, inicio, puerto y locale. Exigir
-    escucha exclusiva en `127.0.0.1` y `::1`; si el instalador vuelve a usar `*`, detener el servicio
-    y abrir una compuerta específica para corregir `listen_addresses`.
-11. **Pendiente:** verificar HBA local con SCRAM, ausencia de respuesta LAN, PATH sin cambios y opciones ICU.
+7. **Completado:** revalidar el mismo instalador PostgreSQL 18.6 por SHA-256, Authenticode y Defender.
+8. **Completado:** reinstalar interactivamente PostgreSQL Server y Command Line Tools, sin pgAdmin ni
+   ejecución de Stack Builder. El ejecutable del paquete permanece, sin registro o complementos.
+9. **Completado con corrección directa:** conservar binarios en `C:\Program Files\PostgreSQL\18` y
+   reubicar íntegramente el cluster nuevo en `C:\PerfectCatalogData\postgresql\18\data`.
+10. **Completado:** validar servicio, cuenta, ruta `-D`, inicio, puerto y escucha exclusiva en
+    `127.0.0.1` y `::1`; la ruta antigua y los listeners comodín ya no existen.
+11. **Completado:** verificar HBA local con SCRAM, ausencia de respuesta LAN, checksums y opciones ICU.
 12. **Pendiente:** solo después de una validación conforme, solicitar autorización independiente para crear roles
     y `perfect_catalog_dev` desde `template0` con UTF8, proveedor ICU y locale `es-PA`.
 
 ## 7. Protecciones vigentes y siguiente compuerta
 
-- PostgreSQL 18.6 ya no aparece instalado; servicio, binarios y listeners fueron retirados.
+- PostgreSQL 18.6 está instalado; `postgresql-x64-18` está `Running/Auto` con NetworkService.
+- El cluster operativo está en `C:\PerfectCatalogData\postgresql\18\data` y el servicio contiene
+  exactamente esa ruta en `-D`.
+- La escucha está limitada a `127.0.0.1:5432` y `[::1]:5432`; localhost acepta y la IP LAN no responde.
 - El cluster residual permanece intacto en
   `C:\PerfectCatalogData\quarantine\postgresql-18-incorrect-20260817\data`.
-- Las carpetas vacías `C:\Program Files\PostgreSQL\18` y `C:\Program Files\PostgreSQL` fueron
-  retiradas sin eliminación recursiva.
-- No se reinstaló ni se eliminó el cluster.
-- No se modificó contenido del cluster.
-- No se ejecutó SQL, DDL ni Stack Builder; el desinstalador se inició solamente desde la entrada
-  registrada de Windows y ya fue retirado.
-- No se solicitaron ni usaron contraseñas.
+- Inmediatamente después del movimiento y antes de iniciar, el cluster conservó 974 archivos y
+  41,713,484 bytes; en ejecución muestra 977 archivos y 41,787,272 bytes por archivos operativos.
+- La configuración usa localhost, UTC, SCRAM y los límites conservadores aprobados.
+- No se ejecutó SQL, DDL ni Stack Builder y no se solicitaron ni usaron contraseñas.
 - El Excel maestro y el DDL no fueron modificados.
 
-La siguiente compuerta pendiente es la **reinstalación interactiva con el directorio de datos
-correcto y una contraseña nueva**. La cuarentena deberá conservarse hasta validar esa instalación.
+La siguiente compuerta pendiente es una autorización independiente para crear roles y
+`perfect_catalog_dev` desde `template0` con UTF8, ICU `es-PA` y collation determinista. La
+cuarentena deberá conservarse y el DDL no puede ejecutarse todavía.
 
 ## 8. Cuarentena y eliminación exacta de logs
 
@@ -187,3 +187,31 @@ Se revalidaron y eliminaron exclusivamente mediante rutas literales:
 Eran archivos regulares, sin enlaces/reparse points y con fechas coherentes. No se abrieron, leyeron
 ni copiaron. La eliminación fue permanente, sin Papelera, y ambos dejaron de existir. La contraseña
 anterior continúa retirada y no debe reutilizarse.
+
+## 9. Corrección directa del segundo cluster
+
+La segunda instalación creó un cluster nuevo de 974 archivos y 41,713,484 bytes, pero volvió a
+registrar el servicio con `-D "C:\Program Files\PostgreSQL\18\data"`. Se aplicó la contención
+aprobada `Stopped/Manual`, sin procesos o listeners, y no se ejecutó SQL.
+
+Antes de moverlo se respaldaron `postgresql.conf`, `pg_hba.conf` y `postgresql.auto.conf` en
+`C:\PerfectCatalogData\postgresql\18\config-backup-before-relocation`. `pg_ctl.exe unregister`
+retiró únicamente el servicio. El cluster se movió en una operación directa del mismo volumen hacia
+`C:\PerfectCatalogData\postgresql\18\data`; origen, destino, conteo, tamaño, `PG_VERSION` y hashes
+se verificaron antes y después. No se ejecutó `initdb` y no se creó otro cluster.
+
+La ACL del destino concede control total a NetworkService, SYSTEM y Administradores; ningún grupo
+estándar general tiene modificación. `postgresql.conf` fue ajustado a localhost, 5432, UTC, SCRAM,
+30 conexiones, 1GB de shared buffers, 8GB de cache efectiva, 8MB de work memory y 256MB de
+maintenance work memory. HBA admite solamente SCRAM local y loopback IPv4/IPv6.
+
+`pg_ctl.exe register` creó nuevamente `postgresql-x64-18` con NetworkService, inicio automático y
+el `-D` exacto. El servicio está en ejecución; localhost acepta, la LAN no responde, solo existen
+listeners loopback, checksums están en versión 1 y PostgreSQL 18.6 reconoce ICU. La ruta antigua no
+volvió a crearse.
+
+pgAdmin está ausente. `stackbuilder.exe` permanece como archivo del paquete, pero no está registrado
+ni ejecutándose y no descargó complementos. El log exacto de la segunda instalación fue validado
+solo por metadata y eliminado por ruta literal. La cuarentena anterior no cambió. Los parámetros
+`lc_*` administrativos continúan en `Spanish_Spain.1252`; la base futura seguirá requiriendo ICU
+`es-PA` mediante una autorización separada.

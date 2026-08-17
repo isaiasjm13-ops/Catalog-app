@@ -1,8 +1,12 @@
 # Resultado de la instalación controlada de PostgreSQL 18.6
 
-> **Estado actualizado el 2026-08-17:** la aplicación PostgreSQL 18.6 x64 desviada fue desinstalada
-> y su cluster se movió íntegro a cuarentena. Los dos logs sensibles exactos fueron eliminados. No
-> se autoriza borrar la cuarentena, reinstalar, crear roles/base, ejecutar SQL ni aplicar el DDL.
+> **Estado actualizado el 2026-08-17:** PostgreSQL 18.6 x64 está instalado y operativo. El cluster
+> nuevo fue reubicado íntegramente en `C:\PerfectCatalogData\postgresql\18\data`, el servicio usa
+> esa ruta explícita y escucha solo en localhost. La cuarentena anterior permanece intacta. No se
+> autoriza crear roles/base, ejecutar SQL, aplicar el DDL ni borrar la cuarentena.
+
+Las secciones 1 a 11 conservan el historial de la primera instalación, su contención,
+desinstalación y cuarentena. El estado operativo vigente se documenta en la sección 12.
 
 ## 1. Control previo
 
@@ -133,7 +137,7 @@ No se ejecutó `initdb` ni se inicializó otro cluster.
 
 ## 8. Desviaciones y siguiente compuerta
 
-La instalación no cumple todavía el resultado aprobado debido a:
+En ese punto histórico, la instalación no cumplía el resultado aprobado debido a:
 
 1. directorio de datos distinto del autorizado;
 2. `listen_addresses = '*'` y escucha en interfaces no-loopback;
@@ -266,7 +270,83 @@ Las carpetas vacías `C:\Program Files\PostgreSQL\18` y `C:\Program Files\Postgr
 retiradas sin recursión. Los dos logs listados en la sección anterior fueron eliminados mediante sus
 rutas literales, sin leerlos, copiarlos ni usar la Papelera. Ya no existen.
 
-PostgreSQL continúa desinstalado; no hay servicio, procesos, listeners ni binarios. El instalador
-oficial permanece intacto fuera del repositorio y la ruta futura
-`C:\PerfectCatalogData\postgresql\18\data` todavía no existe. La siguiente compuerta es una
-reinstalación interactiva con ese directorio correcto y una contraseña nueva.
+Ese era el estado al cerrar la primera instalación. El instalador oficial permaneció intacto fuera
+del repositorio y una segunda instalación autorizada comenzó desde ese punto. Su corrección y
+resultado final se registran a continuación.
+
+## 12. Segunda instalación y reubicación directa del cluster
+
+### Compuerta y nueva desviación
+
+Antes de ejecutar nuevamente el instalador se confirmó Git limpio en `826237b`, SHA-256 exacto del
+instalador, firma válida de EnterpriseDB, Microsoft Defender sin detecciones, puerto 5432 libre,
+destino de datos inexistente y cuarentena anterior intacta. El usuario atendió UAC y escribió una
+contraseña nueva sin comunicarla ni registrarla.
+
+Aunque el asistente mostró el destino aprobado, el nuevo servicio quedó inicialmente registrado
+con `-D "C:\Program Files\PostgreSQL\18\data"` y escuchando en `0.0.0.0:5432` y `[::]:5432`. Se
+detuvo inmediatamente y se cambió a inicio manual. No se ejecutó SQL ni se creó ninguna base, rol o
+tabla del proyecto.
+
+El cluster recién creado estaba apagado limpiamente, contenía solo los directorios base estándar
+`1`, `4` y `5`, y presentó esta evidencia antes y después del movimiento:
+
+| Evidencia | Antes | Después |
+|---|---|---|
+| Ruta | `C:\Program Files\PostgreSQL\18\data` | `C:\PerfectCatalogData\postgresql\18\data` |
+| Archivos | 974 | 974 |
+| Tamaño | 41,713,484 bytes | 41,713,484 bytes |
+| `PG_VERSION` | `18` | `18` |
+| SHA-256 `PG_VERSION` | `7ee29791fc17e986b97128845622b077fb45e349fdb80523fac9dba879b4ad60` | Igual |
+| SHA-256 `postgresql.conf` previo | `5ecee44c5db8673f6f13a49ccfdfd48e6db566bc998f6e519286187cb4cac2ef` | Igual antes de configurar |
+| SHA-256 `pg_hba.conf` | `0c8dc6e6e57399790417a6e13b3a8e1b5e27aa19708a2122148fbfe3bdcecd42` | Igual |
+
+Se respaldaron exclusivamente `postgresql.conf`, `pg_hba.conf` y `postgresql.auto.conf` en
+`C:\PerfectCatalogData\postgresql\18\config-backup-before-relocation`. El servicio se
+desregistró y registró mediante `pg_ctl.exe`; el cluster se movió directamente en el mismo volumen,
+sin copiarlo y borrarlo después. Dos intentos iniciales no alteraron ninguna ruta; el movimiento
+instrumentado posterior terminó correctamente y su archivo diagnóstico exacto fue eliminado.
+
+### ACL y servicio final
+
+El destino no es enlace ni reparse point. NetworkService, SYSTEM y Administradores tienen
+`FullControl`; el usuario propietario autorizado conserva control y ningún grupo estándar general
+tiene permisos de modificación.
+
+| Elemento | Resultado final |
+|---|---|
+| Servicio | `postgresql-x64-18` |
+| Estado / inicio | `Running` / `Auto` |
+| Cuenta | `NT AUTHORITY\NetworkService` |
+| Directorio `-D` | `C:\PerfectCatalogData\postgresql\18\data` |
+| Ruta antigua | Inexistente y ausente del comando del servicio |
+| Versión | PostgreSQL 18.6 |
+| Checksums | Versión 1, habilitados |
+| ICU | `initdb` reconoce `--locale-provider` y `--icu-locale` |
+
+La configuración efectiva es `listen_addresses=localhost`, puerto 5432, `timezone=UTC`,
+`log_timezone=UTC`, SCRAM-SHA-256, `max_connections=30`, `shared_buffers=1GB`,
+`effective_cache_size=8GB`, `work_mem=8MB` y `maintenance_work_mem=256MB`. `pg_hba.conf` conserva
+solo reglas SCRAM locales y host para `127.0.0.1/32` y `::1/128`, incluidas las equivalentes de
+replicación.
+
+Tras aplicar esos cambios, el SHA-256 final de `postgresql.conf` es
+`81d7daca84dd8ceb8c046a8ab178a6a2b2727985676df5dc03b837468d4208c0`. Con el servicio en ejecución
+el inventario observable es 977 archivos y 41,787,272 bytes debido a archivos operativos del
+servidor; la prueba de integridad del movimiento corresponde a las mediciones idénticas de 974
+archivos y 41,713,484 bytes realizadas con el servicio apagado.
+
+Windows muestra exactamente un listener en `127.0.0.1:5432` y uno en `[::1]:5432`, sin listeners
+comodín o inesperados. `pg_isready localhost:5432` devuelve salida 0 y acepta conexiones;
+`192.168.0.128:5432` no responde y devuelve salida 2.
+
+Los parámetros administrativos `lc_messages`, `lc_monetary`, `lc_numeric` y `lc_time` continúan en
+`Spanish_Spain.1252`; no se alteraron en esta corrección. Esto no sustituye la decisión de crear
+posteriormente `perfect_catalog_dev` desde `template0` con UTF8, ICU `es-PA` y collation
+determinista.
+
+pgAdmin no está instalado. `stackbuilder.exe` forma parte del paquete, pero no está registrado como
+aplicación independiente, no está ejecutándose y no descargó complementos. El nuevo
+`install-postgresql.log`, archivo regular creado durante la segunda instalación, fue eliminado por
+ruta literal sin abrirlo. La cuarentena anterior conserva 976 archivos, 41,903,499 bytes y sus tres
+hashes originales. Ninguna base, rol, tabla o extensión del proyecto ha sido creada.

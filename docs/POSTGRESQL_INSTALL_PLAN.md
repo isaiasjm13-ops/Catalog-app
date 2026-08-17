@@ -1,8 +1,9 @@
 # Plan de preparación para PostgreSQL local
 
-> **Estado al 2026-08-17:** PostgreSQL 18.6 x64 fue instalado con desviaciones, contenido y
-> desinstalado. El cluster residual está íntegro en cuarentena y los logs sensibles fueron
-> eliminados. Reinstalar, borrar la cuarentena, crear roles/base o ejecutar SQL continúa bloqueado.
+> **Estado al 2026-08-17:** PostgreSQL 18.6 x64 está instalado y operativo. El cluster nuevo está
+> en `C:\PerfectCatalogData\postgresql\18\data`, el servicio usa esa ruta explícita y escucha
+> solamente en localhost. La cuarentena anterior permanece intacta. Crear roles/base, ejecutar SQL
+> o borrar la cuarentena continúa bloqueado.
 
 Este documento conserva el plan aprobado para PostgreSQL local. La descarga, verificación y
 ejecución interactiva del artefacto exacto ya ocurrieron. El resultado real está en
@@ -152,9 +153,10 @@ Referencias oficiales: [política de versiones](https://www.postgresql.org/suppo
    componentes y menor superficie de actualización. Si la operación diaria demuestra que la GUI
    aporta valor, se revisará e instalará por separado.
 
-**Resultado observado:** servidor y herramientas de línea de comandos instalados; pgAdmin ausente.
-El ejecutable Stack Builder está presente y fue abierto accidentalmente, aunque se cerró antes de
-confirmar la descarga de complementos. Esta diferencia permanece pendiente de decisión.
+**Resultado final:** servidor y herramientas de línea de comandos instalados; pgAdmin ausente. El
+ejecutable Stack Builder está presente como parte del paquete. Fue abierto accidentalmente durante
+la primera instalación, sin descargar complementos; en la instalación vigente no está registrado,
+no fue ejecutado y no tiene procesos o complementos detectados. No constituye un bloqueo.
 
 ### Red y servicio
 
@@ -173,8 +175,9 @@ confirmar la descarga de complementos. Esta diferencia permanece pendiente de de
 la IP no-loopback `192.168.0.128`. `pg_hba.conf` conserva reglas host solo para loopback con SCRAM,
 pero la escucha externa incumple el plan y debe corregirse antes de crear la base.
 
-**Estado posterior:** la aplicación, el servicio, los binarios y los listeners fueron retirados. El
-cluster incorrecto permanece preservado. Consulte
+**Estado final:** `postgresql-x64-18` está `Running/Auto` bajo NetworkService. Escucha exactamente
+en `127.0.0.1:5432` y `[::1]:5432`, sin comodines; localhost acepta conexiones y
+`192.168.0.128:5432` no responde. Consulte
 [`POSTGRESQL_REMEDIATION_PLAN.md`](POSTGRESQL_REMEDIATION_PLAN.md).
 
 ### Rutas aprobadas y resultado
@@ -191,9 +194,11 @@ cluster incorrecto permanece preservado. Consulte
 y logs operativos no estarán dentro del repositorio. Las carpetas solo se crearán después de la
 aprobación, con permisos limitados a la cuenta del servicio y a los administradores necesarios.
 
-**Resultado observado:** el servicio usa `C:\Program Files\PostgreSQL\18\data` y la ruta aprobada
-`C:\PerfectCatalogData\postgresql\18\data` no existe. No mover, borrar ni reinicializar el cluster
-sin una compuerta específica de recuperación.
+**Resultado final:** los binarios permanecen en `C:\Program Files\PostgreSQL\18` y el cluster
+operativo fue movido íntegramente a `C:\PerfectCatalogData\postgresql\18\data`. El servicio fue
+registrado mediante `pg_ctl.exe` con esa ruta exacta; `C:\Program Files\PostgreSQL\18\data` no
+existe. La configuración previa está respaldada fuera del cluster en
+`C:\PerfectCatalogData\postgresql\18\config-backup-before-relocation`.
 
 ## 4. Configuración inicial propuesta
 
@@ -419,12 +424,13 @@ automatizar después de autorización; **Verificación** es de solo lectura tras
 - [x] Política de contraseña comprendida; secreto introducido personalmente y no registrado.
 - [x] Roles futuros aprobados.
 - [x] Base de desarrollo `perfect_catalog_dev` aprobada.
-- [ ] Plan de recuperación revisado.
+- [x] Plan de recuperación revisado y aplicado mediante compuertas separadas.
 - [x] DDL v0.2 y hash confirmados: `8602d170e3345c9694bd498bd9f23162b72bd740e582fa3caa6a2bad3a1d660c`.
 - [x] Autorización expresa del usuario para instalar recibida y utilizada el 2026-08-17.
-- [ ] Corregir la escucha externa y revalidar localhost/HBA.
-- [ ] Resolver la desviación del directorio de datos.
-- [ ] Revisar la discrepancia de locale y el ejecutable Stack Builder.
+- [x] Corregir la escucha externa y revalidar localhost/HBA.
+- [x] Resolver la desviación del directorio de datos mediante reubicación directa autorizada.
+- [ ] Resolver la discrepancia de locale administrativo; la base futura seguirá usando ICU `es-PA`.
+- [x] Documentar Stack Builder como ejecutable no registrado, no ejecutándose y sin complementos.
 - [x] Contener `postgresql-x64-18` mediante parada ordenada e inicio manual.
 - [x] Recibir autorización humana y completar la desinstalación gráfica controlada.
 - [x] Confirmar eliminación de aplicación, servicio, binarios y listeners.
@@ -432,23 +438,20 @@ automatizar después de autorización; **Verificación** es de solo lectura tras
 - [x] Mover el cluster íntegro a la cuarentena exacta con ACL restringida.
 - [x] Retirar las carpetas vacías de Program Files sin recursión.
 - [x] Eliminar exclusivamente los dos logs sensibles identificados.
-- [ ] Reinstalar interactivamente con ruta correcta y contraseña nueva tras autorización.
+- [x] Reinstalar interactivamente con contraseña nueva y corregir directamente la ruta del cluster.
+- [x] Registrar `postgresql-x64-18` con NetworkService, inicio automático y `-D` exacto.
+- [x] Validar versión 18.6, checksums, ICU, localhost exclusivo y ausencia de respuesta LAN.
 
 ## 9. Decisiones que continúan abiertas
 
-- conservación de la cuarentena hasta validar una nueva instalación;
-- autorización humana para reinstalar con el directorio de datos correcto;
-- corrección autorizada de `listen_addresses = '*'` antes de crear la base;
-- autorización futura para retirar la cuarentena solo después de validar la reinstalación;
+- conservación de la cuarentena hasta una autorización futura específica para retirarla;
 - revisión de `Spanish_Spain.1252` frente al locale Panamá reportado;
-- decisión sobre el ejecutable Stack Builder presente;
 - aprobación operativa final de política de logs y memoria inicial;
 - selección privada de contraseñas y aceptación del UAC por el usuario;
 - zona horaria real de Odoo y sistema de fechas 1900/1904 del Excel;
 - versiones futuras de FastAPI, SQLAlchemy, Alembic y driver compatibles con Python 3.14.
 
-El siguiente paso autorizado es revisar
-[`POSTGRESQL_REMEDIATION_PLAN.md`](POSTGRESQL_REMEDIATION_PLAN.md) y preparar la reinstalación
-interactiva con `C:\PerfectCatalogData\postgresql\18\data` y una contraseña nueva. Reinstalar,
-borrar la cuarentena, crear roles/base o ejecutar SQL continúa prohibido hasta solicitudes
-posteriores y expresas.
+La instalación local ya cumple ruta, servicio, red, SCRAM, UTC, checksums e ICU. El siguiente paso
+requiere una autorización expresa independiente para crear los roles y `perfect_catalog_dev` desde
+`template0` con UTF8, ICU `es-PA` y collation determinista. Borrar la cuarentena, crear roles/base o
+ejecutar SQL/DDL continúa prohibido hasta solicitudes posteriores y expresas.
