@@ -49,10 +49,23 @@ type HANDOFF.md
 Analiza exportaciones de Odoo en modo de solo lectura y genera reportes en `data/exports/profiles/`.
 
 ```powershell
-py -3.14 -m tools.odoo_profiler "data\imports\EMPAQUE CABEZOTE.xlsx"
+py -3.14 -m tools.odoo_profiler "data\imports\NATSUKI_EMPAQUES_MAESTRO.xlsx"
 ```
 
 Consulte [docs/ODOO_PROFILER.md](docs/ODOO_PROFILER.md) para opciones adicionales y ejecución de pruebas.
+
+## Muestra Maestra Preliminar de Odoo
+
+La exportación local `NATSUKI_EMPAQUES_MAESTRO.xlsx` proviene del modelo `product.template`
+con marca NATSUKI y categoría de producto que contiene “empaque”. Contiene 893 productos en
+13 columnas y su estructura fue validada con Odoo Profiler v0.1.
+
+La especificación preliminar de [docs/DATA_SPEC.md](docs/DATA_SPEC.md) se basa en esta evidencia
+real. El Excel fuente y los reportes generados permanecen locales e ignorados por Git.
+
+PostgreSQL, FastAPI y Jinja2 + HTML + CSS + JavaScript continúan siendo la arquitectura oficial.
+PostgreSQL todavía no debe instalarse ni implementarse. El siguiente paso es revisar y aprobar
+el diseño preliminar antes de construir el importador.
 
 ## Documentación
 
@@ -113,8 +126,8 @@ git branch -a
 
 | Componente | Estado |
 |-----------|--------|
-| Documentación | ✓ Arquitectura inicial definida |
-| Base de Datos | PostgreSQL definido; schema pendiente |
+| Documentación | ✓ Arquitectura y especificación preliminar basada en Odoo real |
+| Base de Datos | PostgreSQL definido; diseño preliminar pendiente de revisión |
 | Backend | FastAPI definido; implementación pendiente |
 | Frontend | Jinja2 + HTML + CSS + JavaScript definidos; implementación pendiente |
 | Exportación | ⏳ Pendiente BD |
@@ -128,5 +141,5 @@ git branch -a
 ---
 
 **Última actualización**: 2026-08-17  
-**Responsable sesión**: Integración de Odoo Profiler v0.1
-**Siguiente revisión**: Tras obtener una exportación amplia de Odoo
+**Responsable sesión**: Integración de la exportación maestra preliminar de Odoo
+**Siguiente revisión**: Aprobación del diseño preliminar de PostgreSQL y del importador

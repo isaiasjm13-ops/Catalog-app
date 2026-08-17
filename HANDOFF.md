@@ -1,6 +1,6 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
-## Sesión Actual: Integración de Odoo Profiler v0.1 (2026-08-17)
+## Sesión Actual: Exportación Maestra Preliminar de Odoo (2026-08-17)
 
 ### Estado de Cumplimiento ✓
 
@@ -9,9 +9,9 @@
 - ✓ Documentación base creada
 - ✓ Estructura de carpetas planificada
 - ✓ Reglas no negociables documentadas
-- ✓ Muestra real de Odoo analizada
+- ✓ Exportación maestra preliminar de Odoo recibida y validada
 - ✓ Odoo Profiler v0.1 integrado y validado
-- ✓ DATA_SPEC.md preliminar creado
+- ✓ DATA_SPEC.md actualizado con evidencia real de 893 productos
 
 ### Completado en Esta Sesión
 
@@ -41,28 +41,32 @@
    - Formatos de salida: web, PDF, InDesign
 
 4. **Análisis Preliminar de Odoo**
-   - Muestra real `EMPAQUE CABEZOTE.xlsx` analizada sin modificar el archivo fuente
-   - Odoo Profiler v0.1 integrado con pruebas automatizadas
-   - `docs/DATA_SPEC.md` documenta una especificación preliminar basada en la muestra
-   - Falta obtener una exportación amplia de Odoo para completar el análisis
-   - PostgreSQL, su schema y el importador definitivo continúan pendientes
+   - Exportación maestra preliminar `NATSUKI_EMPAQUES_MAESTRO.xlsx` recibida y validada sin modificar el original
+   - Alcance: modelo `product.template`, marca NATSUKI y categoría que contiene “empaque”
+   - Contenido validado: 893 productos, 13 columnas, 893 referencias internas únicas y 0 filas duplicadas
+   - `docs/DATA_SPEC.md` se basa ahora en esta evidencia real de Odoo
+   - PostgreSQL, FastAPI y Jinja2 + HTML + CSS + JavaScript continúan siendo la arquitectura oficial
+   - PostgreSQL no debe instalarse ni implementarse todavía; el schema y el importador definitivo siguen pendientes
+   - Próximo paso: revisar y aprobar el diseño preliminar antes de construir el importador
 
 ### Próximos Pasos (Orden de Prioridad)
 
 #### FASE 1: Análisis de Datos (BLOQUEANTE)
-- [x] Obtener una muestra real de Odoo (Natsuki)
-- [x] Analizar la estructura de columnas de la muestra
-- [x] Documentar los campos disponibles en la muestra
-- [x] Crear `docs/DATA_SPEC.md` preliminar
-- [ ] Obtener una exportación amplia de Odoo
-- [ ] Identificar relaciones (OEM, cross-ref, FMSI, etc.)
+- [x] Recibir y validar la exportación maestra preliminar de NATSUKI / empaques
+- [x] Analizar la estructura, tipos, nulos, duplicados e imágenes de la exportación
+- [x] Documentar los 13 campos observados en `docs/DATA_SPEC.md`
+- [x] Documentar el diseño conceptual de staging e importación
+- [ ] Revisar y aprobar el diseño preliminar de PostgreSQL y del importador
+- [ ] Obtener IDs estables de Odoo y datos estructurados adicionales cuando estén disponibles
+- [ ] Identificar relaciones estructuradas de OEM, cross-reference, FMSI y aplicaciones
 - [ ] Completar DATA_SPEC.md como contrato definitivo de importación
 
 **Responsable**: Analista de Datos / Odoo  
-**Dependencias**: Exportación amplia de Odoo
+**Dependencias**: Revisión del diseño preliminar y campos adicionales de Odoo
 **Estimación**: 2-4 horas  
 
 #### FASE 2: Diseño de Base de Datos
+- [ ] Revisar y aprobar la propuesta conceptual de `docs/DATA_SPEC.md`
 - [ ] Diseñar schema de PostgreSQL basado en Excel
 - [ ] Definir tablas: productos, referencias, marcas, modelos, categorías, líneas
 - [ ] Relaciones y constraints
@@ -130,9 +134,9 @@
 - ❌ Crear .venv
 - ❌ pip install de librerías
 - ❌ Programar FastAPI
-- ❌ Programar importador definitivo (esperar Excel real)
+- ❌ Programar importador definitivo (esperar aprobación del diseño preliminar)
 - ❌ Tocar fotografías originales
-- ❌ Crear schema de BD (esperar análisis de datos)
+- ❌ Crear schema de BD (esperar revisión y aprobación del diseño preliminar)
 
 ### Decisiones de Arquitectura Cerradas
 
@@ -168,8 +172,8 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 ### Última Actualización
 
 - **Fecha**: 2026-08-17
-- **Sesión**: Integración y validación de Odoo Profiler v0.1
-- **Próxima Revisión**: Tras obtener una exportación amplia de Odoo
+- **Sesión**: Integración y validación de la exportación maestra preliminar de Odoo
+- **Próxima Revisión**: Revisión y aprobación del diseño preliminar de PostgreSQL y del importador
 
 ---
 
