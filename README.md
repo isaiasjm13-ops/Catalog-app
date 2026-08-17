@@ -44,11 +44,23 @@ type PROJECT.md
 type HANDOFF.md
 ```
 
+## Odoo Profiler v0.1
+
+Analiza exportaciones de Odoo en modo de solo lectura y genera reportes en `data/exports/profiles/`.
+
+```powershell
+py -3.14 -m tools.odoo_profiler "data\imports\EMPAQUE CABEZOTE.xlsx"
+```
+
+Consulte [docs/ODOO_PROFILER.md](docs/ODOO_PROFILER.md) para opciones adicionales y ejecución de pruebas.
+
 ## Documentación
 
 - **[PROJECT.md](PROJECT.md)** - Visión general, reglas, arquitectura
 - **[HANDOFF.md](HANDOFF.md)** - Estado actual, próximos pasos, bloqueadores
 - **[AGENTS.md](AGENTS.md)** - Roles y responsabilidades de equipos
+- **[docs/DATA_SPEC.md](docs/DATA_SPEC.md)** - Especificación preliminar de los datos de Odoo
+- **[docs/ODOO_PROFILER.md](docs/ODOO_PROFILER.md)** - Uso y pruebas del perfilador de Odoo
 - **[README.md](README.md)** - Este archivo
 
 ## Estructura de Carpetas (Planificada)
@@ -116,5 +128,5 @@ git branch -a
 ---
 
 **Última actualización**: 2026-08-17  
-**Responsable sesión**: Inicialización del proyecto  
-**Siguiente revisión**: Tras obtener Excel de Odoo
+**Responsable sesión**: Integración de Odoo Profiler v0.1
+**Siguiente revisión**: Tras obtener una exportación amplia de Odoo
