@@ -113,22 +113,30 @@
 
 ### NO Hacer Todavía
 
-- ❌ Instalar PostgreSQL (esperar confirmación)
+- ❌ Instalar PostgreSQL (la arquitectura está definida, pero la instalación aún no corresponde)
 - ❌ Instalar pgAdmin
 - ❌ Crear .venv
 - ❌ pip install de librerías
-- ❌ Programar FastAPI/Flask
+- ❌ Programar FastAPI
 - ❌ Programar importador definitivo (esperar Excel real)
 - ❌ Tocar fotografías originales
 - ❌ Crear schema de BD (esperar análisis de datos)
+
+### Decisiones de Arquitectura Cerradas
+
+| Decisión | Estado | Definición |
+|----------|--------|------------|
+| Base de datos | Cerrada | PostgreSQL es la base oficial. SQLite no será la base principal y solo podría usarse para pruebas aisladas si fuera necesario. |
+| Backend | Cerrada | FastAPI es el backend oficial. |
+| Frontend inicial | Cerrada | Jinja2 + HTML + CSS + JavaScript. React no se utilizará inicialmente. |
+| Evolución | Cerrada | La arquitectura podrá evolucionar hacia un frontend separado si una necesidad real lo justifica. |
+
+El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La ausencia inicial de React reduce complejidad y no limita el diseño.
 
 ### Decisiones Pendientes
 
 | Decisión | Estado | Notas |
 |----------|--------|-------|
-| Base de Datos: SQLite vs PostgreSQL para desarrollo local | Pendiente | Usar SQLite para prototipo local, migrar a PostgreSQL para producción |
-| Framework Backend: FastAPI vs Flask vs Django | Pendiente | Recomendación: FastAPI (moderno, rápido, bien documentado) |
-| Framework Frontend: React vs Vue vs Svelte | Pendiente | Recomendación: React (comunidad, librerías) |
 | Formato Snapshots InDesign: XML vs JSON | Pendiente | Definir tras primer análisis de datos |
 | Control de Versiones de Catálogos | Pendiente | ¿Guardar historial de cambios? ¿Versiones por fecha? |
 

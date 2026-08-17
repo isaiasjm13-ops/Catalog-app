@@ -110,13 +110,20 @@ Natsuki + Toyota
 - **Ambiente Inicial**: Completamente local
 - **Actualización de Datos**: Ciclos controlados desde Odoo
 
-## Stack Tecnológico (Proyectado)
+## Stack Tecnológico Inicial (Oficial)
 
-- **Backend**: Python (Framework TBD)
-- **Base de Datos**: PostgreSQL (Fase posterior)
-- **Frontend Web**: TBD
+- **Backend**: Python con FastAPI
+- **Base de Datos**: PostgreSQL
+  - PostgreSQL es la base de datos principal y oficial del proyecto.
+  - SQLite no se utilizará como base principal; solo podría emplearse en pruebas aisladas si alguna vez fuera necesario.
+- **Frontend Web Inicial**: Jinja2 + HTML + CSS + JavaScript
+  - React no se utilizará inicialmente.
+  - La interfaz deberá ser visualmente premium, responsive y moderna.
+  - La elección del frontend inicial reduce la complejidad técnica sin limitar la calidad del diseño.
 - **Exportación**: Adobe InDesign API/Scripts
 - **Control de Versiones**: Git
+
+La arquitectura permanecerá preparada para evolucionar hacia un frontend separado si las necesidades reales del proyecto lo justifican más adelante.
 
 ## Fases de Desarrollo
 
@@ -128,10 +135,11 @@ Natsuki + Toyota
 
 ### Fase 2: Prototipo Local
 - Carga de datos (Python)
-- Base de datos local (SQLite o PostgreSQL)
-- API básica
+- Base de datos PostgreSQL
+- API básica con FastAPI
 
 ### Fase 3: Interfaz Web
+- Renderizado inicial con Jinja2, HTML, CSS y JavaScript
 - Búsqueda y filtrado
 - Navegación
 

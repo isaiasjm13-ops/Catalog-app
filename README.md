@@ -21,6 +21,15 @@
 - PostgreSQL 14+
 - pgAdmin (opcional)
 
+## Arquitectura Inicial
+
+- **Base de datos oficial**: PostgreSQL. SQLite no se utilizará como base principal; solo podrá considerarse para pruebas aisladas si fuera necesario.
+- **Backend oficial**: FastAPI.
+- **Frontend inicial**: Jinja2 + HTML + CSS + JavaScript.
+- **React**: No se utilizará inicialmente.
+
+La interfaz seguirá siendo premium, responsive y moderna. Este stack reduce la complejidad inicial sin limitar el diseño, y la arquitectura podrá evolucionar hacia un frontend separado si una necesidad real lo justifica más adelante.
+
 ### Primeros Pasos
 
 ```bash
@@ -92,10 +101,10 @@ git branch -a
 
 | Componente | Estado |
 |-----------|--------|
-| Documentación | ✓ Inicial |
-| Base de Datos | ⏳ Pendiente schema |
-| Backend | ⏳ Pendiente análisis de datos |
-| Frontend | ⏳ Pendiente API |
+| Documentación | ✓ Arquitectura inicial definida |
+| Base de Datos | PostgreSQL definido; schema pendiente |
+| Backend | FastAPI definido; implementación pendiente |
+| Frontend | Jinja2 + HTML + CSS + JavaScript definidos; implementación pendiente |
 | Exportación | ⏳ Pendiente BD |
 | InDesign | ⏳ Pendiente exportación |
 
