@@ -132,6 +132,11 @@ temp/
 test_*.py
 debug_*.py
 
+# Salidas temporales de comandos Git
+git_output.txt
+status.txt
+commit_log.txt
+
 # InDesign locales
 *.idlk  # Bloqueos InDesign
 
