@@ -1,6 +1,6 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
-## Sesión Actual: Exportación Maestra Preliminar de Odoo (2026-08-17)
+## Sesión Actual: Diseño Detallado de PostgreSQL e Importador (2026-08-17)
 
 ### Estado de Cumplimiento ✓
 
@@ -10,8 +10,10 @@
 - ✓ Estructura de carpetas planificada
 - ✓ Reglas no negociables documentadas
 - ✓ Exportación maestra preliminar de Odoo recibida y validada
+- ✓ Integración de datos aprobada como base para el diseño preliminar
 - ✓ Odoo Profiler v0.1 integrado y validado
 - ✓ DATA_SPEC.md actualizado con evidencia real de 893 productos
+- ✓ Propuestas v0.1 de PostgreSQL e importador documentadas
 
 ### Completado en Esta Sesión
 
@@ -49,6 +51,13 @@
    - PostgreSQL no debe instalarse ni implementarse todavía; el schema y el importador definitivo siguen pendientes
    - Próximo paso: revisar y aprobar el diseño preliminar antes de construir el importador
 
+5. **Diseño Técnico en Elaboración**
+   - `docs/DATABASE_DESIGN.md` contiene la propuesta v0.1 del modelo PostgreSQL
+   - `docs/IMPORTER_DESIGN.md` contiene la propuesta v0.1 del flujo y mapeo del importador
+   - Ambos documentos son propuestas revisables y no implementadas
+   - PostgreSQL continúa sin instalar y no existen tablas, migraciones ni importador definitivo
+   - Las decisiones abiertas y recomendaciones todavía requieren aprobación
+
 ### Próximos Pasos (Orden de Prioridad)
 
 #### FASE 1: Análisis de Datos (BLOQUEANTE)
@@ -56,6 +65,7 @@
 - [x] Analizar la estructura, tipos, nulos, duplicados e imágenes de la exportación
 - [x] Documentar los 13 campos observados en `docs/DATA_SPEC.md`
 - [x] Documentar el diseño conceptual de staging e importación
+- [x] Redactar las propuestas detalladas `DATABASE_DESIGN.md` e `IMPORTER_DESIGN.md`
 - [ ] Revisar y aprobar el diseño preliminar de PostgreSQL y del importador
 - [ ] Obtener IDs estables de Odoo y datos estructurados adicionales cuando estén disponibles
 - [ ] Identificar relaciones estructuradas de OEM, cross-reference, FMSI y aplicaciones
@@ -66,7 +76,9 @@
 **Estimación**: 2-4 horas  
 
 #### FASE 2: Diseño de Base de Datos
-- [ ] Revisar y aprobar la propuesta conceptual de `docs/DATA_SPEC.md`
+- [x] Documentar propuesta v0.1 de tablas, relaciones, trazabilidad y auditoría
+- [x] Documentar propuesta v0.1 del importador y mapeo de las 13 columnas
+- [ ] Revisar y aprobar `docs/DATABASE_DESIGN.md` y `docs/IMPORTER_DESIGN.md`
 - [ ] Diseñar schema de PostgreSQL basado en Excel
 - [ ] Definir tablas: productos, referencias, marcas, modelos, categorías, líneas
 - [ ] Relaciones y constraints
@@ -155,6 +167,7 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 |----------|--------|-------|
 | Formato Snapshots InDesign: XML vs JSON | Pendiente | Definir tras primer análisis de datos |
 | Control de Versiones de Catálogos | Pendiente | ¿Guardar historial de cambios? ¿Versiones por fecha? |
+| Propuestas PostgreSQL e importador v0.1 | Pendiente de aprobación | Revisar decisiones abiertas en `DATABASE_DESIGN.md` e `IMPORTER_DESIGN.md` |
 
 ### Notas Técnicas
 
@@ -172,8 +185,8 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 ### Última Actualización
 
 - **Fecha**: 2026-08-17
-- **Sesión**: Integración y validación de la exportación maestra preliminar de Odoo
-- **Próxima Revisión**: Revisión y aprobación del diseño preliminar de PostgreSQL y del importador
+- **Sesión**: Elaboración de propuestas detalladas de PostgreSQL e importador
+- **Próxima Revisión**: Revisión y aprobación de `DATABASE_DESIGN.md` e `IMPORTER_DESIGN.md`
 
 ---
 

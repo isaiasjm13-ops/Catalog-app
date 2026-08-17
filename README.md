@@ -67,12 +67,24 @@ PostgreSQL, FastAPI y Jinja2 + HTML + CSS + JavaScript continúan siendo la arqu
 PostgreSQL todavía no debe instalarse ni implementarse. El siguiente paso es revisar y aprobar
 el diseño preliminar antes de construir el importador.
 
+## Diseño Técnico Propuesto
+
+- [docs/DATABASE_DESIGN.md](docs/DATABASE_DESIGN.md): propuesta v0.1 del modelo PostgreSQL,
+  trazabilidad, auditoría y versionado de catálogos.
+- [docs/IMPORTER_DESIGN.md](docs/IMPORTER_DESIGN.md): propuesta v0.1 del flujo del importador,
+  dry-run, conciliación y mapeo de las 13 columnas reales de Odoo.
+
+Ambas propuestas están en elaboración y pendientes de revisión. No están implementadas:
+PostgreSQL continúa sin instalar y todavía no existen tablas, migraciones ni importador.
+
 ## Documentación
 
 - **[PROJECT.md](PROJECT.md)** - Visión general, reglas, arquitectura
 - **[HANDOFF.md](HANDOFF.md)** - Estado actual, próximos pasos, bloqueadores
 - **[AGENTS.md](AGENTS.md)** - Roles y responsabilidades de equipos
 - **[docs/DATA_SPEC.md](docs/DATA_SPEC.md)** - Especificación preliminar de los datos de Odoo
+- **[docs/DATABASE_DESIGN.md](docs/DATABASE_DESIGN.md)** - Propuesta no implementada del modelo PostgreSQL
+- **[docs/IMPORTER_DESIGN.md](docs/IMPORTER_DESIGN.md)** - Propuesta no implementada del importador de Odoo
 - **[docs/ODOO_PROFILER.md](docs/ODOO_PROFILER.md)** - Uso y pruebas del perfilador de Odoo
 - **[README.md](README.md)** - Este archivo
 
@@ -126,8 +138,9 @@ git branch -a
 
 | Componente | Estado |
 |-----------|--------|
-| Documentación | ✓ Arquitectura y especificación preliminar basada en Odoo real |
-| Base de Datos | PostgreSQL definido; diseño preliminar pendiente de revisión |
+| Documentación | ✓ Especificación real y propuestas técnicas v0.1 documentadas |
+| Base de Datos | PostgreSQL definido; propuesta v0.1 no implementada y pendiente de aprobación |
+| Importador | Flujo y mapeo propuestos; no implementado |
 | Backend | FastAPI definido; implementación pendiente |
 | Frontend | Jinja2 + HTML + CSS + JavaScript definidos; implementación pendiente |
 | Exportación | ⏳ Pendiente BD |
@@ -141,5 +154,5 @@ git branch -a
 ---
 
 **Última actualización**: 2026-08-17  
-**Responsable sesión**: Integración de la exportación maestra preliminar de Odoo
-**Siguiente revisión**: Aprobación del diseño preliminar de PostgreSQL y del importador
+**Responsable sesión**: Elaboración del diseño detallado de PostgreSQL e importador
+**Siguiente revisión**: Aprobación de `DATABASE_DESIGN.md` e `IMPORTER_DESIGN.md`
