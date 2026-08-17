@@ -1,0 +1,20 @@
+﻿On branch master
+
+No commits yet
+
+Changes to be committed:
+  (use "git rm --cached <file>..." to unstage)
+	new file:   .env.example
+	new file:   .gitignore
+	new file:   AGENTS.md
+	new file:   HANDOFF.md
+	new file:   PROJECT.md
+	new file:   README.md
+	new file:   data/exports/.gitkeep
+	new file:   data/imports/.gitkeep
+	new file:   git_output.txt
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	status.txt
+

@@ -1,0 +1,142 @@
+# === ENTORNO Y CONFIGURACIÓN ===
+.env
+.env.local
+.env.*.local
+.venv/
+venv/
+ENV/
+env/
+
+# === PYTHON ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# === IDEs ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.sublime-project
+*.sublime-workspace
+.vs/
+.vscode-settings.json
+
+# === DATA Y FUENTES MAESTRAS ===
+# Nunca versionéis datos de Odoo sin procesar
+data/imports/*.xlsx
+data/imports/*.xls
+data/imports/*.csv
+data/imports/*.json
+!data/imports/.gitkeep
+
+# === IMÁGENES ===
+# Nunca versionéis imágenes originales - son demasiado pesadas
+data/images/
+!data/images/.gitkeep
+
+# === EXPORTACIONES ===
+# Archivos generados localmente
+data/exports/*.pdf
+data/exports/*.xlsx
+data/exports/*.csv
+data/exports/*.json
+data/exports/pdf/
+data/exports/indd/
+data/exports/idml/
+!data/exports/.gitkeep
+
+# === BASES DE DATOS ===
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
+# === PDFs Y DOCUMENTOS ===
+*.pdf
+*.PDF
+*.indd
+*.INDD
+*.idml
+*.IDML
+*.psd
+*.ai
+
+# === LOGS ===
+logs/
+*.log
+*.log.*
+!logs/.gitkeep
+
+# === BACKUPS Y TEMPORALES ===
+backups/
+*.bak
+*.backup
+*.tmp
+*.temp
+*.cache
+~*
+!backups/.gitkeep
+
+# === COMPILADOS Y ARTEFACTOS ===
+*.pyc
+*.pyo
+*.o
+*.so
+.pytest_cache/
+.coverage
+.tox/
+htmlcov/
+
+# === NODE (si se usa frontend) ===
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# === ESPECÍFICO DEL PROYECTO ===
+# Secretos
+secrets/
+.secrets/
+credentials.json
+api_keys.txt
+passwords.txt
+
+# Temporales de desarrollo
+scratch/
+temp/
+test_*.py
+debug_*.py
+
+# InDesign locales
+*.idlk  # Bloqueos InDesign
+
+# Fotografías originales con diferentes extensiones
+*.raw
+*.NEF
+*.CR2
+*.ARW
