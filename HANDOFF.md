@@ -1,6 +1,6 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
-## Sesión Actual: DDL PostgreSQL v0.1 y Contrato SQL Estático (2026-08-17)
+## Sesión Actual: Correcciones de Integridad del DDL PostgreSQL v0.2 (2026-08-17)
 
 ### Estado de Cumplimiento ✓
 
@@ -16,7 +16,7 @@
 - ✓ Arquitectura de datos e importador v0.1 aprobada documentalmente
 - ✓ Staging inmutable y resultados versionados separados
 - ✓ Plan exacto de importación diseñado como persistente y sujeto a aprobación explícita
-- ✓ DDL PostgreSQL v0.1 de 24 tablas creado y no ejecutado
+- ✓ DDL PostgreSQL v0.2 corregido de 24 tablas, no ejecutado y pendiente de segunda revisión manual
 - ✓ Estrategia forward-only de migraciones documentada
 - ✓ Revisión y pruebas estáticas del contrato SQL documentadas
 
@@ -65,12 +65,17 @@
    - La arquitectura está aprobada documentalmente pero no implementada
    - PostgreSQL continúa sin instalar y no existen tablas reales ni importador definitivo
 
-6. **DDL y Migraciones v0.1**
+6. **DDL y Migraciones v0.2**
    - `db/migrations/0001_initial_schema.sql` contiene las 24 tablas bajo `perfect_catalog`
    - El DDL comienza con `BEGIN`, termina con `COMMIT` y no ha sido ejecutado
    - `docs/MIGRATION_STRATEGY.md` define migraciones forward-only y futura adopción de Alembic
-   - `docs/DDL_REVIEW.md` contiene matriz, conteos, límites y checklist manual
-   - `tests/test_schema_contract.py` valida estáticamente el contrato sin conectarse a PostgreSQL
+   - `docs/DDL_REVIEW.md` documenta la primera revisión, sus correcciones, conteos, índices y límites
+   - Conteo estático v0.2: 24 tablas, 57 FKs, 171 checks, 21 unique constraints y 80 índices explícitos
+   - IDs opcionales no aceptan blanco; variantes y referencias conservan contexto de origen/marca
+   - Plan, archivo, fila, item y snapshots están ligados mediante FKs compuestas verificables
+   - Releases no mezclan marcas y las combinaciones vehiculares estructuradas conservan jerarquía
+   - Estados revisados/resueltos exigen actor y fecha; `product_media.is_primary` ya no es nullable
+   - `tests/test_schema_contract.py` valida semánticamente estas garantías sin conectarse a PostgreSQL
    - PostgreSQL y pgAdmin siguen sin instalar; ninguna tabla real existe todavía
 
 ### Próximos Pasos (Orden de Prioridad)
@@ -99,7 +104,7 @@
 - [x] Definir las 24 tablas aprobadas
 - [x] Documentar relaciones, constraints e índices
 - [x] Crear pruebas estáticas del contrato SQL
-- [ ] Completar la revisión manual de `docs/DDL_REVIEW.md`
+- [ ] Completar la segunda revisión manual de `docs/DDL_REVIEW.md` y del DDL v0.2 corregido
 - [ ] Preparar PostgreSQL local después de aprobar el DDL
 - [ ] Ejecutar y validar el DDL en una base vacía de prueba
 
@@ -217,8 +222,8 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 ### Última Actualización
 
 - **Fecha**: 2026-08-17
-- **Sesión**: Creación del DDL PostgreSQL v0.1, estrategia y pruebas estáticas
-- **Próxima Revisión**: Revisión manual del DDL antes de preparar PostgreSQL local
+- **Sesión**: Corrección de vacíos de integridad del DDL PostgreSQL v0.2 y pruebas semánticas
+- **Próxima Revisión**: Segunda revisión manual del DDL antes de preparar PostgreSQL local
 
 ---
 

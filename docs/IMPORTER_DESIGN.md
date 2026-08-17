@@ -1,11 +1,11 @@
 # Diseño del importador de Odoo
 
-> **Arquitectura del importador v0.1 — Aprobada documentalmente — No implementada**
+> **Arquitectura del importador v0.1 — Alineada con DDL v0.2 corregido — No implementada**
 
 Este documento fija el flujo v0.1 aprobado. La aprobación es exclusivamente documental: no
 contiene código ejecutable, no crea tablas o migraciones y PostgreSQL continúa sin instalar.
-El siguiente paso es convertir el diseño en un DDL revisable y una estrategia de migraciones,
-todavía antes de instalar el servicio o programar el importador definitivo.
+El DDL v0.2 corregido permanece pendiente de segunda revisión manual y de validación real en
+PostgreSQL, todavía antes de instalar el servicio o programar el importador definitivo.
 
 ## 1. Alcance
 
@@ -45,7 +45,7 @@ Principios:
 - resultados versionados e inmutables en `staging_row_result`;
 - incidencias en `import_issue`;
 - candidatos de extracción/aplicación;
-- `import_plan` e `import_plan_item` persistidos para todo modo;
+- `import_plan` e `import_plan_item` persistidos para todo modo, con archivo/fila coherentes;
 - cambios normalizados, snapshots y eventos solo en modo aprobado;
 - reporte JSON y Markdown con hash, métricas, decisiones y errores.
 
@@ -202,7 +202,7 @@ flowchart TD
 - No exigir imagen.
 - Validar referencia como texto y preservar ceros/puntuación.
 - Crear una incidencia por problema con fila y columna exactas.
-- Persistir el resultado completado en `staging_row_result` con fila, batch, versiones de
+- Persistir el resultado completado en `staging_row_result` con fila, archivo, batch, versiones de
   contrato/reglas, etapa, estado, datos normalizados, fechas y hash de resultado.
 - Una reejecución o nueva versión crea otro resultado; jamás actualiza el anterior.
 
@@ -255,6 +255,10 @@ El plan conserva:
 - `item_sha256` por operación y `plan_sha256` sobre la serialización canónica completa;
 - hash del archivo, versión del contrato y versión de reglas.
 
+Cada item repite `import_file_id` deliberadamente. Una FK compuesta lo liga al archivo del plan y
+otra liga su `staging_row_id` al mismo archivo; no puede construirse un item con evidencia
+procedente de otro archivo.
+
 La generación termina en `awaiting_review`. El modo `dry_run` entrega este plan para revisión y
 no escribe datos empresariales. El modo solicitado no altera el contenido del plan.
 
@@ -283,8 +287,11 @@ no escribe datos empresariales. El modo solicitado no altera el contenido del pl
 ### 5.15 Snapshot de inventario
 
 - Crear una fila append-only por producto/fila aplicada.
-- Conservar cantidad real, disponible, unidad, importación, plan aplicado y fecha de procedencia.
+- Conservar cantidad real, disponible, unidad, batch, archivo, plan, item aplicado, fila y fecha de procedencia.
+- Enlazar el `import_plan_item` exacto mediante el mismo plan, archivo, fila, plantilla y objetivo
+  de producto; el objetivo generado distingue plantilla de variante.
 - No sobrescribir el snapshot anterior.
+- Permitir un único snapshot por `import_plan_item_id` para que un reintento no lo duplique.
 - No omitir valores cero o negativos.
 
 ### 5.16 Procesamiento independiente de imágenes
@@ -357,7 +364,15 @@ observaciones se guardan como candidatos. Cada candidato incluye:
 - `rule_code` y `rule_version`;
 - `confidence` entre 0 y 1;
 - `review_status` (`pending`, `approved`, `rejected`);
-- `staging_row_id`, producto opcional y actor de revisión.
+- `staging_row_id`, producto opcional, actor, fecha y nota de revisión.
+
+`pending` no porta actor ni fecha de una decisión. `approved` o `rejected` exige un actor humano
+no vacío y una fecha no anterior a la creación. La base valida la presencia y coherencia de esa
+evidencia; autorización, identidad real del usuario y auditoría del cambio siguen en la aplicación.
+
+Las FKs compuestas rechazan una combinación marca/modelo o marca/modelo/motor incompatible cuando
+esos IDs estructurados están presentes. Un motor sin modelo puede conservarse como candidato
+general, y una combinación incompleta o ambigua debe permanecer `pending` hasta revisión humana.
 
 Una regla nueva crea nuevos candidatos; no reescribe los anteriores. Los aprobados pueden
 alimentar entidades vehiculares, pero la evidencia y decisión permanecen auditables.
@@ -374,7 +389,7 @@ pendientes de ejemplos y validación externa.
 - **Conciliación:** usa IDs estables cuando existan o clave provisional contextual.
 - **Plan:** items y plan completo tienen hashes canónicos; todo cambio crea un plan sucesor.
 - **Apply:** la transición atómica `approved -> applying` impide aplicar dos veces el mismo plan.
-- **Inventario:** unique lógico por batch + fila + producto evita duplicar snapshots en reintentos.
+- **Inventario:** unique por `import_plan_item_id` evita duplicar el snapshot exacto en reintentos.
 - **Auditoría:** `correlation_id` y hash de evento permiten detectar repeticiones.
 
 Un mismo archivo con una nueva versión de reglas puede reprocesarse para comparar resultados,
@@ -563,5 +578,5 @@ function apply_approved_plan(plan_id, actor):
 - Política futura de archivado cuando existan métricas reales de volumen.
 - Reglas empresariales específicas para aplicaciones vehiculares.
 
-La arquitectura v0.1 está aprobada documentalmente y no implementada. El siguiente paso es
-producir DDL y estrategia de migraciones revisables antes de instalar PostgreSQL.
+La arquitectura v0.1 está aprobada documentalmente y no implementada. El DDL v0.2 corregido debe
+recibir una segunda revisión manual antes de instalar PostgreSQL o ejecutar una migración.

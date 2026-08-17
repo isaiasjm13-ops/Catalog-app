@@ -1,11 +1,11 @@
 # Diseño de PostgreSQL
 
-> **Arquitectura de datos v0.1 aprobada — DDL v0.1 creado y no ejecutado**
+> **Arquitectura de datos v0.1 aprobada — DDL v0.2 corregido, no ejecutado y pendiente de segunda revisión manual**
 
 Este documento fija la arquitectura de datos v0.1 aprobada. El borrador transaccional se encuentra
 en `db/migrations/0001_initial_schema.sql`, acompañado por `MIGRATION_STRATEGY.md` y
 `DDL_REVIEW.md`. El SQL no ha sido ejecutado: PostgreSQL continúa sin instalar, no existe ninguna
-tabla real y el importador tampoco está implementado. El siguiente paso es revisar el DDL y solo
+tabla real y el importador tampoco está implementado. El siguiente paso es una segunda revisión manual del DDL y solo
 después preparar el entorno PostgreSQL local.
 
 ## 1. Alcance y evidencia disponible
@@ -19,7 +19,7 @@ La propuesta parte de:
 - nombres duplicados, cantidades con signo e imágenes opcionales;
 - arquitectura oficial PostgreSQL + FastAPI + Jinja2/HTML/CSS/JavaScript.
 
-Los nombres y tipos lógicos siguientes se mapearon al DDL v0.1 y permanecen sujetos a revisión
+Los nombres y tipos lógicos siguientes se mapearon al DDL v0.2 y permanecen sujetos a revisión
 antes de ejecutar el archivo en PostgreSQL.
 
 ## 2. Objetivos y principios
@@ -208,9 +208,9 @@ evidencia separada, inmutable y reproducible bajo versiones explícitas.
 | Elemento | Propuesta |
 |---|---|
 | PK | `staging_row_result_id uuid` |
-| Columnas M | `staging_row_id uuid`, `import_batch_id uuid`, `contract_version text`, `rules_version text`, `processing_stage text`, `attempt_number integer`, `status text`, `normalized_data jsonb`, `result_sha256 char(64)`, `created_at timestamptz`, `completed_at timestamptz` |
+| Columnas M | `staging_row_id uuid`, `import_batch_id uuid`, `import_file_id uuid`, `contract_version text`, `rules_version text`, `processing_stage text`, `attempt_number integer`, `status text`, `normalized_data jsonb`, `result_sha256 char(64)`, `created_at timestamptz`, `completed_at timestamptz` |
 | Columnas O | `processor_version text`, `metadata jsonb` |
-| FKs | `staging_row_id -> staging_row`; `import_batch_id -> import_batch` |
+| FKs | Compuestas para garantizar que batch, archivo y fila pertenecen al mismo contexto |
 | Restricciones | Unique `(staging_row_id, import_batch_id, contract_version, rules_version, processing_stage, attempt_number)`; intento >= 1; etapa/estado no vacíos; `completed_at >= created_at` |
 | Índices | `(staging_row_id, processing_stage, created_at DESC)`, `import_batch_id`, `(contract_version, rules_version)`, `status` |
 | Actualización | Ninguna: se inserta al completar la etapa. Una regla, contrato o reejecución nueva crea otra fila; nunca sobrescribe un resultado previo |
@@ -229,8 +229,8 @@ en `import_issue` y pueden referenciar esta fila o directamente la evidencia de 
 | PK | `import_issue_id uuid` |
 | Columnas M | `import_batch_id uuid`, `severity text`, `code text`, `message text`, `status text`, `created_at timestamptz` |
 | Columnas O | `import_file_id uuid`, `staging_row_id uuid`, `staging_row_result_id uuid`, `column_name text`, `details jsonb`, `resolved_at timestamptz`, `resolved_by text`, `resolution_note text` |
-| FKs | `import_batch_id -> import_batch`; opcionales `import_file_id -> import_file`, `staging_row_id -> staging_row` y `staging_row_result_id -> staging_row_result` |
-| Restricciones | `severity IN ('info','warning','error','fatal')`; estado `open/resolved/accepted` |
+| FKs | Batch directo; archivo dentro del batch; fila dentro del archivo; resultado dentro del mismo batch/archivo |
+| Restricciones | `severity IN ('info','warning','error','fatal')`; estado `open/resolved/accepted`; resolver o aceptar exige actor no vacío y fecha coherente; `open` carece de resolución |
 | Índices | `(import_batch_id, severity, status)`, `staging_row_id`, `staging_row_result_id`, `code` |
 | Actualización | Solo resolución/aceptación; mensaje y evidencia originales inmutables |
 | Eliminación | `RESTRICT`; no borrar incidencias |
@@ -263,10 +263,10 @@ archivo, contrato, reglas, resolución humana o contenido crea un plan sucesor y
 | Elemento | Propuesta |
 |---|---|
 | PK | `import_plan_item_id uuid` |
-| Columnas M | `import_plan_id uuid`, `item_order integer`, `staging_row_id uuid`, `operation_type text`, `before_values jsonb`, `proposed_values jsonb`, `issues jsonb`, `requires_review boolean`, `item_sha256 char(64)`, `created_at timestamptz` |
+| Columnas M | `import_plan_id uuid`, `import_file_id uuid`, `item_order integer`, `staging_row_id uuid`, `operation_type text`, `before_values jsonb`, `proposed_values jsonb`, `issues jsonb`, `requires_review boolean`, `item_sha256 char(64)`, `created_at timestamptz` |
 | Columnas O | `product_template_id uuid`, `product_variant_id uuid`, `human_decision text`, `decision_reason text`, `decided_at timestamptz`, `decided_by text` |
-| FKs | `import_plan_id -> import_plan`; `staging_row_id -> staging_row`; productos opcionales a `product_template` y `product_variant` |
-| Restricciones | Unique `(import_plan_id, item_order)`; operación en `create/update/no_change/conflict/blocked/inventory_snapshot/media_pending/extraction_candidate`; variante coherente con plantilla; decisión y actor coherentes |
+| FKs | Plan y fila mediante FKs compuestas con `import_file_id`; productos opcionales a `product_template` y `product_variant` |
+| Restricciones | Unique `(import_plan_id, item_order)`; operación controlada; variante coherente; `product_scope`/`product_target_id` generados para probar el objetivo exacto de inventario; decisión y actor coherentes |
 | Índices | `import_plan_id`, `staging_row_id`, productos afectados, `operation_type`, `requires_review` |
 | Actualización | Contenido inmutable. Una decisión humana se materializa en un plan sucesor con nuevos items y hashes; no se edita el plan ya generado |
 | Eliminación | `RESTRICT`; forma parte de la prueba de lo revisado |
@@ -315,7 +315,7 @@ de valores produce un plan distinto que requiere revisión y aprobación nuevas.
 | Columnas M | `source_system_id uuid`, `brand_id uuid`, `name_original text`, `variant_count_observed integer`, `catalog_status text`, `created_from_staging_row_id uuid`, `created_at timestamptz` |
 | Columnas O | `product_category_id uuid`, `odoo_template_id text`, `odoo_external_id text`, `name_normalized text`, `currency_code text`, `uom_original text`, `activity_state text`, `is_favorite boolean`, `show_quantity_status boolean`, `source_active boolean NULL`, `source_updated_at timestamptz`, `last_confirmed_batch_id uuid`, `updated_at timestamptz` |
 | FKs | `source_system_id -> source_system`; `brand_id -> brand`; opcionales a `product_category`; `created_from_staging_row_id -> staging_row`; `last_confirmed_batch_id -> import_batch` |
-| Restricciones | `variant_count_observed >= 0`; `catalog_status IN ('pending_review','active','inactive','archived')`; nombre no es unique; IDs Odoo únicos solo dentro del sistema cuando existan |
+| Restricciones | `variant_count_observed >= 0`; `catalog_status IN ('pending_review','active','inactive','archived')`; nombre no es unique; IDs Odoo opcionales no vacíos y únicos solo dentro del sistema cuando existan; claves alternativas contextuales para FKs compuestas |
 | Índices | `(source_system_id, brand_id)`, `product_category_id`, `catalog_status`, `name_normalized`, IDs Odoo parciales, `last_confirmed_batch_id` |
 | Actualización | Upsert controlado; cada cambio produce `audit_event`; ausencia en archivo no modifica `source_active` ni `catalog_status` |
 | Eliminación | `RESTRICT`; baja lógica explícita y nunca automática |
@@ -337,8 +337,8 @@ y auditada.
 | PK | `product_variant_id uuid` |
 | Columnas M | `product_template_id uuid`, `source_system_id uuid`, `catalog_status text`, `created_from_staging_row_id uuid`, `created_at timestamptz` |
 | Columnas O | `odoo_variant_id text`, `odoo_external_id text`, `variant_name text`, `attributes jsonb`, `source_active boolean NULL`, `updated_at timestamptz` |
-| FKs | Plantilla, origen y fila de procedencia |
-| Restricciones | No crear sin fila/ID de variante real; `catalog_status IN ('pending_review','active','inactive','archived')`; IDs Odoo únicos por sistema cuando existan |
+| FKs | FK compuesta a plantilla/origen y FK a fila de procedencia |
+| Restricciones | No crear sin al menos un ID de variante realmente no vacío; origen igual al de la plantilla; `catalog_status IN ('pending_review','active','inactive','archived')`; IDs Odoo únicos por sistema cuando existan |
 | Índices | `product_template_id`, `catalog_status`, IDs Odoo parciales |
 | Actualización | Solo desde exportación de variantes o revisión humana documentada; ausencia no cambia estados |
 | Eliminación | `RESTRICT`; baja lógica |
@@ -358,9 +358,9 @@ variante tampoco se activa, desactiva ni archiva por mera presencia o ausencia e
 |---|---|
 | PK | `product_reference_id uuid` |
 | Columnas M | `source_system_id uuid`, `brand_id uuid`, `product_template_id uuid`, `reference_type text`, `value_original text`, `value_normalized text`, `is_primary boolean`, `created_at timestamptz` |
-| Columnas O | `product_variant_id uuid`, `staging_row_id uuid`, `confidence numeric(5,4)`, `review_status text`, `updated_at timestamptz` |
-| FKs | IDs de origen, marca y plantilla a sus tablas; opcionales `product_variant_id -> product_variant` y `staging_row_id -> staging_row` |
-| Restricciones | Valor no vacío; si hay variante debe pertenecer a la plantilla; confianza 0..1 |
+| Columnas O | `product_variant_id uuid`, `staging_row_id uuid`, `confidence numeric(5,4)`, `review_status text`, `reviewed_by text`, `reviewed_at timestamptz`, `review_note text`, `updated_at timestamptz` |
+| FKs | FK compuesta asegura que origen y marca coinciden con la plantilla; variante opcional pertenece a la misma plantilla; fila de evidencia opcional |
+| Restricciones | Valor no vacío; confianza 0..1; `approved/rejected` exige actor humano no vacío y fecha no anterior a creación |
 | Índices | No unique en `(source_system_id, brand_id, value_normalized)`; índice de búsqueda sobre esa terna; índice por producto y tipo |
 | Actualización | Original inmutable; normalización versionada/auditada; conflictos no se sobreescriben |
 | Eliminación | `RESTRICT`; marcar vigencia o revisión, no borrar automáticamente |
@@ -376,10 +376,10 @@ en lugar de rechazar o fusionar datos.
 | Elemento | Propuesta |
 |---|---|
 | PK | `inventory_snapshot_id uuid` |
-| Columnas M | `product_template_id uuid`, `import_batch_id uuid`, `import_plan_id uuid`, `staging_row_id uuid`, `quantity_on_hand numeric`, `quantity_available numeric`, `uom_original text`, `captured_at timestamptz`, `created_at timestamptz` |
+| Columnas M | `product_template_id uuid`, `import_batch_id uuid`, `import_plan_id uuid`, `import_plan_item_id uuid`, `plan_item_operation_type text`, `import_file_id uuid`, `staging_row_id uuid`, `quantity_on_hand numeric`, `quantity_available numeric`, `uom_original text`, `captured_at timestamptz`, `created_at timestamptz` |
 | Columnas O | `product_variant_id uuid`, `source_updated_at timestamptz`, `source_date_serial numeric`, `metadata jsonb` |
-| FKs | `product_template_id -> product_template`; opcional `product_variant_id -> product_variant`; batch, plan y fila a `import_batch`, `import_plan` y `staging_row` |
-| Restricciones | Valores positivos, cero y negativos permitidos; variante coherente con plantilla |
+| FKs | Contexto compuesto al plan, archivo/fila y `import_plan_item` exacto; objetivo generado distingue plantilla de variante |
+| Restricciones | Valores positivos, cero y negativos permitidos; un snapshot por item evita duplicados de reintento; producto/variante coincide exactamente con el item aprobado |
 | Índices | `(product_template_id, captured_at DESC)`, `(product_variant_id, captured_at DESC)`, `import_batch_id`, `import_plan_id` |
 | Actualización | Append-only; una corrección genera un nuevo snapshot o evento correctivo |
 | Eliminación | `RESTRICT`; historial completo por importación. Compactación solo tras medir volumen real y conservar trazabilidad |
@@ -413,8 +413,8 @@ relaciones empresariales. PostgreSQL conserva URI, hash, tipo, tamaño, estado y
 | Elemento | Propuesta |
 |---|---|
 | PK | `product_media_id uuid` |
-| Columnas M | `product_template_id uuid`, `media_asset_id uuid`, `role text`, `sort_order integer`, `created_at timestamptz` |
-| Columnas O | `product_variant_id uuid`, `caption text`, `is_primary boolean` |
+| Columnas M | `product_template_id uuid`, `media_asset_id uuid`, `role text`, `sort_order integer`, `is_primary boolean DEFAULT false`, `created_at timestamptz` |
+| Columnas O | `product_variant_id uuid`, `caption text` |
 | FKs | Plantilla, variante y recurso |
 | Restricciones | Variante coherente con plantilla; unicidad mediante índices parciales separados para plantilla y variante, evitando duplicados causados por `NULL` |
 | Índices | Producto/variante, `media_asset_id`, índice parcial para `is_primary` |
@@ -429,9 +429,9 @@ relaciones empresariales. PostgreSQL conserva URI, hash, tipo, tamaño, estado y
 |---|---|
 | PK | `vehicle_make_id uuid` |
 | Columnas M | `name text`, `normalized_name text`, `review_status text`, `created_at timestamptz` |
-| Columnas O | `source_code text`, `updated_at timestamptz` |
+| Columnas O | `source_code text`, `reviewed_by text`, `reviewed_at timestamptz`, `review_note text`, `updated_at timestamptz` |
 | FKs | Ninguna |
-| Restricciones | `normalized_name` unique solo tras aprobación; candidatos permanecen separados |
+| Restricciones | `source_code` opcional no vacío; `normalized_name` unique solo tras aprobación; aprobar/rechazar exige evidencia humana |
 | Índices | `normalized_name`, `review_status` |
 | Actualización | Fusiones solo mediante decisión humana auditada |
 | Eliminación | `RESTRICT`; desactivar o fusionar con redirección auditada |
@@ -444,9 +444,9 @@ relaciones empresariales. PostgreSQL conserva URI, hash, tipo, tamaño, estado y
 |---|---|
 | PK | `vehicle_model_id uuid` |
 | Columnas M | `vehicle_make_id uuid`, `name text`, `normalized_name text`, `review_status text`, `created_at timestamptz` |
-| Columnas O | `source_code text`, `updated_at timestamptz` |
+| Columnas O | `source_code text`, `reviewed_by text`, `reviewed_at timestamptz`, `review_note text`, `updated_at timestamptz` |
 | FKs | `vehicle_make_id -> vehicle_make` |
-| Restricciones | Unique aprobado `(vehicle_make_id, normalized_name)` |
+| Restricciones | Clave alternativa `(vehicle_make_id, vehicle_model_id)` para coherencia; `source_code` opcional no vacío; unique aprobado por marca; aprobar/rechazar exige evidencia humana |
 | Índices | `vehicle_make_id`, `normalized_name`, `review_status` |
 | Actualización | Normalización/fusión con revisión humana |
 | Eliminación | `RESTRICT` |
@@ -459,9 +459,9 @@ relaciones empresariales. PostgreSQL conserva URI, hash, tipo, tamaño, estado y
 |---|---|
 | PK | `vehicle_engine_id uuid` |
 | Columnas M | `name text`, `normalized_name text`, `review_status text`, `created_at timestamptz` |
-| Columnas O | `vehicle_model_id uuid`, `engine_code text`, `displacement_liters numeric(6,3)`, `cylinders smallint`, `attributes jsonb`, `updated_at timestamptz` |
-| FKs | `vehicle_model_id -> vehicle_model` |
-| Restricciones | Cilindros y cilindrada positivos cuando existan; no unique global por nombre |
+| Columnas O | `vehicle_make_id uuid`, `vehicle_model_id uuid`, `engine_code text`, `reviewed_by text`, `reviewed_at timestamptz`, `review_note text`, `displacement_liters numeric(6,3)`, `cylinders smallint`, `attributes jsonb`, `updated_at timestamptz` |
+| FKs | Marca opcional; cuando existe modelo, FK compuesta exige que pertenezca a esa marca |
+| Restricciones | Puede ser candidato general sin modelo; `engine_code` opcional no vacío; cilindros/cilindrada positivos; aprobar/rechazar exige evidencia humana; no unique global por nombre |
 | Índices | `vehicle_model_id`, `engine_code`, `normalized_name` |
 | Actualización | Candidatos no aprobados no consolidan motores automáticamente |
 | Eliminación | `RESTRICT` |
@@ -474,9 +474,9 @@ relaciones empresariales. PostgreSQL conserva URI, hash, tipo, tamaño, estado y
 |---|---|
 | PK | `product_application_candidate_id uuid` |
 | Columnas M | `product_template_id uuid`, `staging_row_id uuid`, `evidence_original text`, `rule_code text`, `rule_version text`, `confidence numeric(5,4)`, `review_status text`, `created_at timestamptz` |
-| Columnas O | `vehicle_make_id uuid`, `vehicle_model_id uuid`, `vehicle_engine_id uuid`, `year_from smallint`, `year_to smallint`, `position text`, `notes text`, `reviewed_by text`, `reviewed_at timestamptz` |
-| FKs | `product_template_id -> product_template`; `staging_row_id -> staging_row`; entidades vehiculares opcionales a sus tablas |
-| Restricciones | Confianza 0..1; años coherentes; estado `pending/approved/rejected` |
+| Columnas O | `vehicle_make_id uuid`, `vehicle_model_id uuid`, `vehicle_engine_id uuid`, `year_from smallint`, `year_to smallint`, `position text`, `notes text`, `reviewed_by text`, `reviewed_at timestamptz`, `review_note text` |
+| FKs | Producto/fila; FKs vehiculares simples y compuestas impiden mezclar marca/modelo/motor cuando esos IDs se suministran conjuntamente |
+| Restricciones | Confianza 0..1; años coherentes; modelo exige marca; `approved/rejected` exige actor humano y fecha |
 | Índices | `product_template_id`, `review_status`, IDs vehiculares, rango de años |
 | Actualización | Evidencia/regla inmutables; solo revisión y resolución editables |
 | Eliminación | `RESTRICT`; candidatos rechazados se conservan |
@@ -491,7 +491,7 @@ relaciones empresariales. PostgreSQL conserva URI, hash, tipo, tamaño, estado y
 | Columnas M | `staging_row_id uuid`, `candidate_type text`, `evidence_original text`, `value_original text`, `value_normalized text`, `rule_code text`, `rule_version text`, `confidence numeric(5,4)`, `review_status text`, `created_at timestamptz` |
 | Columnas O | `product_template_id uuid`, `target_field text`, `reviewed_by text`, `reviewed_at timestamptz`, `review_note text` |
 | FKs | Fila y producto opcional |
-| Restricciones | Confianza 0..1; estado `pending/approved/rejected`; regla/version no vacías |
+| Restricciones | Confianza 0..1; `value_normalized`, regla y versión no vacíos; `approved/rejected` exige actor humano y fecha |
 | Índices | `(candidate_type, review_status)`, `staging_row_id`, `product_template_id` |
 | Actualización | Evidencia, valores y regla inmutables; revisión append/auditada |
 | Eliminación | `RESTRICT` |
@@ -504,9 +504,9 @@ relaciones empresariales. PostgreSQL conserva URI, hash, tipo, tamaño, estado y
 |---|---|
 | PK | `catalog_release_id uuid` |
 | Columnas M | `brand_id uuid`, `version text`, `status text`, `definition jsonb`, `created_at timestamptz`, `created_by text` |
-| Columnas O | `published_at timestamptz`, `published_by text`, `archived_at timestamptz`, `notes text`, `snapshot_sha256 char(64)` |
+| Columnas O | `published_at timestamptz`, `published_by text`, `archived_at timestamptz`, `archived_by text`, `notes text`, `snapshot_sha256 char(64)` |
 | FKs | `brand_id -> brand` |
-| Restricciones | Unique `(brand_id, version)`; estados `draft/published/archived`; publicación requiere hash |
+| Restricciones | Unique `(brand_id, version)`; actores no vacíos; publicación requiere hash; solo un release con evidencia previa de publicación puede quedar `archived`, con actor/fecha de archivo coherentes |
 | Índices | `(brand_id, status)`, `published_at DESC`, `snapshot_sha256` |
 | Actualización | Definición inmutable desde creación; solo transiciones auditadas `draft -> published -> archived` |
 | Eliminación | `RESTRICT`; ninguna versión publicada se borra |
@@ -518,13 +518,13 @@ relaciones empresariales. PostgreSQL conserva URI, hash, tipo, tamaño, estado y
 | Elemento | Propuesta |
 |---|---|
 | PK | `catalog_release_item_id uuid` |
-| Columnas M | `catalog_release_id uuid`, `product_template_id uuid`, `item_order integer`, `snapshot_schema_version text`, `snapshot_data jsonb`, `snapshot_sha256 char(64)`, `created_at timestamptz` |
+| Columnas M | `catalog_release_id uuid`, `brand_id uuid`, `product_template_id uuid`, `item_order integer`, `snapshot_schema_version text`, `snapshot_data jsonb`, `snapshot_sha256 char(64)`, `created_at timestamptz` |
 | Columnas O | `product_variant_id uuid`, `section_key text`, `grouping_keys jsonb`, `source_import_batch_id uuid` |
-| FKs | `catalog_release_id -> catalog_release`; `product_template_id -> product_template`; opcionales a `product_variant` e `import_batch` |
-| Restricciones | Unique `(catalog_release_id, item_order)`; snapshot/hash obligatorios; variante coherente |
+| FKs | FKs compuestas exigen la misma marca en release, item y plantilla; variante opcional coherente; batch opcional |
+| Restricciones | Unique `(catalog_release_id, item_order)`; snapshot/hash obligatorios; no puede mezclar marcas |
 | Índices | `catalog_release_id`, producto/variante, `section_key`, `snapshot_sha256` |
 | Actualización | Ninguna; cambiar un draft crea un release sucesor con nuevos items y hashes |
-| Eliminación | Sin borrado en ningún estado; un draft descartado se archiva y queda auditado |
+| Eliminación | Sin borrado; un draft descartado permanece `draft` con decisión auditada; solo un release previamente publicado puede archivarse |
 
 El `snapshot_data` canónico aprobado es JSON versionado. XML para InDesign se genera mediante
 un adaptador específico y nunca es la fuente maestra interna.
@@ -640,22 +640,30 @@ Solo permanecen abiertos estos datos o reglas que el repositorio no puede determ
 
 ## 13. Próximo paso
 
-Las 24 tablas y sus responsabilidades quedan aprobadas documentalmente. El DDL v0.1 y la
-estrategia de migraciones ya existen como borradores revisables, pero no se han ejecutado. Se debe
-completar `DDL_REVIEW.md`, revisar manualmente el SQL y después preparar PostgreSQL 16+ local para
-una validación real en una base vacía.
+Las 24 tablas y sus responsabilidades quedan aprobadas documentalmente. El DDL v0.2 corregido y
+la estrategia de migraciones existen como borradores revisables, pero no se han ejecutado. Se debe
+completar una segunda revisión manual de `DDL_REVIEW.md` y del SQL antes de preparar PostgreSQL 16+
+local para una validación real en una base vacía.
 
-## 14. Aclaraciones del mapeo físico v0.1
+## 14. Aclaraciones del mapeo físico v0.2
 
-- Las relaciones que incluyen plantilla y variante usan FKs compuestas para comprobar que la
-  variante pertenece a la plantilla indicada.
-- `import_plan` enlaza el archivo dentro del mismo batch; inventario enlaza el plan dentro del
-  mismo batch mediante claves compuestas.
-- `product_variant` exige un identificador real de Odoo o externo para impedir que
-  `variant_count_observed` produzca variantes inventadas.
-- La idempotencia del snapshot usa `UNIQUE NULLS NOT DISTINCT`, disponible en PostgreSQL 15+ y
-  compatible con el objetivo PostgreSQL 16+.
+- Los IDs externos opcionales aceptan `NULL`, pero no cadenas vacías o compuestas por espacios;
+  los índices parciales de Odoo excluyen explícitamente ambos casos.
+- `product_template` tiene claves alternativas que comienzan por su PK solo para soportar FKs
+  contextuales de origen y marca. No representan nuevas identidades empresariales.
+- `product_variant` comparte origen con su plantilla; `product_reference` comparte origen y marca
+  con el producto, sin convertir la referencia interna en unique global.
+- `import_file_id` se repite de forma deliberada en resultados, items y snapshots. Las FKs
+  compuestas impiden que ese contexto redundante diverja del batch, plan o fila.
+- Inventario enlaza el `import_plan_item` exacto. `product_scope` y `product_target_id` son columnas
+  generadas que distinguen de forma inequívoca un objetivo de plantilla de uno de variante; la
+  unicidad de `import_plan_item_id` impide duplicar el snapshot por reintento.
+- Los releases y sus items comparten `brand_id` mediante FKs compuestas. Un draft no se archiva:
+  `archived` exige evidencia de publicación previa, actor y fecha de archivo.
+- Marca/modelo/motor usan claves compuestas cuando se proporcionan conjuntamente. Un motor puede
+  continuar general sin modelo; las asociaciones ambiguas permanecen `pending`.
+- Las decisiones `approved/rejected` exigen actor humano y fecha en todas las tablas revisables.
 - `audit_event.entity_id` no tiene una FK polimórfica imposible; la aplicación valida la pareja
   `entity_type + entity_id`, mientras batch, plan y staging sí tienen FKs reales.
-- Transiciones, autorización, aprobación humana, cálculo de hashes, JSON canónico e inmutabilidad
+- Transiciones históricas, autorización, identidad real del actor, cálculo de hashes, JSON canónico e inmutabilidad
   operacional permanecen como garantías de aplicación y permisos, detalladas en `DDL_REVIEW.md`.

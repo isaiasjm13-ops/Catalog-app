@@ -1,6 +1,7 @@
 BEGIN;
 
--- Perfect Catalog PostgreSQL 16+ initial schema draft.
+-- Perfect Catalog PostgreSQL 16+ initial schema v0.2 corrected draft.
+-- Pending second manual review; this baseline has never been executed.
 -- UUID values are supplied by the application.
 CREATE SCHEMA perfect_catalog;
 
@@ -22,6 +23,9 @@ CREATE TABLE perfect_catalog.source_system (
     CONSTRAINT ck_source_system_code_nonempty CHECK (btrim(code) <> ''),
     CONSTRAINT ck_source_system_name_nonempty CHECK (btrim(name) <> ''),
     CONSTRAINT ck_source_system_type_nonempty CHECK (btrim(system_type) <> ''),
+    CONSTRAINT ck_source_system_instance_key_nonempty CHECK (
+        instance_key IS NULL OR btrim(instance_key) <> ''
+    ),
     CONSTRAINT ck_source_system_updated_at CHECK (updated_at IS NULL OR updated_at >= created_at)
 );
 
@@ -48,6 +52,12 @@ CREATE TABLE perfect_catalog.import_batch (
         'ready', 'dry_run_complete', 'applying', 'completed',
         'completed_with_warnings', 'blocked', 'rolled_back', 'failed', 'cancelled'
     )),
+    CONSTRAINT ck_import_batch_requested_by_nonempty CHECK (
+        requested_by IS NULL OR btrim(requested_by) <> ''
+    ),
+    CONSTRAINT ck_import_batch_approved_by_nonempty CHECK (
+        approved_by IS NULL OR btrim(approved_by) <> ''
+    ),
     CONSTRAINT ck_import_batch_finished_at CHECK (finished_at IS NULL OR finished_at >= started_at)
 );
 
@@ -87,6 +97,7 @@ CREATE TABLE perfect_catalog.staging_row (
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT pk_staging_row PRIMARY KEY (staging_row_id),
     CONSTRAINT uq_staging_row_source UNIQUE (import_file_id, sheet_name, source_row_number),
+    CONSTRAINT uq_staging_row_file_row UNIQUE (import_file_id, staging_row_id),
     CONSTRAINT ck_staging_row_sheet_nonempty CHECK (btrim(sheet_name) <> ''),
     CONSTRAINT ck_staging_row_number CHECK (source_row_number >= 1),
     CONSTRAINT ck_staging_row_sha256 CHECK (row_sha256 ~ '^[0-9a-f]{64}$')
@@ -96,6 +107,7 @@ CREATE TABLE perfect_catalog.staging_row_result (
     staging_row_result_id uuid NOT NULL,
     staging_row_id uuid NOT NULL,
     import_batch_id uuid NOT NULL,
+    import_file_id uuid NOT NULL,
     contract_version text NOT NULL,
     rules_version text NOT NULL,
     processing_stage text NOT NULL,
@@ -108,6 +120,11 @@ CREATE TABLE perfect_catalog.staging_row_result (
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     completed_at timestamptz NOT NULL,
     CONSTRAINT pk_staging_row_result PRIMARY KEY (staging_row_result_id),
+    CONSTRAINT uq_staging_row_result_context UNIQUE (
+        import_batch_id,
+        import_file_id,
+        staging_row_result_id
+    ),
     CONSTRAINT uq_staging_row_result_version UNIQUE (
         staging_row_id,
         import_batch_id,
@@ -146,9 +163,25 @@ CREATE TABLE perfect_catalog.import_issue (
     CONSTRAINT ck_import_issue_status CHECK (status IN ('open', 'resolved', 'accepted')),
     CONSTRAINT ck_import_issue_code_nonempty CHECK (btrim(code) <> ''),
     CONSTRAINT ck_import_issue_message_nonempty CHECK (btrim(message) <> ''),
-    CONSTRAINT ck_import_issue_resolution_pair CHECK (
-        (resolved_at IS NULL AND resolved_by IS NULL)
-        OR (resolved_at IS NOT NULL AND resolved_by IS NOT NULL)
+    CONSTRAINT ck_import_issue_row_requires_file CHECK (
+        staging_row_id IS NULL OR import_file_id IS NOT NULL
+    ),
+    CONSTRAINT ck_import_issue_result_requires_file CHECK (
+        staging_row_result_id IS NULL OR import_file_id IS NOT NULL
+    ),
+    CONSTRAINT ck_import_issue_resolution_evidence CHECK (
+        (
+            status = 'open'
+            AND resolved_at IS NULL
+            AND resolved_by IS NULL
+            AND resolution_note IS NULL
+        )
+        OR (
+            status IN ('resolved', 'accepted')
+            AND resolved_at IS NOT NULL
+            AND resolved_by IS NOT NULL
+            AND btrim(resolved_by) <> ''
+        )
     ),
     CONSTRAINT ck_import_issue_resolved_at CHECK (resolved_at IS NULL OR resolved_at >= created_at)
 );
@@ -176,7 +209,12 @@ CREATE TABLE perfect_catalog.import_plan (
     applied_by text,
     failure_summary text,
     CONSTRAINT pk_import_plan PRIMARY KEY (import_plan_id),
-    CONSTRAINT uq_import_plan_batch_plan UNIQUE (import_batch_id, import_plan_id),
+    CONSTRAINT uq_import_plan_plan_file UNIQUE (import_plan_id, import_file_id),
+    CONSTRAINT uq_import_plan_batch_file_plan UNIQUE (
+        import_batch_id,
+        import_file_id,
+        import_plan_id
+    ),
     CONSTRAINT ck_import_plan_status CHECK (plan_status IN (
         'generated', 'awaiting_review', 'approved', 'rejected',
         'invalidated', 'applying', 'applied', 'failed'
@@ -187,6 +225,15 @@ CREATE TABLE perfect_catalog.import_plan (
     CONSTRAINT ck_import_plan_contract_nonempty CHECK (btrim(contract_version) <> ''),
     CONSTRAINT ck_import_plan_rules_nonempty CHECK (btrim(rules_version) <> ''),
     CONSTRAINT ck_import_plan_generated_by_nonempty CHECK (btrim(generated_by) <> ''),
+    CONSTRAINT ck_import_plan_approved_by_nonempty CHECK (
+        approved_by IS NULL OR btrim(approved_by) <> ''
+    ),
+    CONSTRAINT ck_import_plan_rejected_by_nonempty CHECK (
+        rejected_by IS NULL OR btrim(rejected_by) <> ''
+    ),
+    CONSTRAINT ck_import_plan_applied_by_nonempty CHECK (
+        applied_by IS NULL OR btrim(applied_by) <> ''
+    ),
     CONSTRAINT ck_import_plan_not_self_superseding CHECK (supersedes_plan_id IS NULL OR supersedes_plan_id <> import_plan_id),
     CONSTRAINT ck_import_plan_approval_pair CHECK (
         (approved_at IS NULL AND approved_by IS NULL)
@@ -234,6 +281,9 @@ CREATE TABLE perfect_catalog.brand (
     CONSTRAINT ck_brand_name_nonempty CHECK (btrim(name) <> ''),
     CONSTRAINT ck_brand_normalized_name_nonempty CHECK (btrim(normalized_name) <> ''),
     CONSTRAINT ck_brand_source_pair CHECK (source_brand_id IS NULL OR source_system_id IS NOT NULL),
+    CONSTRAINT ck_brand_source_id_nonempty CHECK (
+        source_brand_id IS NULL OR btrim(source_brand_id) <> ''
+    ),
     CONSTRAINT ck_brand_updated_at CHECK (updated_at IS NULL OR updated_at >= created_at)
 );
 
@@ -255,6 +305,9 @@ CREATE TABLE perfect_catalog.product_category (
         parent_category_id IS NULL OR parent_category_id <> product_category_id
     ),
     CONSTRAINT ck_product_category_source_pair CHECK (source_category_id IS NULL OR source_system_id IS NOT NULL),
+    CONSTRAINT ck_product_category_source_id_nonempty CHECK (
+        source_category_id IS NULL OR btrim(source_category_id) <> ''
+    ),
     CONSTRAINT ck_product_category_updated_at CHECK (updated_at IS NULL OR updated_at >= created_at)
 );
 
@@ -281,7 +334,21 @@ CREATE TABLE perfect_catalog.product_template (
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamptz,
     CONSTRAINT pk_product_template PRIMARY KEY (product_template_id),
+    -- Alternate keys exist only to support contextual composite foreign keys.
+    CONSTRAINT uq_product_template_source UNIQUE (product_template_id, source_system_id),
+    CONSTRAINT uq_product_template_source_brand UNIQUE (
+        product_template_id,
+        source_system_id,
+        brand_id
+    ),
+    CONSTRAINT uq_product_template_brand UNIQUE (product_template_id, brand_id),
     CONSTRAINT ck_product_template_name_nonempty CHECK (btrim(name_original) <> ''),
+    CONSTRAINT ck_product_template_odoo_id_nonempty CHECK (
+        odoo_template_id IS NULL OR btrim(odoo_template_id) <> ''
+    ),
+    CONSTRAINT ck_product_template_external_id_nonempty CHECK (
+        odoo_external_id IS NULL OR btrim(odoo_external_id) <> ''
+    ),
     CONSTRAINT ck_product_template_variant_count CHECK (variant_count_observed >= 0),
     CONSTRAINT ck_product_template_catalog_status CHECK (
         catalog_status IN ('pending_review', 'active', 'inactive', 'archived')
@@ -305,7 +372,14 @@ CREATE TABLE perfect_catalog.product_variant (
     CONSTRAINT pk_product_variant PRIMARY KEY (product_variant_id),
     CONSTRAINT uq_product_variant_template_variant UNIQUE (product_template_id, product_variant_id),
     CONSTRAINT ck_product_variant_real_identifier CHECK (
-        odoo_variant_id IS NOT NULL OR odoo_external_id IS NOT NULL
+        (odoo_variant_id IS NOT NULL AND btrim(odoo_variant_id) <> '')
+        OR (odoo_external_id IS NOT NULL AND btrim(odoo_external_id) <> '')
+    ),
+    CONSTRAINT ck_product_variant_odoo_id_nonempty CHECK (
+        odoo_variant_id IS NULL OR btrim(odoo_variant_id) <> ''
+    ),
+    CONSTRAINT ck_product_variant_external_id_nonempty CHECK (
+        odoo_external_id IS NULL OR btrim(odoo_external_id) <> ''
     ),
     CONSTRAINT ck_product_variant_catalog_status CHECK (
         catalog_status IN ('pending_review', 'active', 'inactive', 'archived')
@@ -317,10 +391,17 @@ CREATE TABLE perfect_catalog.product_variant (
 CREATE TABLE perfect_catalog.import_plan_item (
     import_plan_item_id uuid NOT NULL,
     import_plan_id uuid NOT NULL,
+    import_file_id uuid NOT NULL,
     item_order integer NOT NULL,
     staging_row_id uuid NOT NULL,
     product_template_id uuid,
     product_variant_id uuid,
+    product_target_id uuid GENERATED ALWAYS AS (
+        COALESCE(product_variant_id, product_template_id)
+    ) STORED,
+    product_scope text GENERATED ALWAYS AS (
+        CASE WHEN product_variant_id IS NULL THEN 'template' ELSE 'variant' END
+    ) STORED,
     operation_type text NOT NULL,
     before_values jsonb NOT NULL,
     proposed_values jsonb NOT NULL,
@@ -334,6 +415,17 @@ CREATE TABLE perfect_catalog.import_plan_item (
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT pk_import_plan_item PRIMARY KEY (import_plan_item_id),
     CONSTRAINT uq_import_plan_item_order UNIQUE (import_plan_id, item_order),
+    -- This contextual key lets inventory prove the exact reviewed item and target.
+    CONSTRAINT uq_import_plan_item_snapshot_context UNIQUE (
+        import_plan_item_id,
+        import_plan_id,
+        import_file_id,
+        staging_row_id,
+        operation_type,
+        product_template_id,
+        product_scope,
+        product_target_id
+    ),
     CONSTRAINT ck_import_plan_item_order CHECK (item_order >= 1),
     CONSTRAINT ck_import_plan_item_operation CHECK (operation_type IN (
         'create', 'update', 'no_change', 'conflict', 'blocked',
@@ -342,6 +434,12 @@ CREATE TABLE perfect_catalog.import_plan_item (
     CONSTRAINT ck_import_plan_item_sha256 CHECK (item_sha256 ~ '^[0-9a-f]{64}$'),
     CONSTRAINT ck_import_plan_item_variant_template CHECK (
         product_variant_id IS NULL OR product_template_id IS NOT NULL
+    ),
+    CONSTRAINT ck_import_plan_item_inventory_product CHECK (
+        operation_type <> 'inventory_snapshot' OR product_template_id IS NOT NULL
+    ),
+    CONSTRAINT ck_import_plan_item_decided_by_nonempty CHECK (
+        decided_by IS NULL OR btrim(decided_by) <> ''
     ),
     CONSTRAINT ck_import_plan_item_decision_actor CHECK (
         (human_decision IS NULL AND decided_at IS NULL AND decided_by IS NULL)
@@ -362,6 +460,9 @@ CREATE TABLE perfect_catalog.product_reference (
     is_primary boolean NOT NULL,
     confidence numeric(5,4),
     review_status text,
+    reviewed_by text,
+    reviewed_at timestamptz,
+    review_note text,
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamptz,
     CONSTRAINT pk_product_reference PRIMARY KEY (product_reference_id),
@@ -372,6 +473,22 @@ CREATE TABLE perfect_catalog.product_reference (
     CONSTRAINT ck_product_reference_review_status CHECK (
         review_status IS NULL OR review_status IN ('pending', 'approved', 'rejected')
     ),
+    CONSTRAINT ck_product_reference_review_evidence CHECK (
+        (
+            (review_status IS NULL OR review_status = 'pending')
+            AND reviewed_by IS NULL
+            AND reviewed_at IS NULL
+        )
+        OR (
+            review_status IN ('approved', 'rejected')
+            AND reviewed_by IS NOT NULL
+            AND btrim(reviewed_by) <> ''
+            AND reviewed_at IS NOT NULL
+        )
+    ),
+    CONSTRAINT ck_product_reference_reviewed_at CHECK (
+        reviewed_at IS NULL OR reviewed_at >= created_at
+    ),
     CONSTRAINT ck_product_reference_updated_at CHECK (updated_at IS NULL OR updated_at >= created_at)
 );
 
@@ -379,8 +496,17 @@ CREATE TABLE perfect_catalog.inventory_snapshot (
     inventory_snapshot_id uuid NOT NULL,
     product_template_id uuid NOT NULL,
     product_variant_id uuid,
+    product_target_id uuid GENERATED ALWAYS AS (
+        COALESCE(product_variant_id, product_template_id)
+    ) STORED,
+    product_scope text GENERATED ALWAYS AS (
+        CASE WHEN product_variant_id IS NULL THEN 'template' ELSE 'variant' END
+    ) STORED,
     import_batch_id uuid NOT NULL,
     import_plan_id uuid NOT NULL,
+    import_plan_item_id uuid NOT NULL,
+    plan_item_operation_type text NOT NULL DEFAULT 'inventory_snapshot',
+    import_file_id uuid NOT NULL,
     staging_row_id uuid NOT NULL,
     quantity_on_hand numeric NOT NULL,
     quantity_available numeric NOT NULL,
@@ -391,12 +517,9 @@ CREATE TABLE perfect_catalog.inventory_snapshot (
     metadata jsonb,
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT pk_inventory_snapshot PRIMARY KEY (inventory_snapshot_id),
-    CONSTRAINT uq_inventory_snapshot_retry UNIQUE NULLS NOT DISTINCT (
-        import_batch_id,
-        import_plan_id,
-        staging_row_id,
-        product_template_id,
-        product_variant_id
+    CONSTRAINT uq_inventory_snapshot_plan_item UNIQUE (import_plan_item_id),
+    CONSTRAINT ck_inventory_snapshot_operation CHECK (
+        plan_item_operation_type = 'inventory_snapshot'
     ),
     CONSTRAINT ck_inventory_snapshot_uom_nonempty CHECK (btrim(uom_original) <> '')
 );
@@ -448,7 +571,7 @@ CREATE TABLE perfect_catalog.product_media (
     role text NOT NULL,
     sort_order integer NOT NULL,
     caption text,
-    is_primary boolean,
+    is_primary boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT pk_product_media PRIMARY KEY (product_media_id),
     CONSTRAINT ck_product_media_role_nonempty CHECK (btrim(role) <> ''),
@@ -462,12 +585,28 @@ CREATE TABLE perfect_catalog.vehicle_make (
     normalized_name text NOT NULL,
     review_status text NOT NULL,
     source_code text,
+    reviewed_by text,
+    reviewed_at timestamptz,
+    review_note text,
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamptz,
     CONSTRAINT pk_vehicle_make PRIMARY KEY (vehicle_make_id),
     CONSTRAINT ck_vehicle_make_name_nonempty CHECK (btrim(name) <> ''),
     CONSTRAINT ck_vehicle_make_normalized_nonempty CHECK (btrim(normalized_name) <> ''),
+    CONSTRAINT ck_vehicle_make_source_code_nonempty CHECK (
+        source_code IS NULL OR btrim(source_code) <> ''
+    ),
     CONSTRAINT ck_vehicle_make_review_status CHECK (review_status IN ('pending', 'approved', 'rejected')),
+    CONSTRAINT ck_vehicle_make_review_evidence CHECK (
+        (review_status = 'pending' AND reviewed_by IS NULL AND reviewed_at IS NULL)
+        OR (
+            review_status IN ('approved', 'rejected')
+            AND reviewed_by IS NOT NULL
+            AND btrim(reviewed_by) <> ''
+            AND reviewed_at IS NOT NULL
+        )
+    ),
+    CONSTRAINT ck_vehicle_make_reviewed_at CHECK (reviewed_at IS NULL OR reviewed_at >= created_at),
     CONSTRAINT ck_vehicle_make_updated_at CHECK (updated_at IS NULL OR updated_at >= created_at)
 );
 
@@ -478,31 +617,73 @@ CREATE TABLE perfect_catalog.vehicle_model (
     normalized_name text NOT NULL,
     review_status text NOT NULL,
     source_code text,
+    reviewed_by text,
+    reviewed_at timestamptz,
+    review_note text,
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamptz,
     CONSTRAINT pk_vehicle_model PRIMARY KEY (vehicle_model_id),
+    CONSTRAINT uq_vehicle_model_make_model UNIQUE (vehicle_make_id, vehicle_model_id),
     CONSTRAINT ck_vehicle_model_name_nonempty CHECK (btrim(name) <> ''),
     CONSTRAINT ck_vehicle_model_normalized_nonempty CHECK (btrim(normalized_name) <> ''),
+    CONSTRAINT ck_vehicle_model_source_code_nonempty CHECK (
+        source_code IS NULL OR btrim(source_code) <> ''
+    ),
     CONSTRAINT ck_vehicle_model_review_status CHECK (review_status IN ('pending', 'approved', 'rejected')),
+    CONSTRAINT ck_vehicle_model_review_evidence CHECK (
+        (review_status = 'pending' AND reviewed_by IS NULL AND reviewed_at IS NULL)
+        OR (
+            review_status IN ('approved', 'rejected')
+            AND reviewed_by IS NOT NULL
+            AND btrim(reviewed_by) <> ''
+            AND reviewed_at IS NOT NULL
+        )
+    ),
+    CONSTRAINT ck_vehicle_model_reviewed_at CHECK (reviewed_at IS NULL OR reviewed_at >= created_at),
     CONSTRAINT ck_vehicle_model_updated_at CHECK (updated_at IS NULL OR updated_at >= created_at)
 );
 
 CREATE TABLE perfect_catalog.vehicle_engine (
     vehicle_engine_id uuid NOT NULL,
+    vehicle_make_id uuid,
     vehicle_model_id uuid,
     name text NOT NULL,
     normalized_name text NOT NULL,
     review_status text NOT NULL,
     engine_code text,
+    reviewed_by text,
+    reviewed_at timestamptz,
+    review_note text,
     displacement_liters numeric(6,3),
     cylinders smallint,
     attributes jsonb,
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamptz,
     CONSTRAINT pk_vehicle_engine PRIMARY KEY (vehicle_engine_id),
+    CONSTRAINT uq_vehicle_engine_context UNIQUE (
+        vehicle_make_id,
+        vehicle_model_id,
+        vehicle_engine_id
+    ),
     CONSTRAINT ck_vehicle_engine_name_nonempty CHECK (btrim(name) <> ''),
     CONSTRAINT ck_vehicle_engine_normalized_nonempty CHECK (btrim(normalized_name) <> ''),
+    CONSTRAINT ck_vehicle_engine_code_nonempty CHECK (
+        engine_code IS NULL OR btrim(engine_code) <> ''
+    ),
+    CONSTRAINT ck_vehicle_engine_model_requires_make CHECK (
+        vehicle_model_id IS NULL OR vehicle_make_id IS NOT NULL
+    ),
     CONSTRAINT ck_vehicle_engine_review_status CHECK (review_status IN ('pending', 'approved', 'rejected')),
+    CONSTRAINT ck_vehicle_engine_review_evidence CHECK (
+        (review_status = 'pending' AND reviewed_by IS NULL AND reviewed_at IS NULL)
+        OR (
+            review_status IN ('approved', 'rejected')
+            AND reviewed_by IS NOT NULL
+            AND btrim(reviewed_by) <> ''
+            AND reviewed_at IS NOT NULL
+        )
+    ),
+    CONSTRAINT ck_vehicle_engine_reviewed_at CHECK (reviewed_at IS NULL OR reviewed_at >= created_at),
     CONSTRAINT ck_vehicle_engine_displacement CHECK (displacement_liters IS NULL OR displacement_liters > 0),
     CONSTRAINT ck_vehicle_engine_cylinders CHECK (cylinders IS NULL OR cylinders > 0),
     CONSTRAINT ck_vehicle_engine_updated_at CHECK (updated_at IS NULL OR updated_at >= created_at)
@@ -526,6 +707,7 @@ CREATE TABLE perfect_catalog.product_application_candidate (
     notes text,
     reviewed_by text,
     reviewed_at timestamptz,
+    review_note text,
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT pk_product_application_candidate PRIMARY KEY (product_application_candidate_id),
     CONSTRAINT ck_product_application_evidence_nonempty CHECK (btrim(evidence_original) <> ''),
@@ -541,8 +723,16 @@ CREATE TABLE perfect_catalog.product_application_candidate (
         year_from IS NULL OR year_to IS NULL OR year_to >= year_from
     ),
     CONSTRAINT ck_product_application_review_pair CHECK (
-        (reviewed_by IS NULL AND reviewed_at IS NULL)
-        OR (reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL)
+        (review_status = 'pending' AND reviewed_by IS NULL AND reviewed_at IS NULL)
+        OR (
+            review_status IN ('approved', 'rejected')
+            AND reviewed_by IS NOT NULL
+            AND btrim(reviewed_by) <> ''
+            AND reviewed_at IS NOT NULL
+        )
+    ),
+    CONSTRAINT ck_product_application_model_requires_make CHECK (
+        vehicle_model_id IS NULL OR vehicle_make_id IS NOT NULL
     ),
     CONSTRAINT ck_product_application_reviewed_at CHECK (reviewed_at IS NULL OR reviewed_at >= created_at)
 );
@@ -568,6 +758,7 @@ CREATE TABLE perfect_catalog.extraction_candidate (
     CONSTRAINT ck_extraction_candidate_type_nonempty CHECK (btrim(candidate_type) <> ''),
     CONSTRAINT ck_extraction_candidate_evidence_nonempty CHECK (btrim(evidence_original) <> ''),
     CONSTRAINT ck_extraction_candidate_value_original_nonempty CHECK (btrim(value_original) <> ''),
+    CONSTRAINT ck_extraction_candidate_value_normalized_nonempty CHECK (btrim(value_normalized) <> ''),
     CONSTRAINT ck_extraction_candidate_rule_code_nonempty CHECK (btrim(rule_code) <> ''),
     CONSTRAINT ck_extraction_candidate_rule_version_nonempty CHECK (btrim(rule_version) <> ''),
     CONSTRAINT ck_extraction_candidate_confidence CHECK (confidence BETWEEN 0 AND 1),
@@ -575,8 +766,13 @@ CREATE TABLE perfect_catalog.extraction_candidate (
         review_status IN ('pending', 'approved', 'rejected')
     ),
     CONSTRAINT ck_extraction_candidate_review_pair CHECK (
-        (reviewed_by IS NULL AND reviewed_at IS NULL)
-        OR (reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL)
+        (review_status = 'pending' AND reviewed_by IS NULL AND reviewed_at IS NULL)
+        OR (
+            review_status IN ('approved', 'rejected')
+            AND reviewed_by IS NOT NULL
+            AND btrim(reviewed_by) <> ''
+            AND reviewed_at IS NOT NULL
+        )
     ),
     CONSTRAINT ck_extraction_candidate_reviewed_at CHECK (reviewed_at IS NULL OR reviewed_at >= created_at)
 );
@@ -593,12 +789,20 @@ CREATE TABLE perfect_catalog.catalog_release (
     published_at timestamptz,
     published_by text,
     archived_at timestamptz,
+    archived_by text,
     notes text,
     snapshot_sha256 char(64),
     CONSTRAINT pk_catalog_release PRIMARY KEY (catalog_release_id),
     CONSTRAINT uq_catalog_release_brand_version UNIQUE (brand_id, version),
+    CONSTRAINT uq_catalog_release_release_brand UNIQUE (catalog_release_id, brand_id),
     CONSTRAINT ck_catalog_release_version_nonempty CHECK (btrim(version) <> ''),
     CONSTRAINT ck_catalog_release_created_by_nonempty CHECK (btrim(created_by) <> ''),
+    CONSTRAINT ck_catalog_release_published_by_nonempty CHECK (
+        published_by IS NULL OR btrim(published_by) <> ''
+    ),
+    CONSTRAINT ck_catalog_release_archived_by_nonempty CHECK (
+        archived_by IS NULL OR btrim(archived_by) <> ''
+    ),
     CONSTRAINT ck_catalog_release_status CHECK (status IN ('draft', 'published', 'archived')),
     CONSTRAINT ck_catalog_release_sha256 CHECK (
         snapshot_sha256 IS NULL OR snapshot_sha256 ~ '^[0-9a-f]{64}$'
@@ -608,19 +812,33 @@ CREATE TABLE perfect_catalog.catalog_release (
         OR (published_at IS NOT NULL AND published_by IS NOT NULL)
     ),
     CONSTRAINT ck_catalog_release_published_evidence CHECK (
-        status <> 'published'
-        OR (published_at IS NOT NULL AND published_by IS NOT NULL AND snapshot_sha256 IS NOT NULL)
+        (status = 'draft' AND published_at IS NULL AND published_by IS NULL)
+        OR (
+            status IN ('published', 'archived')
+            AND published_at IS NOT NULL
+            AND published_by IS NOT NULL
+            AND snapshot_sha256 IS NOT NULL
+        )
     ),
-    CONSTRAINT ck_catalog_release_archived_evidence CHECK (
-        status <> 'archived' OR archived_at IS NOT NULL
+    CONSTRAINT ck_catalog_release_archive_pair CHECK (
+        (archived_at IS NULL AND archived_by IS NULL)
+        OR (archived_at IS NOT NULL AND archived_by IS NOT NULL)
+    ),
+    CONSTRAINT ck_catalog_release_archive_state CHECK (
+        (status IN ('draft', 'published') AND archived_at IS NULL AND archived_by IS NULL)
+        OR (status = 'archived' AND archived_at IS NOT NULL AND archived_by IS NOT NULL)
     ),
     CONSTRAINT ck_catalog_release_published_at CHECK (published_at IS NULL OR published_at >= created_at),
-    CONSTRAINT ck_catalog_release_archived_at CHECK (archived_at IS NULL OR archived_at >= created_at)
+    CONSTRAINT ck_catalog_release_archived_at CHECK (
+        archived_at IS NULL
+        OR (published_at IS NOT NULL AND archived_at >= published_at)
+    )
 );
 
 CREATE TABLE perfect_catalog.catalog_release_item (
     catalog_release_item_id uuid NOT NULL,
     catalog_release_id uuid NOT NULL,
+    brand_id uuid NOT NULL,
     product_template_id uuid NOT NULL,
     product_variant_id uuid,
     item_order integer NOT NULL,
@@ -683,10 +901,12 @@ ALTER TABLE perfect_catalog.staging_row
     FOREIGN KEY (import_file_id) REFERENCES perfect_catalog.import_file (import_file_id) ON DELETE RESTRICT;
 
 ALTER TABLE perfect_catalog.staging_row_result
-    ADD CONSTRAINT fk_staging_row_result_row
-    FOREIGN KEY (staging_row_id) REFERENCES perfect_catalog.staging_row (staging_row_id) ON DELETE RESTRICT,
-    ADD CONSTRAINT fk_staging_row_result_batch
-    FOREIGN KEY (import_batch_id) REFERENCES perfect_catalog.import_batch (import_batch_id) ON DELETE RESTRICT;
+    ADD CONSTRAINT fk_staging_row_result_file_in_batch
+    FOREIGN KEY (import_batch_id, import_file_id)
+    REFERENCES perfect_catalog.import_file (import_batch_id, import_file_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT fk_staging_row_result_row_in_file
+    FOREIGN KEY (import_file_id, staging_row_id)
+    REFERENCES perfect_catalog.staging_row (import_file_id, staging_row_id) ON DELETE RESTRICT;
 
 ALTER TABLE perfect_catalog.import_issue
     ADD CONSTRAINT fk_import_issue_batch
@@ -694,10 +914,16 @@ ALTER TABLE perfect_catalog.import_issue
     ADD CONSTRAINT fk_import_issue_file
     FOREIGN KEY (import_batch_id, import_file_id)
     REFERENCES perfect_catalog.import_file (import_batch_id, import_file_id) ON DELETE RESTRICT,
-    ADD CONSTRAINT fk_import_issue_row
-    FOREIGN KEY (staging_row_id) REFERENCES perfect_catalog.staging_row (staging_row_id) ON DELETE RESTRICT,
-    ADD CONSTRAINT fk_import_issue_result
-    FOREIGN KEY (staging_row_result_id) REFERENCES perfect_catalog.staging_row_result (staging_row_result_id) ON DELETE RESTRICT;
+    ADD CONSTRAINT fk_import_issue_row_in_file
+    FOREIGN KEY (import_file_id, staging_row_id)
+    REFERENCES perfect_catalog.staging_row (import_file_id, staging_row_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT fk_import_issue_result_in_context
+    FOREIGN KEY (import_batch_id, import_file_id, staging_row_result_id)
+    REFERENCES perfect_catalog.staging_row_result (
+        import_batch_id,
+        import_file_id,
+        staging_row_result_id
+    ) ON DELETE RESTRICT;
 
 ALTER TABLE perfect_catalog.import_plan
     ADD CONSTRAINT fk_import_plan_batch
@@ -731,18 +957,19 @@ ALTER TABLE perfect_catalog.product_template
     FOREIGN KEY (last_confirmed_batch_id) REFERENCES perfect_catalog.import_batch (import_batch_id) ON DELETE RESTRICT;
 
 ALTER TABLE perfect_catalog.product_variant
-    ADD CONSTRAINT fk_product_variant_template
-    FOREIGN KEY (product_template_id) REFERENCES perfect_catalog.product_template (product_template_id) ON DELETE RESTRICT,
-    ADD CONSTRAINT fk_product_variant_source_system
-    FOREIGN KEY (source_system_id) REFERENCES perfect_catalog.source_system (source_system_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT fk_product_variant_template_source
+    FOREIGN KEY (product_template_id, source_system_id)
+    REFERENCES perfect_catalog.product_template (product_template_id, source_system_id) ON DELETE RESTRICT,
     ADD CONSTRAINT fk_product_variant_created_row
     FOREIGN KEY (created_from_staging_row_id) REFERENCES perfect_catalog.staging_row (staging_row_id) ON DELETE RESTRICT;
 
 ALTER TABLE perfect_catalog.import_plan_item
-    ADD CONSTRAINT fk_import_plan_item_plan
-    FOREIGN KEY (import_plan_id) REFERENCES perfect_catalog.import_plan (import_plan_id) ON DELETE RESTRICT,
-    ADD CONSTRAINT fk_import_plan_item_row
-    FOREIGN KEY (staging_row_id) REFERENCES perfect_catalog.staging_row (staging_row_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT fk_import_plan_item_plan_file
+    FOREIGN KEY (import_plan_id, import_file_id)
+    REFERENCES perfect_catalog.import_plan (import_plan_id, import_file_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT fk_import_plan_item_row_in_file
+    FOREIGN KEY (import_file_id, staging_row_id)
+    REFERENCES perfect_catalog.staging_row (import_file_id, staging_row_id) ON DELETE RESTRICT,
     ADD CONSTRAINT fk_import_plan_item_template
     FOREIGN KEY (product_template_id) REFERENCES perfect_catalog.product_template (product_template_id) ON DELETE RESTRICT,
     ADD CONSTRAINT fk_import_plan_item_variant
@@ -750,12 +977,13 @@ ALTER TABLE perfect_catalog.import_plan_item
     REFERENCES perfect_catalog.product_variant (product_template_id, product_variant_id) ON DELETE RESTRICT;
 
 ALTER TABLE perfect_catalog.product_reference
-    ADD CONSTRAINT fk_product_reference_source_system
-    FOREIGN KEY (source_system_id) REFERENCES perfect_catalog.source_system (source_system_id) ON DELETE RESTRICT,
-    ADD CONSTRAINT fk_product_reference_brand
-    FOREIGN KEY (brand_id) REFERENCES perfect_catalog.brand (brand_id) ON DELETE RESTRICT,
-    ADD CONSTRAINT fk_product_reference_template
-    FOREIGN KEY (product_template_id) REFERENCES perfect_catalog.product_template (product_template_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT fk_product_reference_template_context
+    FOREIGN KEY (product_template_id, source_system_id, brand_id)
+    REFERENCES perfect_catalog.product_template (
+        product_template_id,
+        source_system_id,
+        brand_id
+    ) ON DELETE RESTRICT,
     ADD CONSTRAINT fk_product_reference_variant
     FOREIGN KEY (product_template_id, product_variant_id)
     REFERENCES perfect_catalog.product_variant (product_template_id, product_variant_id) ON DELETE RESTRICT,
@@ -763,18 +991,37 @@ ALTER TABLE perfect_catalog.product_reference
     FOREIGN KEY (staging_row_id) REFERENCES perfect_catalog.staging_row (staging_row_id) ON DELETE RESTRICT;
 
 ALTER TABLE perfect_catalog.inventory_snapshot
-    ADD CONSTRAINT fk_inventory_snapshot_template
-    FOREIGN KEY (product_template_id) REFERENCES perfect_catalog.product_template (product_template_id) ON DELETE RESTRICT,
-    ADD CONSTRAINT fk_inventory_snapshot_variant
-    FOREIGN KEY (product_template_id, product_variant_id)
-    REFERENCES perfect_catalog.product_variant (product_template_id, product_variant_id) ON DELETE RESTRICT,
-    ADD CONSTRAINT fk_inventory_snapshot_batch
-    FOREIGN KEY (import_batch_id) REFERENCES perfect_catalog.import_batch (import_batch_id) ON DELETE RESTRICT,
-    ADD CONSTRAINT fk_inventory_snapshot_plan_in_batch
-    FOREIGN KEY (import_batch_id, import_plan_id)
-    REFERENCES perfect_catalog.import_plan (import_batch_id, import_plan_id) ON DELETE RESTRICT,
-    ADD CONSTRAINT fk_inventory_snapshot_row
-    FOREIGN KEY (staging_row_id) REFERENCES perfect_catalog.staging_row (staging_row_id) ON DELETE RESTRICT;
+    ADD CONSTRAINT fk_inventory_snapshot_plan_context
+    FOREIGN KEY (import_batch_id, import_file_id, import_plan_id)
+    REFERENCES perfect_catalog.import_plan (
+        import_batch_id,
+        import_file_id,
+        import_plan_id
+    ) ON DELETE RESTRICT,
+    ADD CONSTRAINT fk_inventory_snapshot_row_in_file
+    FOREIGN KEY (import_file_id, staging_row_id)
+    REFERENCES perfect_catalog.staging_row (import_file_id, staging_row_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT fk_inventory_snapshot_exact_plan_item
+    FOREIGN KEY (
+        import_plan_item_id,
+        import_plan_id,
+        import_file_id,
+        staging_row_id,
+        plan_item_operation_type,
+        product_template_id,
+        product_scope,
+        product_target_id
+    )
+    REFERENCES perfect_catalog.import_plan_item (
+        import_plan_item_id,
+        import_plan_id,
+        import_file_id,
+        staging_row_id,
+        operation_type,
+        product_template_id,
+        product_scope,
+        product_target_id
+    ) ON DELETE RESTRICT;
 
 ALTER TABLE perfect_catalog.media_asset
     ADD CONSTRAINT fk_media_asset_source_system
@@ -796,8 +1043,11 @@ ALTER TABLE perfect_catalog.vehicle_model
     FOREIGN KEY (vehicle_make_id) REFERENCES perfect_catalog.vehicle_make (vehicle_make_id) ON DELETE RESTRICT;
 
 ALTER TABLE perfect_catalog.vehicle_engine
-    ADD CONSTRAINT fk_vehicle_engine_model
-    FOREIGN KEY (vehicle_model_id) REFERENCES perfect_catalog.vehicle_model (vehicle_model_id) ON DELETE RESTRICT;
+    ADD CONSTRAINT fk_vehicle_engine_make
+    FOREIGN KEY (vehicle_make_id) REFERENCES perfect_catalog.vehicle_make (vehicle_make_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT fk_vehicle_engine_model_context
+    FOREIGN KEY (vehicle_make_id, vehicle_model_id)
+    REFERENCES perfect_catalog.vehicle_model (vehicle_make_id, vehicle_model_id) ON DELETE RESTRICT;
 
 ALTER TABLE perfect_catalog.product_application_candidate
     ADD CONSTRAINT fk_product_application_template
@@ -806,10 +1056,20 @@ ALTER TABLE perfect_catalog.product_application_candidate
     FOREIGN KEY (staging_row_id) REFERENCES perfect_catalog.staging_row (staging_row_id) ON DELETE RESTRICT,
     ADD CONSTRAINT fk_product_application_make
     FOREIGN KEY (vehicle_make_id) REFERENCES perfect_catalog.vehicle_make (vehicle_make_id) ON DELETE RESTRICT,
-    ADD CONSTRAINT fk_product_application_model
-    FOREIGN KEY (vehicle_model_id) REFERENCES perfect_catalog.vehicle_model (vehicle_model_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT fk_product_application_model_context
+    FOREIGN KEY (vehicle_make_id, vehicle_model_id)
+    REFERENCES perfect_catalog.vehicle_model (vehicle_make_id, vehicle_model_id) ON DELETE RESTRICT,
     ADD CONSTRAINT fk_product_application_engine
     FOREIGN KEY (vehicle_engine_id) REFERENCES perfect_catalog.vehicle_engine (vehicle_engine_id) ON DELETE RESTRICT;
+
+ALTER TABLE perfect_catalog.product_application_candidate
+    ADD CONSTRAINT fk_product_application_engine_context
+    FOREIGN KEY (vehicle_make_id, vehicle_model_id, vehicle_engine_id)
+    REFERENCES perfect_catalog.vehicle_engine (
+        vehicle_make_id,
+        vehicle_model_id,
+        vehicle_engine_id
+    ) ON DELETE RESTRICT;
 
 ALTER TABLE perfect_catalog.extraction_candidate
     ADD CONSTRAINT fk_extraction_candidate_row
@@ -822,10 +1082,12 @@ ALTER TABLE perfect_catalog.catalog_release
     FOREIGN KEY (brand_id) REFERENCES perfect_catalog.brand (brand_id) ON DELETE RESTRICT;
 
 ALTER TABLE perfect_catalog.catalog_release_item
-    ADD CONSTRAINT fk_catalog_release_item_release
-    FOREIGN KEY (catalog_release_id) REFERENCES perfect_catalog.catalog_release (catalog_release_id) ON DELETE RESTRICT,
-    ADD CONSTRAINT fk_catalog_release_item_template
-    FOREIGN KEY (product_template_id) REFERENCES perfect_catalog.product_template (product_template_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT fk_catalog_release_item_release_brand
+    FOREIGN KEY (catalog_release_id, brand_id)
+    REFERENCES perfect_catalog.catalog_release (catalog_release_id, brand_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT fk_catalog_release_item_template_brand
+    FOREIGN KEY (product_template_id, brand_id)
+    REFERENCES perfect_catalog.product_template (product_template_id, brand_id) ON DELETE RESTRICT,
     ADD CONSTRAINT fk_catalog_release_item_variant
     FOREIGN KEY (product_template_id, product_variant_id)
     REFERENCES perfect_catalog.product_variant (product_template_id, product_variant_id) ON DELETE RESTRICT,
@@ -861,8 +1123,6 @@ CREATE INDEX ix_staging_row_sha256
 
 CREATE INDEX ix_staging_row_result_row_stage_created
     ON perfect_catalog.staging_row_result (staging_row_id, processing_stage, created_at DESC);
-CREATE INDEX ix_staging_row_result_batch
-    ON perfect_catalog.staging_row_result (import_batch_id);
 CREATE INDEX ix_staging_row_result_versions
     ON perfect_catalog.staging_row_result (contract_version, rules_version);
 CREATE INDEX ix_staging_row_result_status
@@ -890,13 +1150,17 @@ CREATE INDEX ix_import_plan_supersedes
 
 CREATE UNIQUE INDEX uq_brand_source_id
     ON perfect_catalog.brand (source_system_id, source_brand_id)
-    WHERE source_system_id IS NOT NULL AND source_brand_id IS NOT NULL;
+    WHERE source_system_id IS NOT NULL
+      AND source_brand_id IS NOT NULL
+      AND btrim(source_brand_id) <> '';
 CREATE INDEX ix_brand_normalized_name
     ON perfect_catalog.brand (normalized_name);
 
 CREATE UNIQUE INDEX uq_product_category_source_id
     ON perfect_catalog.product_category (source_system_id, source_category_id)
-    WHERE source_system_id IS NOT NULL AND source_category_id IS NOT NULL;
+    WHERE source_system_id IS NOT NULL
+      AND source_category_id IS NOT NULL
+      AND btrim(source_category_id) <> '';
 CREATE INDEX ix_product_category_parent
     ON perfect_catalog.product_category (parent_category_id);
 CREATE INDEX ix_product_category_normalized_name
@@ -904,10 +1168,10 @@ CREATE INDEX ix_product_category_normalized_name
 
 CREATE UNIQUE INDEX uq_product_template_odoo_id
     ON perfect_catalog.product_template (source_system_id, odoo_template_id)
-    WHERE odoo_template_id IS NOT NULL;
+    WHERE odoo_template_id IS NOT NULL AND btrim(odoo_template_id) <> '';
 CREATE UNIQUE INDEX uq_product_template_external_id
     ON perfect_catalog.product_template (source_system_id, odoo_external_id)
-    WHERE odoo_external_id IS NOT NULL;
+    WHERE odoo_external_id IS NOT NULL AND btrim(odoo_external_id) <> '';
 CREATE INDEX ix_product_template_source_brand
     ON perfect_catalog.product_template (source_system_id, brand_id);
 CREATE INDEX ix_product_template_category
@@ -921,17 +1185,13 @@ CREATE INDEX ix_product_template_last_batch
 
 CREATE UNIQUE INDEX uq_product_variant_odoo_id
     ON perfect_catalog.product_variant (source_system_id, odoo_variant_id)
-    WHERE odoo_variant_id IS NOT NULL;
+    WHERE odoo_variant_id IS NOT NULL AND btrim(odoo_variant_id) <> '';
 CREATE UNIQUE INDEX uq_product_variant_external_id
     ON perfect_catalog.product_variant (source_system_id, odoo_external_id)
-    WHERE odoo_external_id IS NOT NULL;
-CREATE INDEX ix_product_variant_template
-    ON perfect_catalog.product_variant (product_template_id);
+    WHERE odoo_external_id IS NOT NULL AND btrim(odoo_external_id) <> '';
 CREATE INDEX ix_product_variant_catalog_status
     ON perfect_catalog.product_variant (catalog_status);
 
-CREATE INDEX ix_import_plan_item_plan
-    ON perfect_catalog.import_plan_item (import_plan_id);
 CREATE INDEX ix_import_plan_item_row
     ON perfect_catalog.import_plan_item (staging_row_id);
 CREATE INDEX ix_import_plan_item_product
@@ -959,6 +1219,8 @@ CREATE INDEX ix_inventory_snapshot_batch
     ON perfect_catalog.inventory_snapshot (import_batch_id);
 CREATE INDEX ix_inventory_snapshot_plan
     ON perfect_catalog.inventory_snapshot (import_plan_id);
+CREATE INDEX ix_inventory_snapshot_file_row
+    ON perfect_catalog.inventory_snapshot (import_file_id, staging_row_id);
 
 CREATE UNIQUE INDEX uq_media_asset_content_sha256
     ON perfect_catalog.media_asset (content_sha256)
@@ -992,8 +1254,6 @@ CREATE INDEX ix_vehicle_make_review_status
 CREATE UNIQUE INDEX uq_vehicle_model_approved_name
     ON perfect_catalog.vehicle_model (vehicle_make_id, normalized_name)
     WHERE review_status = 'approved';
-CREATE INDEX ix_vehicle_model_make
-    ON perfect_catalog.vehicle_model (vehicle_make_id);
 CREATE INDEX ix_vehicle_model_review_status
     ON perfect_catalog.vehicle_model (review_status);
 

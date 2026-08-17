@@ -64,10 +64,10 @@ La especificación preliminar de [docs/DATA_SPEC.md](docs/DATA_SPEC.md) se basa 
 real. El Excel fuente y los reportes generados permanecen locales e ignorados por Git.
 
 PostgreSQL, FastAPI y Jinja2 + HTML + CSS + JavaScript continúan siendo la arquitectura oficial.
-La arquitectura de datos v0.1 está aprobada y ya cuenta con un DDL transaccional revisable y una
-estrategia documental de migraciones. El SQL no se ha ejecutado: PostgreSQL continúa sin instalar,
+La arquitectura de datos v0.1 está aprobada y cuenta con un DDL v0.2 corregido, transaccional y
+revisable, y una estrategia documental de migraciones. El SQL no se ha ejecutado: PostgreSQL continúa sin instalar,
 no existe ninguna tabla real y el importador tampoco está implementado. El siguiente paso es
-revisar el DDL y después preparar el entorno PostgreSQL local.
+realizar una segunda revisión manual del DDL y después preparar el entorno PostgreSQL local.
 
 ## Arquitectura de Datos v0.1
 
@@ -75,8 +75,8 @@ revisar el DDL y después preparar el entorno PostgreSQL local.
   24 tablas propuestas, trazabilidad, staging inmutable, planes exactos y versionado de catálogos.
 - [docs/IMPORTER_DESIGN.md](docs/IMPORTER_DESIGN.md): flujo v0.1 aprobado documentalmente del
   importador, plan persistido, revisión/aprobación previa y mapeo de las 13 columnas reales.
-- [db/migrations/0001_initial_schema.sql](db/migrations/0001_initial_schema.sql): DDL v0.1
-  transaccional de las 24 tablas bajo el schema `perfect_catalog`; creado y no ejecutado.
+- [db/migrations/0001_initial_schema.sql](db/migrations/0001_initial_schema.sql): DDL v0.2 corregido
+  de las 24 tablas bajo `perfect_catalog`; pendiente de segunda revisión manual y no ejecutado.
 - [docs/MIGRATION_STRATEGY.md](docs/MIGRATION_STRATEGY.md): política forward-only, revisión,
   backfills, expand/migrate/contract y futura adopción de Alembic.
 - [docs/DDL_REVIEW.md](docs/DDL_REVIEW.md): matriz de tablas, conteos, límites y checklist previo.
@@ -93,8 +93,8 @@ PostgreSQL ni sustituyen una ejecución futura en una base vacía de prueba.
 - **[docs/DATABASE_DESIGN.md](docs/DATABASE_DESIGN.md)** - Arquitectura aprobada y mapeo al DDL no ejecutado
 - **[docs/IMPORTER_DESIGN.md](docs/IMPORTER_DESIGN.md)** - Diseño aprobado del importador, todavía sin código
 - **[docs/MIGRATION_STRATEGY.md](docs/MIGRATION_STRATEGY.md)** - Estrategia documental de migraciones
-- **[docs/DDL_REVIEW.md](docs/DDL_REVIEW.md)** - Revisión estática y manual del DDL v0.1
-- **[db/migrations/0001_initial_schema.sql](db/migrations/0001_initial_schema.sql)** - DDL v0.1 no ejecutado
+- **[docs/DDL_REVIEW.md](docs/DDL_REVIEW.md)** - Revisión estática y correcciones del DDL v0.2
+- **[db/migrations/0001_initial_schema.sql](db/migrations/0001_initial_schema.sql)** - DDL v0.2 no ejecutado
 - **[docs/ODOO_PROFILER.md](docs/ODOO_PROFILER.md)** - Uso y pruebas del perfilador de Odoo
 - **[README.md](README.md)** - Este archivo
 
@@ -150,8 +150,8 @@ git branch -a
 
 | Componente | Estado |
 |-----------|--------|
-| Documentación | ✓ Arquitectura, estrategia de migraciones y revisión del DDL v0.1 documentadas |
-| Base de Datos | DDL de 24 tablas creado y probado estáticamente; no ejecutado, sin tablas reales |
+| Documentación | ✓ Arquitectura, estrategia y correcciones de integridad del DDL v0.2 documentadas |
+| Base de Datos | DDL v0.2 de 24 tablas probado estáticamente; pendiente de segunda revisión, no ejecutado y sin tablas reales |
 | Importador | Flujo, staging versionado y plan aprobado documentalmente; no implementado |
 | Backend | FastAPI definido; implementación pendiente |
 | Frontend | Jinja2 + HTML + CSS + JavaScript definidos; implementación pendiente |
@@ -166,5 +166,5 @@ git branch -a
 ---
 
 **Última actualización**: 2026-08-17  
-**Responsable sesión**: Creación del DDL PostgreSQL v0.1 y contrato SQL estático
-**Siguiente revisión**: Revisión manual del DDL antes de preparar PostgreSQL local
+**Responsable sesión**: Corrección de integridad del DDL PostgreSQL v0.2 y contrato SQL estático
+**Siguiente revisión**: Segunda revisión manual del DDL antes de preparar PostgreSQL local

@@ -1,4 +1,4 @@
-"""Static contract tests for the PostgreSQL schema draft.
+"""Static contract tests for the corrected PostgreSQL schema v0.2 draft.
 
 These checks intentionally do not connect to PostgreSQL and do not replace a future
 execution of the migration against PostgreSQL 16 or newer.
@@ -47,6 +47,7 @@ class SchemaContractTests(unittest.TestCase):
         cls.sql_path = repo_root / "db" / "migrations" / "0001_initial_schema.sql"
         cls.sql = cls.sql_path.read_text(encoding="utf-8")
         cls.sql_upper = cls.sql.upper()
+        cls.sql_compact = re.sub(r"\s+", " ", cls.sql)
 
     def table_body(self, table_name: str) -> str:
         marker = f"CREATE TABLE {SCHEMA_NAME}.{table_name} ("
@@ -186,6 +187,224 @@ class SchemaContractTests(unittest.TestCase):
             r"(?is)CREATE\s+UNIQUE\s+INDEX[^;]*\([^)]*value_normalized",
         )
 
+    def test_optional_external_identifiers_reject_blank_text(self) -> None:
+        expected = {
+            "source_system": ("instance_key",),
+            "brand": ("source_brand_id",),
+            "product_category": ("source_category_id",),
+            "product_template": ("odoo_template_id", "odoo_external_id"),
+            "product_variant": ("odoo_variant_id", "odoo_external_id"),
+            "vehicle_make": ("source_code",),
+            "vehicle_model": ("source_code",),
+            "vehicle_engine": ("engine_code",),
+        }
+        for table_name, columns in expected.items():
+            body = self.table_body(table_name)
+            for column in columns:
+                self.assertRegex(
+                    body,
+                    rf"(?is){column}\s+IS NULL\s+OR\s+btrim\({column}\)\s*<>\s*''",
+                    f"{table_name}.{column} must reject blank optional identifiers",
+                )
+
+        variant_body = self.table_body("product_variant")
+        real_identifier = re.search(
+            r"(?is)CONSTRAINT\s+ck_product_variant_real_identifier\s+CHECK\s*\((.*?)\n\s*\),",
+            variant_body,
+        )
+        self.assertIsNotNone(real_identifier)
+        for column in ("odoo_variant_id", "odoo_external_id"):
+            self.assertIn(f"btrim({column}) <> ''", real_identifier.group(1))
+
+        for index_name, column in (
+            ("uq_product_template_odoo_id", "odoo_template_id"),
+            ("uq_product_template_external_id", "odoo_external_id"),
+            ("uq_product_variant_odoo_id", "odoo_variant_id"),
+            ("uq_product_variant_external_id", "odoo_external_id"),
+        ):
+            self.assertRegex(
+                self.sql,
+                rf"(?is)CREATE UNIQUE INDEX\s+{index_name}.*?WHERE.*?{column} IS NOT NULL.*?btrim\({column}\) <> ''\s*;",
+            )
+
+    def test_variant_shares_source_system_with_template(self) -> None:
+        self.assertIn(
+            "FOREIGN KEY (product_template_id, source_system_id) REFERENCES "
+            "perfect_catalog.product_template (product_template_id, source_system_id)",
+            self.sql_compact,
+        )
+        template_body = self.table_body("product_template")
+        self.assertIn(
+            "uq_product_template_source UNIQUE (product_template_id, source_system_id)",
+            re.sub(r"\s+", " ", template_body),
+        )
+
+    def test_product_reference_shares_template_origin_and_brand(self) -> None:
+        self.assertIn(
+            "FOREIGN KEY (product_template_id, source_system_id, brand_id) REFERENCES "
+            "perfect_catalog.product_template ( product_template_id, source_system_id, brand_id )",
+            self.sql_compact,
+        )
+        self.assertIn(
+            "FOREIGN KEY (product_template_id, product_variant_id) REFERENCES "
+            "perfect_catalog.product_variant (product_template_id, product_variant_id)",
+            self.sql_compact,
+        )
+
+    def test_plan_item_and_row_share_plan_file(self) -> None:
+        item_body = self.table_body("import_plan_item")
+        self.assertRegex(item_body, r"(?im)^\s*import_file_id\s+uuid\s+NOT NULL")
+        self.assertIn(
+            "FOREIGN KEY (import_plan_id, import_file_id) REFERENCES "
+            "perfect_catalog.import_plan (import_plan_id, import_file_id)",
+            self.sql_compact,
+        )
+
+    def test_contextual_foreign_keys_have_declared_alternate_keys(self) -> None:
+        expected = {
+            "staging_row": "uq_staging_row_file_row",
+            "staging_row_result": "uq_staging_row_result_context",
+            "import_plan": "uq_import_plan_plan_file",
+            "import_plan_item": "uq_import_plan_item_snapshot_context",
+            "product_template": "uq_product_template_source_brand",
+            "vehicle_model": "uq_vehicle_model_make_model",
+            "vehicle_engine": "uq_vehicle_engine_context",
+            "catalog_release": "uq_catalog_release_release_brand",
+        }
+        for table_name, constraint in expected.items():
+            self.assertIn(constraint, self.table_body(table_name))
+        self.assertIn(
+            "FOREIGN KEY (import_file_id, staging_row_id) REFERENCES "
+            "perfect_catalog.staging_row (import_file_id, staging_row_id)",
+            self.sql_compact,
+        )
+
+    def test_inventory_snapshot_has_exact_batch_plan_file_row_and_item_context(self) -> None:
+        body = self.table_body("inventory_snapshot")
+        for column in (
+            "import_batch_id",
+            "import_plan_id",
+            "import_plan_item_id",
+            "import_file_id",
+            "staging_row_id",
+        ):
+            self.assertRegex(body, rf"(?im)^\s*{column}\s+uuid\s+NOT NULL")
+        self.assertIn(
+            "FOREIGN KEY (import_batch_id, import_file_id, import_plan_id) REFERENCES "
+            "perfect_catalog.import_plan ( import_batch_id, import_file_id, import_plan_id )",
+            self.sql_compact,
+        )
+        self.assertIn("fk_inventory_snapshot_exact_plan_item", self.sql)
+        self.assertIn("plan_item_operation_type", body)
+        self.assertIn("ck_inventory_snapshot_operation", body)
+        self.assertIn("product_scope", body)
+        self.assertIn("product_target_id", body)
+        self.assertIn("uq_inventory_snapshot_plan_item UNIQUE (import_plan_item_id)", body)
+
+    def test_import_issue_context_is_relationally_coherent(self) -> None:
+        self.assertIn("fk_import_issue_row_in_file", self.sql)
+        self.assertIn(
+            "FOREIGN KEY (import_batch_id, import_file_id, staging_row_result_id) REFERENCES "
+            "perfect_catalog.staging_row_result ( import_batch_id, import_file_id, staging_row_result_id )",
+            self.sql_compact,
+        )
+
+    def test_release_items_cannot_mix_brands(self) -> None:
+        body = self.table_body("catalog_release_item")
+        self.assertRegex(body, r"(?im)^\s*brand_id\s+uuid\s+NOT NULL")
+        self.assertIn(
+            "FOREIGN KEY (catalog_release_id, brand_id) REFERENCES "
+            "perfect_catalog.catalog_release (catalog_release_id, brand_id)",
+            self.sql_compact,
+        )
+        self.assertIn(
+            "FOREIGN KEY (product_template_id, brand_id) REFERENCES "
+            "perfect_catalog.product_template (product_template_id, brand_id)",
+            self.sql_compact,
+        )
+
+    def test_vehicle_relationships_use_contextual_keys(self) -> None:
+        application_body = self.table_body("product_application_candidate")
+        self.assertIn("ck_product_application_model_requires_make", application_body)
+        self.assertIn(
+            "FOREIGN KEY (vehicle_make_id, vehicle_model_id) REFERENCES "
+            "perfect_catalog.vehicle_model (vehicle_make_id, vehicle_model_id)",
+            self.sql_compact,
+        )
+        self.assertIn(
+            "FOREIGN KEY (vehicle_make_id, vehicle_model_id, vehicle_engine_id) REFERENCES "
+            "perfect_catalog.vehicle_engine ( vehicle_make_id, vehicle_model_id, vehicle_engine_id )",
+            self.sql_compact,
+        )
+        engine_body = self.table_body("vehicle_engine")
+        self.assertIn("ck_vehicle_engine_model_requires_make", engine_body)
+
+    def test_reviewable_records_require_human_evidence_for_decisions(self) -> None:
+        constraints = {
+            "product_reference": "ck_product_reference_review_evidence",
+            "product_application_candidate": "ck_product_application_review_pair",
+            "extraction_candidate": "ck_extraction_candidate_review_pair",
+            "vehicle_make": "ck_vehicle_make_review_evidence",
+            "vehicle_model": "ck_vehicle_model_review_evidence",
+            "vehicle_engine": "ck_vehicle_engine_review_evidence",
+        }
+        for table_name, constraint in constraints.items():
+            body = self.table_body(table_name)
+            self.assertIn(constraint, body)
+            self.assertRegex(body, r"review_status\s+IN\s*\('approved',\s*'rejected'\)")
+            self.assertIn("reviewed_by IS NOT NULL", body)
+            self.assertIn("btrim(reviewed_by) <> ''", body)
+            self.assertIn("reviewed_at IS NOT NULL", body)
+            self.assertIn("reviewed_at IS NULL OR reviewed_at >= created_at", body)
+
+    def test_resolved_or_accepted_issue_requires_resolution_evidence(self) -> None:
+        body = self.table_body("import_issue")
+        self.assertIn("ck_import_issue_resolution_evidence", body)
+        self.assertIn("status = 'open'", body)
+        self.assertIn("resolution_note IS NULL", body)
+        self.assertRegex(body, r"status\s+IN\s*\('resolved',\s*'accepted'\)")
+        self.assertIn("resolved_at IS NOT NULL", body)
+        self.assertIn("resolved_by IS NOT NULL", body)
+        self.assertIn("btrim(resolved_by) <> ''", body)
+
+    def test_plan_and_release_actor_fields_reject_blank_text(self) -> None:
+        expected = {
+            "import_plan": ("generated_by", "approved_by", "rejected_by", "applied_by"),
+            "catalog_release": ("created_by", "published_by", "archived_by"),
+        }
+        for table_name, columns in expected.items():
+            body = self.table_body(table_name)
+            for column in columns:
+                self.assertIn(
+                    f"btrim({column}) <> ''",
+                    body,
+                    f"{table_name}.{column} must reject blank actors",
+                )
+
+    def test_archived_release_requires_prior_publication_and_archive_actor(self) -> None:
+        body = self.table_body("catalog_release")
+        self.assertRegex(body, r"(?im)^\s*archived_by\s+text\s*,")
+        self.assertIn("status IN ('published', 'archived')", body)
+        self.assertIn("published_at IS NOT NULL", body)
+        self.assertIn("published_by IS NOT NULL", body)
+        self.assertIn(
+            "status = 'archived' AND archived_at IS NOT NULL AND archived_by IS NOT NULL",
+            body,
+        )
+        self.assertIn("archived_at >= published_at", body)
+
+    def test_product_media_primary_flag_is_not_nullable(self) -> None:
+        body = self.table_body("product_media")
+        self.assertRegex(
+            body,
+            r"(?im)^\s*is_primary\s+boolean\s+NOT NULL\s+DEFAULT\s+false",
+        )
+
+    def test_extraction_candidate_normalized_value_is_nonempty(self) -> None:
+        body = self.table_body("extraction_candidate")
+        self.assertIn("ck_extraction_candidate_value_normalized_nonempty", body)
+        self.assertIn("btrim(value_normalized) <> ''", body)
+
     def test_foreign_keys_never_request_cascading_deletes(self) -> None:
         foreign_key_count = len(re.findall(r"(?i)\bFOREIGN KEY\s*\(", self.sql))
         restrictive_count = len(
@@ -194,17 +413,17 @@ class SchemaContractTests(unittest.TestCase):
                 self.sql,
             )
         )
-        self.assertEqual(foreign_key_count, 60)
+        self.assertEqual(foreign_key_count, 57)
         self.assertEqual(restrictive_count, foreign_key_count)
 
     def test_documented_contract_counts_remain_exact(self) -> None:
         self.assertEqual(
             len(re.findall(r"(?im)^CREATE (?:UNIQUE )?INDEX\s+", self.sql)),
-            83,
+            80,
         )
         self.assertEqual(
             len(re.findall(r"(?im)\bCONSTRAINT\s+ck_[a-z0-9_]+\s+CHECK\s*\(", self.sql)),
-            137,
+            171,
         )
         self.assertEqual(
             len(
@@ -213,7 +432,7 @@ class SchemaContractTests(unittest.TestCase):
                     self.sql,
                 )
             ),
-            11,
+            21,
         )
 
     def test_staging_row_has_no_mutating_trigger(self) -> None:
