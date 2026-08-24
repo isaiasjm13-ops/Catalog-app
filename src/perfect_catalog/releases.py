@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Any, Iterable
 
@@ -7,7 +8,8 @@ from .canonical import canonical_sha256
 
 
 SNAPSHOT_SCHEMA_VERSION = "catalog-product-v1"
-RELEASE_HASH_ALGORITHM = "catalog-release-v1"
+RELEASE_HASH_ALGORITHM = "catalog-release-v2"
+SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 
 
 def product_snapshot_sha256(snapshot_data: dict[str, Any]) -> str:
@@ -17,12 +19,14 @@ def product_snapshot_sha256(snapshot_data: dict[str, Any]) -> str:
 def release_snapshot_sha256(
     brand_id: uuid.UUID,
     version: str,
+    definition: dict[str, Any],
     items: Iterable[dict[str, Any]],
 ) -> str:
     evidence = {
         "algorithm": RELEASE_HASH_ALGORITHM,
         "brand_id": brand_id,
         "version": version,
+        "definition": definition,
         "items": [
             {
                 "item_order": item["item_order"],
@@ -89,3 +93,33 @@ def validate_release_items(items: Iterable[dict[str, Any]]) -> None:
         if public_id in public_ids:
             raise ValueError(f"El release repite la identidad pública {public_id}.")
         public_ids.add(public_id)
+
+
+def validate_release_definition(definition: Any, item_count: int) -> None:
+    if not isinstance(definition, dict):
+        raise ValueError("catalog_release.definition debe ser un objeto JSON.")
+    if definition.get("snapshot_schema_version") != SNAPSHOT_SCHEMA_VERSION:
+        raise ValueError("El release no declara el schema de snapshot soportado.")
+    if definition.get("release_hash_algorithm") != RELEASE_HASH_ALGORITHM:
+        raise ValueError("El release no declara el algoritmo de hash soportado.")
+    if definition.get("source_kind") != "applied_catalog":
+        raise ValueError("El release no declara source_kind=applied_catalog.")
+    if (
+        isinstance(definition.get("item_count"), bool)
+        or definition.get("item_count") != item_count
+        or item_count < 1
+    ):
+        raise ValueError("item_count no coincide con el contenido del release.")
+    for field in ("source_plan_id", "source_import_batch_id"):
+        try:
+            uuid.UUID(str(definition[field]))
+        except (KeyError, ValueError) as exc:
+            raise ValueError(f"El release no declara {field} como UUID válido.") from exc
+    fingerprint = str(definition.get("source_plan_fingerprint_sha256") or "")
+    if not SHA256_PATTERN.fullmatch(fingerprint):
+        raise ValueError("El release no declara un fingerprint de plan válido.")
+    for field in ("contract_version", "rules_version"):
+        if not isinstance(definition.get(field), str) or not definition[field].strip():
+            raise ValueError(f"El release no declara {field} no vacío.")
+    if not isinstance(definition.get("selection"), dict):
+        raise ValueError("El release no declara una selección canónica.")

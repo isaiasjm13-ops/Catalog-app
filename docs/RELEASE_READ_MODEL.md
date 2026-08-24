@@ -27,9 +27,10 @@ template. El lector comprueba que esos UUID coincidan con las relaciones de
 `catalog_release_item` y rechaza snapshots incompletos, alterados, de una versión desconocida o
 con una identidad pública repetida dentro del release.
 
-El release usa `release_hash_algorithm = catalog-release-v1`. Su `snapshot_sha256` cubre marca,
-versión, orden, identidades, versión del schema y hash de todos los items. Así se detectan tanto la
-alteración de un producto como la eliminación, sustitución o reordenamiento del conjunto.
+El release usa `release_hash_algorithm = catalog-release-v2`. Su `snapshot_sha256` cubre definición,
+marca, versión, orden, identidades, versión del schema y hash de todos los items. Así se detectan
+tanto un cambio de selección como la alteración, eliminación, sustitución o reordenamiento de
+productos.
 
 ## Ejecución
 
@@ -41,12 +42,13 @@ alteración de un producto como la eliminación, sustitución o reordenamiento d
 .\.venv\Scripts\perfect-catalog-api.exe --source-dir data\imports
 ```
 
-El repositorio de releases es de solo lectura. Crear, revisar y publicar un release es un workflow
-separado que aún debe implementarse; no se debe insertar ni marcar un release empresarial como
-`published` manualmente.
+El repositorio de releases es de solo lectura. Crear, inspeccionar, publicar y archivar usa el
+workflow separado descrito en [`RELEASE_PUBLICATION_WORKFLOW.md`](RELEASE_PUBLICATION_WORKFLOW.md);
+nunca se debe insertar ni marcar un release empresarial como `published` manualmente.
 
 ## Garantías verificadas
 
-La integración ejecutada como `perfect_catalog_app` prueba selección, búsqueda, categoría y ficha
-por UUID, rechazo de `source-row:*` y detección de un snapshot manipulado. La transacción se revierte
-al terminar, por lo que no deja productos ni releases sintéticos persistidos.
+La integración ejecutada como `perfect_catalog_app` prueba construcción, checksum incorrecto,
+publicación, selección, búsqueda, categoría, ficha por UUID, archivo e idempotencia. Los triggers
+rechazan la manipulación directa. La transacción se revierte al terminar, por lo que no deja
+productos ni releases sintéticos persistidos.

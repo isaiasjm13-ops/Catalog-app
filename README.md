@@ -85,7 +85,7 @@ se documenta en [`docs/RELEASE_READ_MODEL.md`](docs/RELEASE_READ_MODEL.md).
 
 La suite completa, incluidas las cinco pruebas PostgreSQL y el dry-run real, se ejecuta con el
 procedimiento controlado `scripts/run_productive_block_validation.ps1`. Solicita las credenciales
-de forma interactiva y nunca las guarda. La ejecución del 2026-08-24 terminó con 103/103 pruebas y
+de forma interactiva y nunca las guarda. La ejecución del 2026-08-24 terminó con 114/114 pruebas y
 `integration=0;import=0`.
 
 El dry-run limita el piloto a 5,000 filas de forma predeterminada. `--max-rows` permite cambiar el
@@ -93,7 +93,7 @@ límite conscientemente, pero no debe ampliarse al catálogo completo antes de a
 
 ### Aprobación y aplicación controlada
 
-El flujo transaccional está implementado y las migraciones `0003` y `0004` fueron aplicadas y
+El flujo transaccional está implementado y las migraciones `0003`–`0005` fueron aplicadas y
 validadas en `perfect_catalog_dev`. La prueba de apply usa datos sintéticos y revierte la transacción.
 Ningún plan empresarial fue aprobado ni aplicado.
 
@@ -114,6 +114,29 @@ Ningún plan empresarial fue aprobado ni aplicado.
 
 El detalle de estados, controles, alcance y recuperación está en
 [`docs/APPLY_WORKFLOW.md`](docs/APPLY_WORKFLOW.md).
+
+### Construcción y publicación controlada
+
+Aplicar un plan no publica el catálogo. Un borrador solo puede construirse desde un plan aplicado y
+productos `active` con exactamente una referencia interna primaria `approved`. La construcción
+devuelve el checksum que debe inspeccionarse y aprobarse de forma separada:
+
+```powershell
+.\.venv\Scripts\perfect-catalog.exe build-release <PLAN_UUID> `
+  --fingerprint <FINGERPRINT_APLICADO> --version <VERSION> `
+  --actor <USUARIO> --reason "Construcción revisable" --prompt-password
+
+.\.venv\Scripts\perfect-catalog.exe inspect-release <RELEASE_UUID> --prompt-password
+
+.\.venv\Scripts\perfect-catalog.exe publish-release <RELEASE_UUID> `
+  --snapshot-sha256 <CHECKSUM_EXACTO> `
+  --actor <USUARIO> --reason "Publicación autorizada" --prompt-password
+```
+
+`archive-release` conserva el contenido y registra la transición final. La migración `0005` impide
+modificar o borrar releases, items y auditoría fuera del workflow. No existe todavía un release
+empresarial y estos comandos no están autorizados sobre el plan real actual. Véase
+[`docs/RELEASE_PUBLICATION_WORKFLOW.md`](docs/RELEASE_PUBLICATION_WORKFLOW.md).
 
 ### Estado y auditoría
 
@@ -188,7 +211,7 @@ git branch -a
 | Componente | Estado |
 |-----------|--------|
 | Documentación | ✓ Arquitectura inicial definida |
-| Base de Datos | PostgreSQL instalado; migraciones `0001`–`0004` aplicadas y validadas localmente |
+| Base de Datos | PostgreSQL instalado; migraciones `0001`–`0005` aplicadas y validadas localmente |
 | Backend | FastAPI v1.1: release publicado con UUID por defecto y modo piloto XLSX explícito |
 | Apply | Workflow transaccional validado con el rol real y rollback sintético; plan empresarial no autorizado |
 | Frontend | Catálogo responsive y ficha imprimible piloto |
@@ -203,4 +226,4 @@ git branch -a
 ---
 
 **Última actualización**: 2026-08-24
-**Siguiente revisión**: construcción y publicación controlada de `catalog_release`
+**Siguiente revisión**: revisión y activación humana de productos/referencias aplicados

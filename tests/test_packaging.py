@@ -13,6 +13,7 @@ class PackagingTests(unittest.TestCase):
                 sys.executable,
                 "-c",
                 "from perfect_catalog.api import API_VERSION; "
+                "from perfect_catalog.publication import build_release; "
                 "from tools.odoo_profiler import read_tabular_source; "
                 "print(API_VERSION)",
             ],

@@ -73,7 +73,7 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
                WHERE n.nspname='perfect_catalog' AND c.contype='f' AND c.confdeltype='c')
             """
         ).fetchone()
-        self.assertEqual(counts, (24, 24, 59, 174, 21, 126, 6, 0))
+        self.assertEqual(counts, (24, 24, 59, 174, 21, 127, 6, 0))
 
     def test_future_existing_snapshot_variant_and_invalid_contexts(self) -> None:
         ids = {name: uuid.uuid4() for name in (
@@ -224,10 +224,17 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
             "product_reference",
             "inventory_snapshot",
             "audit_event",
+            "catalog_release",
+            "catalog_release_item",
         ):
             with self.subTest(table=table):
                 self.assertTrue(table_privilege(table, "INSERT"))
                 self.assertFalse(table_privilege(table, "DELETE"))
+        self.assertTrue(column_privilege("catalog_release", "status"))
+        self.assertTrue(column_privilege("catalog_release", "published_at"))
+        self.assertTrue(column_privilege("catalog_release", "archived_by"))
+        self.assertFalse(column_privilege("catalog_release", "definition"))
+        self.assertFalse(table_privilege("catalog_release_item", "UPDATE"))
 
     def test_approve_apply_and_retry_as_application_role(self) -> None:
         from perfect_catalog.application import (
@@ -433,6 +440,22 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
             verify_source=False,
         )
         self.assertEqual(retried["status"], "already_applied")
+
+        from perfect_catalog.publication import (
+            _archive_release_in_connection,
+            _build_release_in_connection,
+            _publish_release_in_connection,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "no tiene productos activos"):
+            _build_release_in_connection(
+                self.connection,
+                ids["plan"],
+                fingerprint,
+                "2026.08.24-pending-must-fail",
+                "integration-publisher",
+                "pending products cannot be published",
+            )
         self.connection.execute("RESET ROLE")
         counts = self.connection.execute(
             """
@@ -454,6 +477,121 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
             (ids["product"],),
         ).fetchone()[0]
         self.assertIsNone(variant_count)
+
+        self.connection.execute(
+            """
+            UPDATE perfect_catalog.product_template
+            SET catalog_status='active'
+            WHERE product_template_id=%s
+            """,
+            (ids["product"],),
+        )
+        self.connection.execute(
+            """
+            UPDATE perfect_catalog.product_reference
+            SET review_status='approved', reviewed_by='integration-reviewer', reviewed_at=%s,
+                review_note='synthetic publication approval'
+            WHERE product_template_id=%s
+            """,
+            (datetime.now(UTC), ids["product"]),
+        )
+
+        from perfect_catalog.web import ReleaseCatalogRepository
+
+        self.connection.execute("SET ROLE perfect_catalog_app")
+        built = _build_release_in_connection(
+            self.connection,
+            ids["plan"],
+            fingerprint,
+            "2026.08.24-integration",
+            "integration-publisher",
+            "synthetic release build",
+        )
+        self.assertEqual(built["status"], "built")
+        self.assertEqual(built["item_count"], 1)
+        release_id = uuid.UUID(built["release_id"])
+        rebuilt = _build_release_in_connection(
+            self.connection,
+            ids["plan"],
+            fingerprint,
+            "2026.08.24-integration",
+            "integration-publisher",
+            "synthetic release retry",
+        )
+        self.assertEqual(rebuilt["status"], "already_built")
+
+        with self.assertRaisesRegex(PermissionError, "checksum"):
+            _publish_release_in_connection(
+                self.connection,
+                release_id,
+                "0" * 64,
+                "integration-publisher",
+                "wrong checksum must fail",
+            )
+        published = _publish_release_in_connection(
+            self.connection,
+            release_id,
+            built["snapshot_sha256"],
+            "integration-publisher",
+            "synthetic publication",
+        )
+        self.assertEqual(published["status"], "published")
+        self.assertEqual(
+            _publish_release_in_connection(
+                self.connection,
+                release_id,
+                built["snapshot_sha256"],
+                "integration-publisher",
+                "synthetic publication retry",
+            )["status"],
+            "already_published",
+        )
+
+        repository = ReleaseCatalogRepository.from_connection(self.connection)
+        product = repository.product(str(ids["product"]))
+        self.assertIsNotNone(product)
+        self.assertEqual(product["data"]["quantity_available"], 0)
+        self.assertEqual(product["identity_status"], "published_uuid")
+
+        archived = _archive_release_in_connection(
+            self.connection,
+            release_id,
+            built["snapshot_sha256"],
+            "integration-publisher",
+            "synthetic archive",
+        )
+        self.assertEqual(archived["status"], "archived")
+        self.assertEqual(
+            _archive_release_in_connection(
+                self.connection,
+                release_id,
+                built["snapshot_sha256"],
+                "integration-publisher",
+                "synthetic archive retry",
+            )["status"],
+            "already_archived",
+        )
+        with self.assertRaises(FileNotFoundError):
+            ReleaseCatalogRepository.from_connection(self.connection)
+
+        self.connection.execute("RESET ROLE")
+        release_audits = self.connection.execute(
+            """
+            SELECT event_type
+            FROM perfect_catalog.audit_event
+            WHERE entity_type='catalog_release' AND entity_id=%s
+            ORDER BY occurred_at
+            """,
+            (release_id,),
+        ).fetchall()
+        self.assertEqual(
+            [row[0] for row in release_audits],
+            [
+                "catalog_release.built",
+                "catalog_release.published",
+                "catalog_release.archived",
+            ],
+        )
 
     def test_published_release_read_model_as_application_role(self) -> None:
         from perfect_catalog.releases import (
@@ -500,7 +638,21 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
             "snapshot_data": snapshot_data,
             "snapshot_sha256": product_snapshot_sha256(snapshot_data),
         }
-        release_sha = release_snapshot_sha256(ids["brand"], "2026.08.24-test", [item])
+        definition = {
+            "snapshot_schema_version": SNAPSHOT_SCHEMA_VERSION,
+            "release_hash_algorithm": RELEASE_HASH_ALGORITHM,
+            "source_kind": "applied_catalog",
+            "source_plan_id": str(uuid.uuid4()),
+            "source_plan_fingerprint_sha256": "c" * 64,
+            "source_import_batch_id": str(ids["batch"]),
+            "contract_version": "integration-contract",
+            "rules_version": "integration-rules",
+            "selection": {"brand": "NATSUKI"},
+            "item_count": 1,
+        }
+        release_sha = release_snapshot_sha256(
+            ids["brand"], "2026.08.24-test", definition, [item]
+        )
         cursor = self.connection.cursor()
         cursor.execute(
             """
@@ -565,18 +717,13 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
             """
             INSERT INTO perfect_catalog.catalog_release
                 (catalog_release_id,brand_id,version,status,definition,created_at,created_by,
-                 published_at,published_by,snapshot_sha256)
-            VALUES (%s,%s,'2026.08.24-test','published',%s,%s,'integration-test',
-                    %s,'integration-test',%s)
+                 snapshot_sha256)
+            VALUES (%s,%s,'2026.08.24-test','draft',%s,%s,'integration-test',%s)
             """,
             (
                 ids["release"],
                 ids["brand"],
-                Jsonb({
-                    "snapshot_schema_version": SNAPSHOT_SCHEMA_VERSION,
-                    "release_hash_algorithm": RELEASE_HASH_ALGORITHM,
-                }),
-                now,
+                Jsonb(definition),
                 now,
                 release_sha,
             ),
@@ -601,6 +748,14 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
                 ids["batch"],
             ),
         )
+        cursor.execute(
+            """
+            UPDATE perfect_catalog.catalog_release
+            SET status='published', published_at=%s, published_by='integration-test'
+            WHERE catalog_release_id=%s
+            """,
+            (now, ids["release"]),
+        )
 
         self.connection.execute("SET ROLE perfect_catalog_app")
         repository = ReleaseCatalogRepository.from_connection(self.connection)
@@ -618,17 +773,26 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
         self.assertIsNone(repository.product("source-row:2"))
 
         self.connection.execute("RESET ROLE")
-        self.connection.execute(
-            """
-            UPDATE perfect_catalog.catalog_release_item
-            SET snapshot_data = snapshot_data || '{"name_original":"alterado"}'::jsonb
-            WHERE catalog_release_item_id=%s
-            """,
-            (ids["release_item"],),
-        )
-        self.connection.execute("SET ROLE perfect_catalog_app")
-        with self.assertRaisesRegex(ValueError, "snapshot_sha256"):
-            ReleaseCatalogRepository.from_connection(self.connection)
+        with self.assertRaisesRegex(psycopg.errors.RaiseException, "append-only"):
+            with self.connection.transaction():
+                self.connection.execute(
+                    """
+                    UPDATE perfect_catalog.catalog_release_item
+                    SET snapshot_data = snapshot_data || '{"name_original":"alterado"}'::jsonb
+                    WHERE catalog_release_item_id=%s
+                    """,
+                    (ids["release_item"],),
+                )
+        with self.assertRaisesRegex(psycopg.errors.RaiseException, "invalid catalog_release"):
+            with self.connection.transaction():
+                self.connection.execute(
+                    """
+                    UPDATE perfect_catalog.catalog_release
+                    SET status='published'
+                    WHERE catalog_release_id=%s
+                    """,
+                    (ids["release"],),
+                )
 
 
 if __name__ == "__main__":

@@ -24,13 +24,15 @@ que solo existan en el PDF; no impide continuar las etapas deducibles y seguras.
   `e1693b821cfa871961e1c3cfd0c503f6acc06ba44c7eecb0ba8e734132a09a96`.
 - Dry-run conservado: 893 filas staged/clasificadas, 893 altas propuestas, 893 snapshots,
   711 medios pendientes, 182 ausentes, 0 escrituras empresariales.
-- Migraciones forward-only `0001`–`0004` aplicadas en `perfect_catalog_dev`.
-- Al cierre de la cuarta etapa: 103 pruebas descubiertas y 103 aprobadas, incluidas cinco
+- Migraciones forward-only `0001`–`0005` aplicadas en `perfect_catalog_dev`.
+- Al cierre de la quinta etapa: 114 pruebas descubiertas y 114 aprobadas, incluidas cinco
   integraciones PostgreSQL ejecutadas con credenciales interactivas.
 - Dry-run v0.3 posterior: 893 filas, 2,497 items, SHA fuente intacto y 0 escrituras empresariales.
 - Prueba de humo Uvicorn/FastAPI contra el XLSX real: 893 productos detectados y respuestas JSON.
 - Read model publicado validado como `perfect_catalog_app` con UUID, hashes de item/release y
   rollback; no quedó ningún release sintético persistido.
+- Build, publicación y archivo controlados validados como rol real, con checksum erróneo,
+  idempotencia, triggers append-only, auditoría y rollback.
 
 ## Matriz de situación
 
@@ -39,8 +41,8 @@ que solo existan en el PDF; no impide continuar las etapas deducibles y seguras.
 | Perfilado Odoo | Implementado y verificado para las dos muestras | XLSX/CSV/TSV, hashes antes/después, nulos, duplicados y anomalías. Falta exportación completa con IDs/OEM/aplicaciones. |
 | Contrato de importación | Parcial verificado | v0.2 conserva raw/normalizado, acepta reordenamiento, opcionales ausentes, columnas nuevas y conteos variables con límite de piloto. Sigue siendo provisional hasta recibir la exportación completa. |
 | Dry-run y transacciones | Verificado localmente | Persiste evidencia y comprueba cero escrituras empresariales. Aprobación/apply atómicos fueron validados en PostgreSQL con rol real, datos sintéticos y rollback. |
-| Idempotencia/historial | Parcial | Recalcula hashes/fingerprint, bloquea el plan y evita repetir un plan ya aplicado. Falta ensayo concurrente real y plan sucesor por decisión humana. |
-| PostgreSQL/migraciones | Implementado y verificado localmente | `0001`–`0004` aplicadas; catálogo, constraints y permisos reales probados. No hay Alembic/registro automatizado de revisiones. |
+| Idempotencia/historial | Parcial | Apply, build, publish y archive son idempotentes; hashes/fingerprint se recalculan y los releases no se reescriben. Falta ensayo concurrente real y plan sucesor por decisión humana. |
+| PostgreSQL/migraciones | Implementado y verificado localmente | `0001`–`0005` aplicadas; catálogo, constraints, triggers append-only y permisos reales probados. No hay Alembic/registro automatizado de revisiones. |
 | Modelo normalizado | Parcial | Esquema contempla productos, referencias, inventario, medios, vehículos, releases y auditoría. Las tablas empresariales continúan vacías por diseño del dry-run. |
 | Imágenes | No implementado salvo clasificación preliminar | Se detecta Base64 presente/ausente sin decodificar. Faltan indexación filesystem, variantes principal/A/B/GEN/empaque, validación, derivados web y reportes de calidad. |
 | FastAPI | Implementado y verificado | API v1.1 de solo lectura, OpenAPI, paginación, categorías, detalle y errores. Usa el último release publicado por defecto, UUID estable y validación criptográfica; XLSX/`source-row:*` queda como piloto explícito. No existen rutas admin. |
@@ -69,8 +71,8 @@ que solo existan en el PDF; no impide continuar las etapas deducibles y seguras.
 
 1. **Aprobación y apply seguro:** transición atómica, recalcular hashes/fingerprint, upserts,
    snapshots/auditoría, rollback e idempotencia; no ejecutar sobre datos empresariales sin aprobación.
-2. **Releases/read model:** implementado el consumo de snapshot JSON estable con UUID, versión y
-   checksum; falta el workflow controlado que construya y publique releases empresariales.
+2. **Releases/read model:** implementados build, inspección, publicación, archivo y consumo de
+   snapshots estables con UUID/checksum; falta una publicación empresarial autorizada.
 3. **Pipeline de imágenes:** índice no destructivo, roles, validación, hashes, derivados web y reportes.
 4. **Catálogo completo y PWA:** búsqueda estructurada, manifest/app shell, paquetes offline,
    IndexedDB, actualización atómica, cuota y sincronización idempotente.
@@ -143,8 +145,8 @@ Se implementó el read model estable para todos los consumidores de consulta:
 - cada consulta queda encerrada en un release y conserva el orden publicado;
 - la identidad pública es el UUID de variante o, si no existe, el UUID de template;
 - `catalog-product-v1` exige identidades, referencia, nombre y cantidad tipada;
-- el hash de cada snapshot detecta alteraciones de datos y `catalog-release-v1` cubre además marca,
-  versión, orden, identidades, schema y conjunto completo de items;
+- el hash de cada snapshot detecta alteraciones de datos y `catalog-release-v2` cubre además
+  definición, marca, versión, orden, identidades, schema y conjunto completo de items;
 - una versión de schema desconocida, una relación inconsistente o cualquier hash inválido impide
   servir el release;
 - `--source` y `--source-dir` mantienen el piloto XLSX de forma explícita, mientras que el comando
@@ -155,6 +157,28 @@ del read model creó un release sintético, lo consultó como `perfect_catalog_a
 rechazo de manipulación, y revirtió toda la transacción. El dry-run real posterior conservó 893
 filas, 2,497 items, SHA de origen intacto y cero escrituras empresariales. Aún no se ha construido ni
 publicado un release empresarial.
+
+## Quinta etapa ejecutada
+
+Se cerró el workflow transaccional de publicación sin autorizar datos reales:
+
+- `build-release` exige un plan aplicado íntegro, versión, actor, motivo y fingerprint exacto;
+- solo congela productos `active` y requiere una referencia interna primaria `approved` por UUID;
+- variantes activas reciben identidad propia; inventario ausente permanece nulo y solo medios
+  primarios procesados se marcan presentes;
+- `inspect-release` recalcula y muestra definición, conteo y checksum;
+- `publish-release` exige el checksum revisado, archiva la publicación anterior de la marca en la
+  misma transacción y registra auditoría correlacionada;
+- `archive-release` conserva el contenido y registra la transición final;
+- build, publish y archive son idempotentes y usan aislamiento serializable;
+- la migración `0005` impide inserts publicados, cambios/borrados de items, borrado de releases,
+  cambios de definición/checksum y mutación de auditoría incluso fuera de la CLI.
+
+La suite completa aprobó 114/114 pruebas. La integración como `perfect_catalog_app` recorrió apply,
+activación y aprobación sintéticas, build, rechazo de checksum incorrecto, publicación, lectura con
+UUID, archivo, reintentos y triggers; luego revirtió la transacción. El dry-run real posterior dejó
+893 filas, 2,497 items, origen intacto y las ocho tablas empresariales en cero. Ningún producto ni
+release empresarial fue activado o publicado.
 
 ## Bloqueos externos exactos
 

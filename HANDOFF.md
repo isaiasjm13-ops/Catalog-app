@@ -1,6 +1,6 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
-## Sesión Actual: Read model de releases publicados (2026-08-24)
+## Sesión Actual: Publicación controlada de releases (2026-08-24)
 
 ### Resultado de esta sesión
 
@@ -14,6 +14,13 @@
   `source-row:*` quedan limitados y rotulados como modo piloto XLSX explícito.
 - Cada snapshot valida schema, identidad y hash canónico; el hash agregado valida marca, versión,
   orden e inventario completo de items antes de servir cualquier consulta.
+- Workflow `build-release` / `inspect-release` / `publish-release` / `archive-release` implementado
+  con actor, motivo, fingerprint/checksum exactos, transacciones serializables e idempotencia.
+- La construcción exige plan aplicado, productos activos y una referencia interna primaria
+  aprobada por identidad; aplicar datos nunca activa ni publica automáticamente.
+- `catalog-release-v2` compromete criptográficamente también la definición y selección del release.
+- La migración forward-only `0005` fue aplicada: triggers protegen releases, items y auditoría como
+  append-only; solo permiten `draft → published → archived` y permisos mínimos por columna.
 - `perfect-catalog-api` arranca el origen publicado por defecto. `INICIAR-SERVER.cmd` conserva el
   piloto local al pasar explícitamente `--source-dir data\imports`.
 - Empaquetado corregido: `tools.odoo_profiler` funciona fuera de la raíz del repositorio.
@@ -35,15 +42,17 @@
   reintento `already_applied`, permisos y rollback transaccional verificados.
 - Integración del read model como `perfect_catalog_app`: selección, búsqueda, categorías, ficha por
   UUID y detección de manipulación, todo con datos sintéticos y rollback.
-- Pruebas: 103 descubiertas y 103 aprobadas, incluidas las 5 integraciones PostgreSQL.
+- Integración completa como rol real: apply sintético, activación/revisión sintética, build,
+  checksum erróneo, publicación, lectura UUID, archivo, reintentos e inmutabilidad con rollback.
+- Pruebas: 114 descubiertas y 114 aprobadas, incluidas las 5 integraciones PostgreSQL.
 - Dry-run real v0.3 repetido: 893 filas, 2,497 items, archivo intacto y 0 escrituras empresariales.
 - Ningún plan real fue aprobado/aplicado ni se publicó un release empresarial; no se modificó Odoo
   ni el Excel fuente y las ocho tablas empresariales siguen vacías.
 
 ### Próxima etapa por dependencias
 
-1. Implementar la construcción, revisión y publicación controlada de un `catalog_release`
-   inmutable a partir de datos aplicados, sin publicar el plan empresarial actual sin autorización.
+1. Implementar la revisión y activación humana de productos y referencias aplicados; el publisher
+   ya rechaza cualquier identidad que siga pendiente o no tenga referencia primaria aprobada.
 2. Añadir reconciliación `update` campo por campo, con `before_values`, si la exportación completa
    aporta identidad Odoo estable; hasta entonces permanece bloqueada por diseño.
 3. Continuar con imágenes, catálogo enriquecido y PWA/offline sobre releases inmutables.

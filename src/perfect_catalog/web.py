@@ -17,9 +17,8 @@ from .canonical import normalize_name
 from .config import DatabaseConfig
 from .importer import prepare_rows, validate_headers
 from .releases import (
-    RELEASE_HASH_ALGORITHM,
-    SNAPSHOT_SCHEMA_VERSION,
     release_snapshot_sha256,
+    validate_release_definition,
     validate_release_item,
     validate_release_items,
 )
@@ -235,12 +234,6 @@ class ReleaseCatalogRepository:
         self.status = str(release[3])
         self.snapshot_sha256 = str(release[4])
         definition = release[5]
-        if not isinstance(definition, dict):
-            raise ValueError("catalog_release.definition debe ser un objeto JSON.")
-        if definition.get("snapshot_schema_version") != SNAPSHOT_SCHEMA_VERSION:
-            raise ValueError("El release no declara el schema de snapshot soportado.")
-        if definition.get("release_hash_algorithm") != RELEASE_HASH_ALGORITHM:
-            raise ValueError("El release no declara el algoritmo de hash soportado.")
         rows = self.connection.execute(
             """
             SELECT item_order, product_template_id, product_variant_id,
@@ -253,6 +246,7 @@ class ReleaseCatalogRepository:
         ).fetchall()
         if not rows:
             raise ValueError("El release publicado no contiene productos.")
+        validate_release_definition(definition, len(rows))
         items = [
             {
                 "item_order": row[0],
@@ -265,7 +259,9 @@ class ReleaseCatalogRepository:
             for row in rows
         ]
         validate_release_items(items)
-        recalculated = release_snapshot_sha256(self.brand_id, self.version, items)
+        recalculated = release_snapshot_sha256(
+            self.brand_id, self.version, definition, items
+        )
         if recalculated != self.snapshot_sha256:
             raise ValueError("Los items publicados no coinciden con snapshot_sha256 del release.")
         self.total = len(items)

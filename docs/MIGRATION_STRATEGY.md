@@ -1,8 +1,8 @@
 # Estrategia de migraciones PostgreSQL
 
-> **Versión v0.4 — PostgreSQL local disponible — `0001`–`0004` aplicadas**
+> **Versión v0.5 — PostgreSQL local disponible — `0001`–`0005` aplicadas**
 
-Esta estrategia gobierna las migraciones SQL forward-only del proyecto. `0001`–`0004` fueron
+Esta estrategia gobierna las migraciones SQL forward-only del proyecto. `0001`–`0005` fueron
 aplicadas y validadas en `perfect_catalog_dev`. No se ha instalado Alembic.
 
 ## 1. Principios
@@ -26,6 +26,8 @@ aplicadas y validadas en `perfect_catalog_dev`. No se ha instalado Alembic.
   para aprobar/aplicar.
 - `0004_restore_application_reads.sql`: corrección forward-only del drift de permisos SELECT,
   limitada a las 18 tablas consumidas por la aplicación actual.
+- `0005_release_publication_workflow.sql`: inmutabilidad física de releases/items/auditoría,
+  identidad pública única y permisos mínimos para construir, publicar y archivar.
 - La numeración es monotónica y nunca se reutiliza.
 - Cada migración declara al inicio su objetivo, precondiciones y compatibilidad mínima.
 
@@ -130,8 +132,9 @@ Esta fase no instala Alembic, no crea su configuración y no crea `alembic_versi
 ## 11. Validación local completada y siguiente promoción
 
 Completado localmente: PostgreSQL 18.6, catálogo estructural, constraints, permisos del rol real,
-inserción/apply sintético, rechazo de datos inválidos, idempotencia y rollback. La suite del
-2026-08-24 aprobó 95/95 pruebas y el dry-run posterior terminó sin escrituras empresariales.
+inserción/apply sintético, publicación/archivo sintéticos, rechazo de datos inválidos, triggers de
+inmutabilidad, idempotencia y rollback. La suite del 2026-08-24 aprobó 114/114 pruebas y el dry-run
+posterior terminó sin escrituras empresariales.
 
 Antes de otro entorno se debe repetir el mismo procedimiento, registrar hashes/duración y obtener
 la aprobación correspondiente; la validación local no autoriza promoción ni apply empresarial.
