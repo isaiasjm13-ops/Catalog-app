@@ -12,6 +12,7 @@
 - ✓ Muestra real de Odoo analizada preliminarmente
 - ✓ Schema y migración validados en PostgreSQL
 - ✓ Dry-run de Natsuki ejecutado sin escrituras empresariales
+- ✓ MVP web local de consulta sobre la muestra funcionando
 
 ### Completado en Esta Sesión
 
@@ -77,20 +78,21 @@
 **Bloqueado por**: FASE 2  
 
 #### FASE 4: API Base
-- [ ] Endpoints de búsqueda
-- [ ] Endpoints de filtrado
+- [x] Búsqueda local por referencia y nombre
+- [x] Filtro local por categoría
+- [ ] API HTTP formal con endpoints JSON
 - [ ] Endpoints de agrupación
-- [ ] Documentación API
 
 **Responsable**: Ingeniero Backend  
 **Dependencias**: BD con datos + Importador  
 **Bloqueado por**: FASE 3  
 
 #### FASE 5: Interfaz Web Local
-- [ ] Búsqueda por referencia
+- [x] Búsqueda por referencia y nombre
+- [x] Filtro inicial por categoría
 - [ ] Filtros multi-nivel
 - [ ] Agrupación dinámica
-- [ ] Visualización de fichas
+- [x] Visualización de resultados de ficha básica
 
 **Responsable**: Ingeniero Frontend  
 **Dependencias**: API  
@@ -144,6 +146,9 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 ### Notas Técnicas
 
 - Ruta del proyecto: `C:\PERFECT_CATALOG`
+- MVP local: `http://127.0.0.1:8080`
+- Lanzamiento: `INICIAR-SERVER.cmd` o `scripts/run_catalog_web.py`
+- El MVP lee el Excel de muestra en modo solo lectura; no requiere contraseña ni conexión a PostgreSQL
 - Usuario propietario: AzureAD\Diseño2
 - Política de ejecución PowerShell: Bypass
 - No se ejecuta como administrador (OK, no requerido)
