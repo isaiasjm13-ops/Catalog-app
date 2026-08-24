@@ -67,6 +67,7 @@ data/exports/*.json
 data/exports/pdf/
 data/exports/indd/
 data/exports/idml/
+data/exports/imports/
 data/exports/profiles/
 !data/exports/.gitkeep
 
@@ -130,7 +131,7 @@ passwords.txt
 # Temporales de desarrollo
 scratch/
 temp/
-/test_*.py
+test_*.py
 debug_*.py
 
 # Salidas temporales de comandos Git

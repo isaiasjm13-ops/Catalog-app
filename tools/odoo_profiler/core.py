@@ -216,6 +216,16 @@ def _read_source(path: Path) -> list[SheetData]:
     raise ValueError("Formato no admitido. Use .xlsx, .csv o .tsv")
 
 
+def sha256_file(path: str | Path) -> str:
+    """Return the SHA-256 of a source file without modifying it."""
+    return _sha256(Path(path))
+
+
+def read_tabular_source(path: str | Path) -> list[SheetData]:
+    """Read XLSX/CSV data with the profiler's standard-library reader."""
+    return _read_source(Path(path))
+
+
 def _json_value(value: Any) -> Any:
     if isinstance(value, (datetime, date)):
         return value.isoformat()
