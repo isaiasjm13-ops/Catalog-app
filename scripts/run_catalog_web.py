@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from perfect_catalog.web import ExcelCatalogRepository, serve
+from perfect_catalog.web import AutoExcelCatalogRepository, ExcelCatalogRepository, serve
 
 
 parser = argparse.ArgumentParser(description="Inicia el catálogo local de solo lectura")
@@ -12,9 +12,13 @@ parser.add_argument("--port", type=int, default=8080)
 parser.add_argument(
 	"--source",
 	type=Path,
-	default=Path("data/imports/NATSUKI_EMPAQUES_MAESTRO.xlsx"),
+	default=None,
 )
 args = parser.parse_args()
 
-repository = ExcelCatalogRepository(str(args.source))
+repository = (
+	ExcelCatalogRepository(str(args.source))
+	if args.source is not None
+	else AutoExcelCatalogRepository(Path("data/imports"))
+)
 serve(repository, args.host, args.port)

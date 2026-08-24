@@ -13,6 +13,7 @@
 - ✓ Schema y migración validados en PostgreSQL
 - ✓ Dry-run de Natsuki ejecutado sin escrituras empresariales
 - ✓ MVP web local de consulta sobre la muestra funcionando
+- ✓ Visor local detecta automáticamente el XLSX más reciente en `data/imports`
 
 ### Completado en Esta Sesión
 
@@ -149,6 +150,7 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 - MVP local: `http://127.0.0.1:8080`
 - Lanzamiento: `INICIAR-SERVER.cmd` o `scripts/run_catalog_web.py`
 - El MVP lee el Excel de muestra en modo solo lectura; no requiere contraseña ni conexión a PostgreSQL
+- Al copiar una nueva exportación `.xlsx` a `data/imports`, el visor la recarga automáticamente en la siguiente consulta
 - Usuario propietario: AzureAD\Diseño2
 - Política de ejecución PowerShell: Bypass
 - No se ejecuta como administrador (OK, no requerido)

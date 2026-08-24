@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -116,6 +117,42 @@ class ExcelCatalogRepository:
             if len(matches) >= limit:
                 break
         return matches
+
+
+class AutoExcelCatalogRepository:
+    def __init__(self, source_dir: Path) -> None:
+        self.source_dir = source_dir
+        self._repository: ExcelCatalogRepository | None = None
+        self._source_signature: tuple[str, int] | None = None
+        self._lock = threading.Lock()
+
+    def _latest_source(self) -> Path:
+        sources = sorted(
+            self.source_dir.glob("*.xlsx"),
+            key=lambda path: path.stat().st_mtime_ns,
+            reverse=True,
+        )
+        if not sources:
+            raise FileNotFoundError(f"No hay archivos XLSX en {self.source_dir}")
+        return sources[0]
+
+    def _current(self) -> ExcelCatalogRepository:
+        source = self._latest_source()
+        signature = (str(source.resolve()), source.stat().st_mtime_ns)
+        with self._lock:
+            if self._repository is None or self._source_signature != signature:
+                self._repository = ExcelCatalogRepository(str(source))
+                self._source_signature = signature
+            return self._repository
+
+    def close(self) -> None:
+        return
+
+    def plan(self) -> tuple[str, int, int]:
+        return self._current().plan()
+
+    def search(self, query: str, category: str, limit: int = 100) -> list[dict[str, Any]]:
+        return self._current().search(query, category, limit)
 
 
 def render_results(items: list[dict[str, Any]]) -> str:
