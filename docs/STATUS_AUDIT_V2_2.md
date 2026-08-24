@@ -25,7 +25,7 @@ que solo existan en el PDF; no impide continuar las etapas deducibles y seguras.
 - Dry-run conservado: 893 filas staged/clasificadas, 893 altas propuestas, 893 snapshots,
   711 medios pendientes, 182 ausentes, 0 escrituras empresariales.
 - Migraciones forward-only: 24 tablas en `0001`; ajuste de objetivos futuros en `0002`.
-- Al cierre de la primera etapa: 68 pruebas descubiertas, 66 aprobadas y 2 integraciones
+- Al cierre de la segunda etapa: 75 pruebas descubiertas, 73 aprobadas y 2 integraciones
   PostgreSQL omitidas por requerir credenciales interactivas.
 - Prueba de humo Uvicorn/FastAPI contra el XLSX real: 893 productos detectados y respuestas JSON.
 
@@ -34,7 +34,7 @@ que solo existan en el PDF; no impide continuar las etapas deducibles y seguras.
 | Área | Estado | Evidencia y brecha principal |
 |---|---|---|
 | Perfilado Odoo | Implementado y verificado para las dos muestras | XLSX/CSV/TSV, hashes antes/después, nulos, duplicados y anomalías. Falta exportación completa con IDs/OEM/aplicaciones. |
-| Contrato de importación | Parcial | Conserva raw/normalizado e incidencias, pero exige exactamente 13 columnas y 893 filas; no es todavía adaptable a exportaciones reales distintas. |
+| Contrato de importación | Parcial verificado | v0.2 conserva raw/normalizado, acepta reordenamiento, opcionales ausentes, columnas nuevas y conteos variables con límite de piloto. Sigue siendo provisional hasta recibir la exportación completa. |
 | Dry-run y transacciones | Parcial verificado | Persiste batch, archivo, staging, resultados, issues y plan; comprueba cero escrituras empresariales. `apply` y rollback empresarial no están implementados. |
 | Idempotencia/historial | Parcial | Hashes canónicos, duplicado de archivo, planes y constraints existen. Falta aplicación única real, reintentos y plan sucesor por decisión humana. |
 | PostgreSQL/migraciones | Implementado y verificado previamente; verificación actual parcial | DDL y pruebas estáticas sólidas; PostgreSQL funciona. Las pruebas reales actuales se omitieron por credenciales interactivas. No hay Alembic/registro automatizado de revisiones. |
@@ -52,8 +52,8 @@ que solo existan en el PDF; no impide continuar las etapas deducibles y seguras.
 
 ## Riesgos prioritarios
 
-1. `run_dry_run` codifica 893 filas y un orden exacto de 13 encabezados; una exportación legítima
-   diferente falla antes de poder informar columnas opcionales/nuevas de forma útil.
+1. La identidad provisional depende de referencia interna porque las muestras no traen IDs estables
+   de Odoo; el contrato no puede declararse definitivo hasta recibir una exportación completa.
 2. La web provisional lee el XLSX más reciente. Esto es útil para el piloto, pero no debe convertirse
    en el origen publicado ni en una segunda fuente maestra.
 3. Las identidades `source-row:*` cambian con la posición del archivo y no sirven para favoritos,
@@ -64,18 +64,16 @@ que solo existan en el PDF; no impide continuar las etapas deducibles y seguras.
 
 ## Plan ordenado por dependencias
 
-1. **Contrato/importador adaptable:** campos críticos/opcionales, columnas desconocidas conservadas,
-   conteos no rígidos, CSV real, duplicados de referencia y pruebas sintéticas de bordes.
-2. **Aprobación y apply seguro:** transición atómica, recalcular hashes/fingerprint, upserts,
+1. **Aprobación y apply seguro:** transición atómica, recalcular hashes/fingerprint, upserts,
    snapshots/auditoría, rollback e idempotencia; no ejecutar sobre datos empresariales sin aprobación.
-3. **Releases/read model:** snapshot JSON estable con UUID, versión y checksum para todos los consumidores.
-4. **Pipeline de imágenes:** índice no destructivo, roles, validación, hashes, derivados web y reportes.
-5. **Catálogo completo y PWA:** búsqueda estructurada, manifest/app shell, paquetes offline,
+2. **Releases/read model:** snapshot JSON estable con UUID, versión y checksum para todos los consumidores.
+3. **Pipeline de imágenes:** índice no destructivo, roles, validación, hashes, derivados web y reportes.
+4. **Catálogo completo y PWA:** búsqueda estructurada, manifest/app shell, paquetes offline,
    IndexedDB, actualización atómica, cuota y sincronización idempotente.
-6. **PDF QUICK:** HTML/CSS estable, QR, selección, Playwright, caché/manifest y revisión visual.
-7. **InDesign premium:** paquete autocontenido, muestra Data Merge, UXP `.idjs`, preflight,
+5. **PDF QUICK:** HTML/CSS estable, QR, selección, Playwright, caché/manifest y revisión visual.
+6. **InDesign premium:** paquete autocontenido, muestra Data Merge, UXP `.idjs`, preflight,
    PDF DIGITAL y PDF PRINT separados.
-8. **Piloto de aceptación:** matriz completa de datos/imágenes/fallos, tablets/laptops, rendimiento,
+7. **Piloto de aceptación:** matriz completa de datos/imágenes/fallos, tablets/laptops, rendimiento,
    documentación desde cero y decisión explícita antes de escalar a 25,000+ referencias.
 
 ## Primera etapa ejecutada
@@ -93,6 +91,22 @@ Se implementó FastAPI 0.141.1 sobre una interfaz de repositorio sin retirar el 
 - empaquetado corregido para incluir el lector/perfilador compartido.
 
 La etapa no escribe en Odoo, Excel, staging ni tablas empresariales.
+
+## Segunda etapa ejecutada
+
+El contrato de entrada pasó a `natsuki-empaques-v0.2` y las reglas a `normalization-v0.2`:
+
+- `Nombre` y `Referencia interna` son las únicas columnas críticas de la evidencia actual;
+- encabezados conocidos pueden reordenarse o variar en mayúsculas/acentos normalizables;
+- columnas opcionales ausentes quedan nulas y se reportan sin inventar valores; una columna de
+  imagen no exportada usa `not_exported`, distinto de una celda realmente `absent`;
+- columnas nuevas se conservan íntegramente en `raw_values` y se enumeran en los reportes;
+- encabezados vacíos o duplicados tras normalizar se rechazan explícitamente;
+- el conteo deja de estar fijado a 893 y usa un límite de piloto predeterminado de 5,000 filas;
+- XLSX, CSV y TSV registran su tipo de medio correcto.
+
+La muestra real de 237 filas y dos columnas críticas fue leída correctamente. Esta validación no
+es un apply y no produjo escrituras en PostgreSQL.
 
 ## Bloqueos externos exactos
 

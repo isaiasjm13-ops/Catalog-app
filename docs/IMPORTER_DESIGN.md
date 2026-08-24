@@ -1,11 +1,15 @@
 # Diseño del importador de Odoo
 
-> **Arquitectura del importador v0.1 — Alineada con DDL v0.2 corregido — No implementada**
+> **Arquitectura aprobada v0.1; implementación parcial con contrato de entrada v0.2 (2026-08-24)**
 
-Este documento fija el flujo v0.1 aprobado. La aprobación es exclusivamente documental: no
-contiene código ejecutable, no crea tablas o migraciones y PostgreSQL continúa sin instalar.
-El DDL v0.2 corregido permanece pendiente de segunda revisión manual y de validación real en
-PostgreSQL, todavía antes de instalar el servicio o programar el importador definitivo.
+El dry-run, staging, resultados, incidencias y planes ya tienen una implementación piloto. El
+contrato `natsuki-empaques-v0.2` acepta columnas conocidas reordenadas, conserva columnas nuevas,
+reporta opcionales ausentes y permite conteos variables bajo un límite de piloto de 5,000 filas.
+La aprobación/apply empresarial, candidatos, medios procesados y cierre completo descritos más
+adelante siguen pendientes. `docs/STATUS_AUDIT_V2_2.md` contiene el estado operativo vigente.
+
+Este documento conserva el flujo objetivo v0.1 aprobado. No debe interpretarse como evidencia de
+que cada etapa ya funciona: el estado se determina mediante código, pruebas e informe de auditoría.
 
 ## 1. Alcance
 

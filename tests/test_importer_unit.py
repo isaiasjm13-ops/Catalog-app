@@ -13,12 +13,14 @@ from perfect_catalog.canonical import canonical_json, canonical_sha256, normaliz
 from perfect_catalog.config import DatabaseConfig
 from perfect_catalog.importer import (
     EXPECTED_HEADERS,
+    analyze_headers,
     approval_fingerprint,
     assert_apply_allowed,
     future_product_id,
     plan_item_hash,
     plan_hash,
     prepare_rows,
+    validate_pilot_row_count,
     validate_headers,
 )
 
@@ -166,6 +168,48 @@ class RowPreparationTests(unittest.TestCase):
     def test_source_active_stays_unknown(self) -> None:
         row = prepare_rows("Synthetic", EXPECTED_HEADERS, [synthetic_row()], [2])[0]
         self.assertIsNone(row.normalized["source_active"])
+
+    def test_reordered_headers_are_accepted_and_reported(self) -> None:
+        headers = tuple(reversed(EXPECTED_HEADERS))
+        contract = analyze_headers(headers)
+        self.assertTrue(contract.reordered)
+        self.assertEqual(contract.missing_optional, ())
+
+    def test_known_header_case_variations_still_map_to_canonical_fields(self) -> None:
+        headers = tuple(header.upper() for header in EXPECTED_HEADERS)
+        row = prepare_rows("Synthetic", validate_headers(headers), [synthetic_row()], [2])[0]
+        self.assertEqual(row.normalized["internal_reference_original"], "001-A-00")
+        self.assertEqual(row.normalized["name_original"], "EMPAQUE SINTÉTICO A")
+
+    def test_optional_columns_can_be_missing_without_inventing_values(self) -> None:
+        headers = ("Referencia interna", "Nombre")
+        contract = analyze_headers(headers)
+        row = prepare_rows("Synthetic", contract.headers, [["001-A", "Pieza mínima"]], [2])[0]
+        self.assertIn("Cantidad real", contract.missing_optional)
+        self.assertIsNone(row.normalized["quantity_on_hand"])
+        self.assertEqual(row.normalized["image_status"], "not_exported")
+        self.assertNotIn("quantity_on_hand_invalid", {issue["code"] for issue in row.issue_specs})
+        self.assertNotIn("image_absent", {issue["code"] for issue in row.issue_specs})
+
+    def test_unknown_columns_are_preserved_in_raw_values(self) -> None:
+        headers = EXPECTED_HEADERS + ("Campo nuevo de Odoo",)
+        contract = analyze_headers(headers)
+        row = prepare_rows("Synthetic", contract.headers, [synthetic_row() + ["evidencia"]], [2])[0]
+        self.assertEqual(contract.unknown, ("Campo nuevo de Odoo",))
+        self.assertEqual(row.raw_values["Campo nuevo de Odoo"], "evidencia")
+
+    def test_missing_required_header_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "columnas críticas"):
+            validate_headers(header for header in EXPECTED_HEADERS if header != "Referencia interna")
+
+    def test_duplicate_normalized_header_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "duplicados"):
+            validate_headers(EXPECTED_HEADERS + ("REFERENCIA INTERNA",))
+
+    def test_pilot_row_limit_is_explicit(self) -> None:
+        validate_pilot_row_count(893, 1_000)
+        with self.assertRaisesRegex(ValueError, "supera el límite"):
+            validate_pilot_row_count(1_001, 1_000)
 
 
 class ApplyGateTests(unittest.TestCase):

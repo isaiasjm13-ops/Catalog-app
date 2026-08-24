@@ -20,8 +20,8 @@ from .canonical import canonical_sha256, normalize_name, normalize_reference
 from .config import DatabaseConfig
 
 
-CONTRACT_VERSION = "natsuki-empaques-v0.1"
-RULES_VERSION = "normalization-v0.1"
+CONTRACT_VERSION = "natsuki-empaques-v0.2"
+RULES_VERSION = "normalization-v0.2"
 PROFILER_VERSION = "0.1"
 SOURCE_CODE = "odoo"
 SOURCE_MODEL = "product.template"
@@ -45,6 +45,13 @@ EXPECTED_HEADERS = (
     "Mostrar botón de estado de cantidad real",
 )
 
+REQUIRED_HEADERS = (
+    "Nombre",
+    "Referencia interna",
+)
+
+DEFAULT_MAX_PILOT_ROWS = 5_000
+
 BUSINESS_TABLES = (
     "product_template",
     "product_variant",
@@ -66,6 +73,22 @@ class PreparedRow:
     row_sha256: str
     normalized: dict[str, Any]
     issue_specs: tuple[dict[str, Any], ...]
+
+
+@dataclass(frozen=True)
+class HeaderContract:
+    headers: tuple[str, ...]
+    missing_optional: tuple[str, ...]
+    unknown: tuple[str, ...]
+    reordered: bool
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "headers": list(self.headers),
+            "missing_optional": list(self.missing_optional),
+            "unknown": list(self.unknown),
+            "reordered": self.reordered,
+        }
 
 
 def _header_key(value: Any) -> str:
@@ -107,14 +130,66 @@ def _as_number(value: Any) -> int | float | None:
     return int(number) if number.is_integer() else number
 
 
-def validate_headers(headers: Iterable[Any]) -> tuple[str, ...]:
+def analyze_headers(headers: Iterable[Any]) -> HeaderContract:
     actual = tuple(str(value or "").strip() for value in headers)
-    if tuple(map(_header_key, actual)) != tuple(map(_header_key, EXPECTED_HEADERS)):
+    if not actual:
+        raise ValueError("El archivo no contiene encabezados.")
+    empty_positions = [index for index, value in enumerate(actual, start=1) if not value]
+    if empty_positions:
+        raise ValueError(f"Hay encabezados vacíos en las columnas {empty_positions}.")
+
+    actual_keys = tuple(map(_header_key, actual))
+    duplicate_keys = sorted(key for key, count in Counter(actual_keys).items() if count > 1)
+    if duplicate_keys:
+        raise ValueError(f"Hay encabezados duplicados después de normalizar: {duplicate_keys!r}.")
+
+    expected_by_key = {_header_key(header): header for header in EXPECTED_HEADERS}
+    required_keys = {_header_key(header) for header in REQUIRED_HEADERS}
+    missing_required = [
+        expected_by_key[key]
+        for key in required_keys
+        if key not in actual_keys
+    ]
+    if missing_required:
         raise ValueError(
-            "Contrato de columnas incompatible. "
-            f"Esperadas={list(EXPECTED_HEADERS)!r}; recibidas={list(actual)!r}"
+            "Faltan columnas críticas para identidad y conciliación: "
+            f"{sorted(missing_required)!r}."
         )
-    return actual
+
+    missing_optional = tuple(
+        header
+        for header in EXPECTED_HEADERS
+        if _header_key(header) not in actual_keys and _header_key(header) not in required_keys
+    )
+    unknown = tuple(header for header, key in zip(actual, actual_keys, strict=True) if key not in expected_by_key)
+    present_expected_order = tuple(
+        _header_key(header)
+        for header in EXPECTED_HEADERS
+        if _header_key(header) in actual_keys
+    )
+    observed_expected_order = tuple(key for key in actual_keys if key in expected_by_key)
+    return HeaderContract(
+        headers=actual,
+        missing_optional=missing_optional,
+        unknown=unknown,
+        reordered=observed_expected_order != present_expected_order,
+    )
+
+
+def validate_headers(headers: Iterable[Any]) -> tuple[str, ...]:
+    return analyze_headers(headers).headers
+
+
+def validate_pilot_row_count(row_count: int, max_rows: int = DEFAULT_MAX_PILOT_ROWS) -> None:
+    if max_rows < 1:
+        raise ValueError("El límite del piloto debe ser al menos 1.")
+    if row_count < 1:
+        raise ValueError("El archivo no contiene filas de datos.")
+    if row_count > max_rows:
+        raise ValueError(
+            f"El archivo contiene {row_count} filas y supera el límite de piloto de {max_rows}. "
+            "Revise una muestra antes de ampliar explícitamente el límite."
+        )
 
 
 def prepare_rows(sheet_name: str, headers: tuple[str, ...], rows: list[list[Any]], row_numbers: list[int]) -> list[PreparedRow]:
@@ -122,11 +197,21 @@ def prepare_rows(sheet_name: str, headers: tuple[str, ...], rows: list[list[Any]
     for row, source_row_number in zip(rows, row_numbers, strict=True):
         padded = list(row[: len(headers)]) + [None] * max(0, len(headers) - len(row))
         raw_values = {header: _json_value(value) for header, value in zip(headers, padded, strict=True)}
-        reference_original = str(raw_values["Referencia interna"] or "")
-        name_original = str(raw_values["Nombre"] or "")
-        image_value = raw_values["Imagen 128"]
-        image_present = not _is_empty(image_value)
-        date_serial = raw_values["Última actualización el"]
+        values_by_key = {_header_key(header): value for header, value in raw_values.items()}
+
+        def field(header: str) -> Any:
+            return values_by_key.get(_header_key(header))
+
+        reference_original = str(field("Referencia interna") or "")
+        name_original = str(field("Nombre") or "")
+        image_column_present = _header_key("Imagen 128") in values_by_key
+        image_value = field("Imagen 128")
+        image_status = (
+            "not_exported"
+            if not image_column_present
+            else "present" if not _is_empty(image_value) else "absent"
+        )
+        date_serial = field("Última actualización el")
         raw_excel_serials = (
             {"Última actualización el": date_serial}
             if isinstance(date_serial, (int, float)) and not isinstance(date_serial, bool)
@@ -136,8 +221,8 @@ def prepare_rows(sheet_name: str, headers: tuple[str, ...], rows: list[list[Any]
             "column_count": len(headers),
             "sheet_name": sheet_name,
             "image": {
-                "status": "present" if image_present else "absent",
-                "payload_character_count": len(str(image_value)) if image_present else 0,
+                "status": image_status,
+                "payload_character_count": len(str(image_value)) if image_status == "present" else 0,
                 "decoded": False,
             },
         }
@@ -156,23 +241,23 @@ def prepare_rows(sheet_name: str, headers: tuple[str, ...], rows: list[list[Any]
                 "message": "El nombre del producto está vacío.",
                 "column_name": "Nombre",
             })
-        quantity_on_hand = _as_number(raw_values["Cantidad real"])
-        quantity_available = _as_number(raw_values["Cantidad disponible"])
-        if quantity_on_hand is None:
+        quantity_on_hand = _as_number(field("Cantidad real"))
+        quantity_available = _as_number(field("Cantidad disponible"))
+        if _header_key("Cantidad real") in values_by_key and quantity_on_hand is None:
             issues.append({
                 "severity": "error",
                 "code": "quantity_on_hand_invalid",
                 "message": "Cantidad real no es numérica.",
                 "column_name": "Cantidad real",
             })
-        if quantity_available is None:
+        if _header_key("Cantidad disponible") in values_by_key and quantity_available is None:
             issues.append({
                 "severity": "error",
                 "code": "quantity_available_invalid",
                 "message": "Cantidad disponible no es numérica.",
                 "column_name": "Cantidad disponible",
             })
-        if not image_present:
+        if image_status == "absent":
             issues.append({
                 "severity": "warning",
                 "code": "image_absent",
@@ -191,22 +276,22 @@ def prepare_rows(sheet_name: str, headers: tuple[str, ...], rows: list[list[Any]
             "source_model": SOURCE_MODEL,
             "brand": BRAND,
             "family": FAMILY,
-            "currency": raw_values["Moneda"],
-            "activity_state": raw_values["Estado de la actividad"],
-            "category_path": raw_values["Categoría de producto"],
-            "is_favorite": _as_bool(raw_values["Favorito"]),
+            "currency": field("Moneda"),
+            "activity_state": field("Estado de la actividad"),
+            "category_path": field("Categoría de producto"),
+            "is_favorite": _as_bool(field("Favorito")),
             "name_original": name_original,
             "name_normalized": normalize_name(name_original),
             "internal_reference_original": reference_original,
             "internal_reference_normalized": normalize_reference(reference_original),
-            "variant_count_observed": _as_number(raw_values["# Variantes de producto"]),
+            "variant_count_observed": _as_number(field("# Variantes de producto")),
             "quantity_on_hand": quantity_on_hand,
-            "uom_original": raw_values["Unidad de medida"],
+            "uom_original": field("Unidad de medida"),
             "quantity_available": quantity_available,
-            "image_status": "present" if image_present else "absent",
+            "image_status": image_status,
             "source_date_serial": date_serial,
             "source_updated_at": None,
-            "show_quantity_status": _as_bool(raw_values["Mostrar botón de estado de cantidad real"]),
+            "show_quantity_status": _as_bool(field("Mostrar botón de estado de cantidad real")),
             "source_active": None,
             "catalog_status": "pending_review",
         }
@@ -339,11 +424,15 @@ def _write_reports(summary: dict[str, Any], output_dir: Path) -> tuple[Path, Pat
         f"- Fingerprint: `{summary['approval_fingerprint_sha256']}`",
         f"- Archivo SHA-256 antes: `{summary['source_sha256_before']}`",
         f"- Archivo SHA-256 después: `{summary['source_sha256_after']}`",
+        f"- Columnas opcionales ausentes: {', '.join(summary['header_contract']['missing_optional']) or 'ninguna'}",
+        f"- Columnas nuevas conservadas: {', '.join(summary['header_contract']['unknown']) or 'ninguna'}",
+        f"- Columnas conocidas reordenadas: {'sí' if summary['header_contract']['reordered'] else 'no'}",
         f"- Filas leídas / staging / clasificadas: {summary['rows_read']} / {summary['staging_rows']} / {summary['classified_rows']}",
         f"- Altas propuestas: {summary['plan_counts']['create']}",
         f"- Snapshots propuestos: {summary['plan_counts']['inventory_snapshot']}",
         f"- Medios pendientes: {summary['plan_counts']['media_pending']}",
         f"- Medios ausentes: {summary['media_absent']}",
+        f"- Columna de medios no exportada: {summary['media_not_exported']}",
         f"- Warnings / errores / bloqueos / conflictos: {summary['issues']['warning']} / {summary['issues']['error']} / {summary['plan_counts']['blocked']} / {summary['plan_counts']['conflict']}",
         f"- Grupos de nombres duplicados: {summary['duplicate_name_groups']}",
         f"- Referencias únicas: {summary['unique_references']}",
@@ -355,7 +444,13 @@ def _write_reports(summary: dict[str, Any], output_dir: Path) -> tuple[Path, Pat
     return json_path, md_path
 
 
-def run_dry_run(source_path: Path, config: DatabaseConfig, password: str, output_dir: Path) -> dict[str, Any]:
+def run_dry_run(
+    source_path: Path,
+    config: DatabaseConfig,
+    password: str,
+    output_dir: Path,
+    max_rows: int = DEFAULT_MAX_PILOT_ROWS,
+) -> dict[str, Any]:
     source_path = source_path.resolve(strict=True)
     source_sha_before = sha256_file(source_path)
     sheets = read_tabular_source(source_path)
@@ -365,10 +460,10 @@ def run_dry_run(source_path: Path, config: DatabaseConfig, password: str, output
     if len(sheets) != 1 or not sheets[0].rows:
         raise ValueError("El contrato requiere exactamente una hoja no vacía.")
     sheet = sheets[0]
-    headers = validate_headers(sheet.rows[0])
+    header_contract = analyze_headers(sheet.rows[0])
+    headers = header_contract.headers
     prepared = prepare_rows(sheet.name, headers, sheet.rows[1:], sheet.row_numbers[1:])
-    if len(prepared) != 893:
-        raise ValueError(f"El contrato exige 893 filas; se encontraron {len(prepared)}.")
+    validate_pilot_row_count(len(prepared), max_rows)
 
     batch_id = uuid.uuid4()
     file_id = uuid.uuid4()
@@ -436,7 +531,11 @@ def run_dry_run(source_path: Path, config: DatabaseConfig, password: str, output
                     storage_uri,
                     source_path.stat().st_size,
                     source_sha_before,
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    {
+                        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        ".csv": "text/csv",
+                        ".tsv": "text/tab-separated-values",
+                    }.get(source_path.suffix.lower(), "application/octet-stream"),
                     now,
                     len(sheets),
                     Jsonb({"sheet_names": [sheet.name], "formula_count": sheet.formula_count}),
@@ -662,6 +761,7 @@ def run_dry_run(source_path: Path, config: DatabaseConfig, password: str, output
         "plan_status": "awaiting_review",
         "contract_version": CONTRACT_VERSION,
         "rules_version": RULES_VERSION,
+        "header_contract": header_contract.as_dict(),
         "source_sha256_before": source_sha_before,
         "source_sha256_after": source_sha_final,
         "source_unchanged": source_sha_before == source_sha_final,
@@ -672,6 +772,7 @@ def run_dry_run(source_path: Path, config: DatabaseConfig, password: str, output
         "duplicate_name_groups": sum(count > 1 for count in names.values()),
         "media_present": sum(row.normalized["image_status"] == "present" for row in prepared),
         "media_absent": sum(row.normalized["image_status"] == "absent" for row in prepared),
+        "media_not_exported": sum(row.normalized["image_status"] == "not_exported" for row in prepared),
         "issues": {severity: int(issue_counts.get(severity, 0)) for severity in ("info", "warning", "error", "fatal")},
         "plan_counts": {operation: int(operation_counts.get(operation, 0)) for operation in (
             "create", "update", "no_change", "inventory_snapshot", "media_pending", "blocked", "conflict"

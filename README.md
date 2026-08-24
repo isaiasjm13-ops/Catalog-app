@@ -75,6 +75,9 @@ estables llegarán desde los productos/releases publicados en PostgreSQL.
 Las dos pruebas de integración PostgreSQL son opt-in porque solicitan credenciales de forma
 interactiva. El procedimiento controlado está en `scripts/run_productive_block_validation.ps1`.
 
+El dry-run limita el piloto a 5,000 filas de forma predeterminada. `--max-rows` permite cambiar el
+límite conscientemente, pero no debe ampliarse al catálogo completo antes de aprobar el piloto.
+
 ### Estado y auditoría
 
 La matriz vigente de requisitos y el plan por dependencias están en

@@ -13,16 +13,17 @@
 - Empaquetado corregido: `tools.odoo_profiler` funciona fuera de la raíz del repositorio.
 - `.env.example` corregido para no presentar SQLite como base de desarrollo.
 - Prueba de humo real: XLSX maestro de 893 filas, API devuelve catálogo y fichas correctamente.
-- Pruebas: 68 descubiertas; 66 aprobadas y 2 integraciones PostgreSQL omitidas por ser opt-in.
+- Contrato/importador v0.2: ya no exige 893 filas ni 13 columnas en orden exacto; acepta
+  reordenamiento, conserva columnas nuevas y reporta opcionales ausentes, con límite de piloto.
+- Segunda muestra real verificada: 237 filas y solo 2 columnas críticas, sin inventar opcionales.
+- Pruebas: 75 descubiertas; 73 aprobadas y 2 integraciones PostgreSQL omitidas por ser opt-in.
 
 ### Próxima etapa por dependencias
 
-1. Sustituir el contrato rígido de 893 filas/13 posiciones por contratos versionados con columnas
-   críticas/opcionales y reportes explícitos de columnas nuevas o faltantes.
-2. Implementar y probar aprobación/aplicación idempotente sin ejecutar ningún plan empresarial
+1. Implementar y probar aprobación/aplicación idempotente sin ejecutar ningún plan empresarial
    hasta revisión humana expresa.
-3. Crear el read model estable desde `catalog_release` para dejar de exponer `source-row:*`.
-4. Continuar con imágenes, catálogo enriquecido y PWA/offline sobre releases inmutables.
+2. Crear el read model estable desde `catalog_release` para dejar de exponer `source-row:*`.
+3. Continuar con imágenes, catálogo enriquecido y PWA/offline sobre releases inmutables.
 
 ### Sesión anterior: Inicialización del Proyecto (2026-08-17)
 

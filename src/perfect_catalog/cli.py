@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 
 from .config import DatabaseConfig, prompt_password
-from .importer import assert_apply_allowed, inspect_plan, run_dry_run
+from .importer import DEFAULT_MAX_PILOT_ROWS, assert_apply_allowed, inspect_plan, run_dry_run
 
 
 def _database_arguments(parser: argparse.ArgumentParser) -> None:
@@ -29,6 +29,12 @@ def build_parser() -> argparse.ArgumentParser:
     import_parser = subparsers.add_parser("import-odoo", help="Genera un dry-run persistente sin aplicar productos.")
     import_parser.add_argument("source", type=Path)
     import_parser.add_argument("--output-dir", type=Path, default=Path("data/exports/imports"))
+    import_parser.add_argument(
+        "--max-rows",
+        type=int,
+        default=DEFAULT_MAX_PILOT_ROWS,
+        help="Límite de seguridad del piloto; amplíelo solo después de validar una muestra.",
+    )
     _database_arguments(import_parser)
 
     inspect_parser = subparsers.add_parser("inspect-plan", help="Inspecciona un plan persistido.")
@@ -48,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
         config = DatabaseConfig.from_args(args)
         password = prompt_password(args.prompt_password)
         if args.command == "import-odoo":
-            result = run_dry_run(args.source, config, password, args.output_dir)
+            result = run_dry_run(args.source, config, password, args.output_dir, args.max_rows)
         elif args.command == "inspect-plan":
             result = inspect_plan(args.plan_id, config, password)
         else:
