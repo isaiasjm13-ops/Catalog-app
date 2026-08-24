@@ -1,15 +1,21 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
-## Sesión Actual: Aprobación y apply seguro (2026-08-24)
+## Sesión Actual: Read model de releases publicados (2026-08-24)
 
 ### Resultado de esta sesión
 
 - Auditoría provisional documentada en `docs/STATUS_AUDIT_V2_2.md`.
 - Bloqueo exacto: no se recibió `Manual_Desde_Cero_Perfect_Trading_Natsuki_v2.2.pdf`; solo llegó
   el texto del encargo. La conformidad literal con el manual no puede cerrarse hasta adjuntarlo.
-- API FastAPI v1 de solo lectura implementada sin retirar el visor existente.
-- Endpoints: salud, productos con búsqueda/paginación, detalle y categorías; OpenAPI en `/docs`.
-- El comando instalable `perfect-catalog-api` y `INICIAR-SERVER.cmd` arrancan el servidor Uvicorn.
+- API FastAPI v1.1 de solo lectura implementada sin retirar el visor existente.
+- El origen predeterminado es el último `catalog_release` publicado de una marca; búsqueda,
+  categorías y detalle permanecen encerrados en ese release.
+- Las URLs y respuestas publicadas usan UUID estable de variante o template. Los IDs
+  `source-row:*` quedan limitados y rotulados como modo piloto XLSX explícito.
+- Cada snapshot valida schema, identidad y hash canónico; el hash agregado valida marca, versión,
+  orden e inventario completo de items antes de servir cualquier consulta.
+- `perfect-catalog-api` arranca el origen publicado por defecto. `INICIAR-SERVER.cmd` conserva el
+  piloto local al pasar explícitamente `--source-dir data\imports`.
 - Empaquetado corregido: `tools.odoo_profiler` funciona fuera de la raíz del repositorio.
 - `.env.example` corregido para no presentar SQLite como base de desarrollo.
 - Prueba de humo real: XLSX maestro de 893 filas, API devuelve catálogo y fichas correctamente.
@@ -27,13 +33,17 @@
   `perfect_catalog_app` recibe SELECT solo en las 18 tablas que consume actualmente.
 - Integración real como `perfect_catalog_app`: aprobación, alta, snapshot con -2/0, auditoría,
   reintento `already_applied`, permisos y rollback transaccional verificados.
-- Pruebas: 95 descubiertas y 95 aprobadas, incluidas las 4 integraciones PostgreSQL.
+- Integración del read model como `perfect_catalog_app`: selección, búsqueda, categorías, ficha por
+  UUID y detección de manipulación, todo con datos sintéticos y rollback.
+- Pruebas: 103 descubiertas y 103 aprobadas, incluidas las 5 integraciones PostgreSQL.
 - Dry-run real v0.3 repetido: 893 filas, 2,497 items, archivo intacto y 0 escrituras empresariales.
-- Ningún plan real fue aprobado ni aplicado; no se modificó Odoo ni el Excel fuente.
+- Ningún plan real fue aprobado/aplicado ni se publicó un release empresarial; no se modificó Odoo
+  ni el Excel fuente y las ocho tablas empresariales siguen vacías.
 
 ### Próxima etapa por dependencias
 
-1. Crear el read model estable desde `catalog_release` para dejar de exponer `source-row:*`.
+1. Implementar la construcción, revisión y publicación controlada de un `catalog_release`
+   inmutable a partir de datos aplicados, sin publicar el plan empresarial actual sin autorización.
 2. Añadir reconciliación `update` campo por campo, con `before_values`, si la exportación completa
    aporta identidad Odoo estable; hasta entonces permanece bloqueada por diseño.
 3. Continuar con imágenes, catálogo enriquecido y PWA/offline sobre releases inmutables.
@@ -120,8 +130,9 @@
 #### FASE 4: API Base
 - [x] Búsqueda local por referencia y nombre
 - [x] Filtro local por categoría
-- [ ] API HTTP formal con endpoints JSON
-- [ ] Endpoints de agrupación
+- [x] API HTTP formal con endpoints JSON
+- [x] Read model publicado con UUID y checksum
+- [ ] Endpoints de agrupación multinivel
 
 **Responsable**: Ingeniero Backend  
 **Dependencias**: BD con datos + Importador  
@@ -181,7 +192,7 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 | Decisión | Estado | Notas |
 |----------|--------|-------|
 | Formato Snapshots InDesign: XML vs JSON | Pendiente | Definir tras primer análisis de datos |
-| Control de Versiones de Catálogos | Pendiente | ¿Guardar historial de cambios? ¿Versiones por fecha? |
+| Control de Versiones de Catálogos | Parcialmente cerrada | Releases inmutables, versionados y con checksum; falta definir la política operativa de publicación y retención. |
 
 ### Notas Técnicas
 

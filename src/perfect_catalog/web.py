@@ -3,17 +3,26 @@ from __future__ import annotations
 import html
 import json
 import threading
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Protocol
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import psycopg
 
 from tools.odoo_profiler import read_tabular_source
 
+from .canonical import normalize_name
 from .config import DatabaseConfig
 from .importer import prepare_rows, validate_headers
+from .releases import (
+    RELEASE_HASH_ALGORITHM,
+    SNAPSHOT_SCHEMA_VERSION,
+    release_snapshot_sha256,
+    validate_release_item,
+    validate_release_items,
+)
 
 
 PAGE = """<!doctype html>
@@ -61,9 +70,32 @@ class CatalogReader(Protocol):
         offset: int = 0,
     ) -> list[dict[str, Any]]: ...
 
-    def product(self, source_row_number: int) -> dict[str, Any] | None: ...
+    def product(self, product_id: str) -> dict[str, Any] | None: ...
 
     def categories(self) -> list[dict[str, Any]]: ...
+
+
+def _source_row_number(product_id: str) -> int | None:
+    value = str(product_id).removeprefix("source-row:")
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _provisional_item(source_row_number: int, data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": f"source-row:{source_row_number}",
+        "identity_status": "provisional_source_row",
+        "row": source_row_number,
+        "data": data,
+    }
+
+
+def _identity_label(item: dict[str, Any]) -> str:
+    if item.get("identity_status") == "published_uuid":
+        return f"UUID publicado {item['id']}"
+    return f"Fila Odoo {item.get('row', 'desconocida')}"
 
 
 class CatalogRepository:
@@ -110,9 +142,12 @@ class CatalogRepository:
             """,
             (like_query, like_query, like_category, limit, offset),
         ).fetchall()
-        return [{"row": int(source_row), "data": data} for source_row, data in rows]
+        return [_provisional_item(int(source_row), data) for source_row, data in rows]
 
-    def product(self, source_row_number: int) -> dict[str, Any] | None:
+    def product(self, product_id: str) -> dict[str, Any] | None:
+        source_row_number = _source_row_number(product_id)
+        if source_row_number is None:
+            return None
         row = self.connection.execute(
             """
             SELECT sr.source_row_number, r.normalized_data
@@ -131,7 +166,7 @@ class CatalogRepository:
             """,
             (source_row_number,),
         ).fetchone()
-        return {"row": int(row[0]), "data": row[1]} if row else None
+        return _provisional_item(int(row[0]), row[1]) if row else None
 
     def categories(self) -> list[dict[str, Any]]:
         rows = self.connection.execute(
@@ -148,6 +183,177 @@ class CatalogRepository:
             GROUP BY r.normalized_data->>'category_path'
             ORDER BY r.normalized_data->>'category_path' NULLS LAST
             """
+        ).fetchall()
+        return [
+            {"value": str(category) if category is not None else None, "count": int(count)}
+            for category, count in rows
+        ]
+
+
+class ReleaseCatalogRepository:
+    def __init__(self, config: DatabaseConfig, password: str, brand: str = "NATSUKI") -> None:
+        self.connection = psycopg.connect(
+            **config.connection_kwargs(password), autocommit=True
+        )
+        self._owns_connection = True
+        try:
+            self._initialize(brand)
+        except Exception:
+            self.connection.close()
+            raise
+
+    @classmethod
+    def from_connection(
+        cls, connection: Any, brand: str = "NATSUKI"
+    ) -> "ReleaseCatalogRepository":
+        repository = cls.__new__(cls)
+        repository.connection = connection
+        repository._owns_connection = False
+        repository._initialize(brand)
+        return repository
+
+    def _initialize(self, brand: str) -> None:
+        release = self.connection.execute(
+            """
+            SELECT r.catalog_release_id, r.brand_id, r.version, r.status,
+                   r.snapshot_sha256, r.definition
+            FROM perfect_catalog.catalog_release AS r
+            JOIN perfect_catalog.brand AS b ON b.brand_id = r.brand_id
+            WHERE r.status='published' AND b.normalized_name=%s
+            ORDER BY r.published_at DESC, r.created_at DESC, r.catalog_release_id DESC
+            LIMIT 1
+            """,
+            (normalize_name(brand),),
+        ).fetchone()
+        if release is None:
+            raise FileNotFoundError(
+                f"No existe un catalog_release publicado para la marca {brand}."
+            )
+        self.release_id = release[0]
+        self.brand_id = release[1]
+        self.version = str(release[2])
+        self.status = str(release[3])
+        self.snapshot_sha256 = str(release[4])
+        definition = release[5]
+        if not isinstance(definition, dict):
+            raise ValueError("catalog_release.definition debe ser un objeto JSON.")
+        if definition.get("snapshot_schema_version") != SNAPSHOT_SCHEMA_VERSION:
+            raise ValueError("El release no declara el schema de snapshot soportado.")
+        if definition.get("release_hash_algorithm") != RELEASE_HASH_ALGORITHM:
+            raise ValueError("El release no declara el algoritmo de hash soportado.")
+        rows = self.connection.execute(
+            """
+            SELECT item_order, product_template_id, product_variant_id,
+                   snapshot_schema_version, snapshot_data, snapshot_sha256
+            FROM perfect_catalog.catalog_release_item
+            WHERE catalog_release_id=%s
+            ORDER BY item_order
+            """,
+            (self.release_id,),
+        ).fetchall()
+        if not rows:
+            raise ValueError("El release publicado no contiene productos.")
+        items = [
+            {
+                "item_order": row[0],
+                "product_template_id": row[1],
+                "product_variant_id": row[2],
+                "snapshot_schema_version": row[3],
+                "snapshot_data": row[4],
+                "snapshot_sha256": row[5],
+            }
+            for row in rows
+        ]
+        validate_release_items(items)
+        recalculated = release_snapshot_sha256(self.brand_id, self.version, items)
+        if recalculated != self.snapshot_sha256:
+            raise ValueError("Los items publicados no coinciden con snapshot_sha256 del release.")
+        self.total = len(items)
+
+    def close(self) -> None:
+        if self._owns_connection:
+            self.connection.close()
+
+    def plan(self) -> tuple[str, int, int]:
+        return (f"published:{self.version}", self.total, self.total)
+
+    @staticmethod
+    def _item(row: tuple[Any, ...]) -> dict[str, Any]:
+        item = {
+            "item_order": row[0],
+            "product_template_id": row[1],
+            "product_variant_id": row[2],
+            "snapshot_schema_version": row[3],
+            "snapshot_data": row[4],
+            "snapshot_sha256": row[5],
+        }
+        validate_release_item(item)
+        target_id = item["product_variant_id"] or item["product_template_id"]
+        data = item["snapshot_data"]
+        source_row = data.get("source_row_number")
+        return {
+            "id": str(target_id),
+            "identity_status": "published_uuid",
+            "row": source_row if isinstance(source_row, int) else None,
+            "data": data,
+        }
+
+    def search(
+        self,
+        query: str,
+        category: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        like_query = f"%{query}%"
+        like_category = f"%{category}%"
+        rows = self.connection.execute(
+            """
+            SELECT item_order, product_template_id, product_variant_id,
+                   snapshot_schema_version, snapshot_data, snapshot_sha256
+            FROM perfect_catalog.catalog_release_item
+            WHERE catalog_release_id=%s
+              AND (
+                    COALESCE(snapshot_data->>'internal_reference_normalized', '') ILIKE %s
+                    OR COALESCE(snapshot_data->>'name_normalized', '') ILIKE %s
+              )
+              AND COALESCE(snapshot_data->>'category_path', '') ILIKE %s
+            ORDER BY item_order
+            LIMIT %s OFFSET %s
+            """,
+            (self.release_id, like_query, like_query, like_category, limit, offset),
+        ).fetchall()
+        return [self._item(row) for row in rows]
+
+    def product(self, product_id: str) -> dict[str, Any] | None:
+        try:
+            target_id = uuid.UUID(str(product_id))
+        except ValueError:
+            return None
+        row = self.connection.execute(
+            """
+            SELECT item_order, product_template_id, product_variant_id,
+                   snapshot_schema_version, snapshot_data, snapshot_sha256
+            FROM perfect_catalog.catalog_release_item
+            WHERE catalog_release_id=%s
+              AND COALESCE(product_variant_id, product_template_id)=%s
+            LIMIT 1
+            """,
+            (self.release_id, target_id),
+        ).fetchone()
+        return self._item(row) if row else None
+
+    def categories(self) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            """
+            SELECT NULLIF(btrim(snapshot_data->>'category_path'), '') AS category,
+                   count(*)
+            FROM perfect_catalog.catalog_release_item
+            WHERE catalog_release_id=%s
+            GROUP BY NULLIF(btrim(snapshot_data->>'category_path'), '')
+            ORDER BY category NULLS LAST
+            """,
+            (self.release_id,),
         ).fetchall()
         return [
             {"value": str(category) if category is not None else None, "count": int(count)}
@@ -189,15 +395,18 @@ class ExcelCatalogRepository:
             if skipped < offset:
                 skipped += 1
                 continue
-            matches.append({"row": row.source_row_number, "data": data})
+            matches.append(_provisional_item(row.source_row_number, data))
             if len(matches) >= limit:
                 break
         return matches
 
-    def product(self, source_row_number: int) -> dict[str, Any] | None:
+    def product(self, product_id: str) -> dict[str, Any] | None:
+        source_row_number = _source_row_number(product_id)
+        if source_row_number is None:
+            return None
         for row in self.rows:
             if row.source_row_number == source_row_number:
-                return {"row": row.source_row_number, "data": row.normalized}
+                return _provisional_item(row.source_row_number, row.normalized)
         return None
 
     def categories(self) -> list[dict[str, Any]]:
@@ -253,8 +462,8 @@ class AutoExcelCatalogRepository:
     ) -> list[dict[str, Any]]:
         return self._current().search(query, category, limit, offset)
 
-    def product(self, source_row_number: int) -> dict[str, Any] | None:
-        return self._current().product(source_row_number)
+    def product(self, product_id: str) -> dict[str, Any] | None:
+        return self._current().product(product_id)
 
     def categories(self) -> list[dict[str, Any]]:
         return self._current().categories()
@@ -268,8 +477,8 @@ def render_results(items: list[dict[str, Any]]) -> str:
         data = item["data"]
         rendered.append(
             '<article class="result">'
-            f'<div><div class="ref"><a href="/producto/{item["row"]}">{html.escape(str(data.get("internal_reference_original") or ""))}</a></div>'
-            f'<div class="meta">Fila Odoo {item["row"]}</div></div>'
+            f'<div><div class="ref"><a href="/producto/{html.escape(str(item["id"]), quote=True)}">{html.escape(str(data.get("internal_reference_original") or ""))}</a></div>'
+            f'<div class="meta">{_identity_label(item)}</div></div>'
             f'<div><div class="name">{html.escape(str(data.get("name_original") or ""))}</div>'
             f'<div class="meta">{html.escape(str(data.get("category_path") or "Sin categoría"))}</div></div>'
             f'<div class="qty"><small>Disponible</small>{html.escape(str(data.get("quantity_available") or 0))}</div>'
@@ -287,7 +496,7 @@ def render_product(product: dict[str, Any], printable: bool = False) -> str:
     currency = html.escape(str(data.get("currency") or ""))
     image_status = html.escape(str(data.get("image_status") or "absent"))
     back = '<a class="back" href="/">Volver al catálogo</a>' if not printable else ''
-    print_link = f'<a class="print-link" href="/producto/{product["row"]}/ficha">Ficha imprimible / PDF</a>' if not printable else ''
+    print_link = f'<a class="print-link" href="/producto/{html.escape(str(product["id"]), quote=True)}/ficha">Ficha imprimible / PDF</a>' if not printable else ''
     return f"""<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{reference} - Natsuki</title><style>
@@ -302,7 +511,7 @@ def render_product(product: dict[str, Any], printable: bool = False) -> str:
 .notice {{ border-left:4px solid var(--warm); padding:14px 16px; background:#fff8e8; font:14px/1.5 Arial,sans-serif; }}
 @media print {{ body {{ background:#fff; }} .actions,.back {{ display:none; }} .sheet {{ padding:0; }} }} @media(max-width:700px) {{ .hero {{ grid-template-columns:1fr; }} .top {{ display:block; }} .actions {{ margin-top:18px; }} }}
 </style></head><body><main class="sheet">{back}<div class="top"><div><div class="eyebrow">Perfect Trading / Natsuki</div><h1>{title}</h1><div class="ref">{reference}</div></div><div class="actions">{print_link}</div></div>
-<section class="hero"><div class="image">Imagen: {image_status}<br><small>La muestra no incluye una ruta de archivo utilizable.</small></div><div class="facts"><div class="fact"><span class="label">Categoría</span><strong>{category}</strong></div><div class="fact"><span class="label">Disponible</span><strong>{quantity} {currency}</strong></div><div class="fact"><span class="label">Fila de origen</span><strong>{product["row"]}</strong></div></div></section>
+<section class="hero"><div class="image">Imagen: {image_status}<br><small>La muestra no incluye una ruta de archivo utilizable.</small></div><div class="facts"><div class="fact"><span class="label">Categoría</span><strong>{category}</strong></div><div class="fact"><span class="label">Disponible</span><strong>{quantity} {currency}</strong></div><div class="fact"><span class="label">Identidad</span><strong>{_identity_label(product)}</strong></div></div></section>
 <div class="notice">Ficha basada en la exportación preliminar de Odoo. Los campos no presentes en la muestra, como aplicaciones, OEM, FMSI y especificaciones técnicas, permanecen pendientes de futuras fuentes.</div>
 </main></body></html>"""
 
@@ -328,8 +537,8 @@ def make_handler(repository: CatalogReader) -> type[BaseHTTPRequestHandler]:
             elif parsed.path.startswith("/producto/"):
                 parts = parsed.path.strip("/").split("/")
                 try:
-                    product = repository.product(int(parts[1]))
-                except (IndexError, ValueError):
+                    product = repository.product(unquote(parts[1]))
+                except IndexError:
                     product = None
                 if product is None:
                     self.send_error(404)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -15,12 +16,14 @@ from .web import (
     AutoExcelCatalogRepository,
     CatalogReader,
     ExcelCatalogRepository,
+    ReleaseCatalogRepository,
     render_product,
     render_results,
 )
+from .config import DatabaseConfig, prompt_password
 
 
-API_VERSION = "1.0.0"
+API_VERSION = "1.1.0"
 
 
 class StrictResponse(BaseModel):
@@ -35,7 +38,7 @@ class HealthResponse(StrictResponse):
 class ProductResource(StrictResponse):
     id: str
     identity_status: str
-    source_row_number: int
+    source_row_number: int | None
     reference: str
     name: str
     category: str | None
@@ -66,12 +69,13 @@ class CategoryListResponse(StrictResponse):
 
 def _product_resource(item: dict[str, Any]) -> ProductResource:
     data = item["data"]
-    row_number = int(item["row"])
+    row = item.get("row")
+    row_number = int(row) if isinstance(row, int) else None
     category = data.get("category_path")
     quantity = data.get("quantity_available")
     return ProductResource(
-        id=f"source-row:{row_number}",
-        identity_status="provisional_source_row",
+        id=str(item.get("id") or f"source-row:{row_number}"),
+        identity_status=str(item.get("identity_status") or "provisional_source_row"),
         source_row_number=row_number,
         reference=str(data.get("internal_reference_original") or ""),
         name=str(data.get("name_original") or ""),
@@ -93,8 +97,8 @@ def create_app(repository: CatalogReader) -> FastAPI:
         title="Perfect Trading Catalog API",
         version=API_VERSION,
         description=(
-            "API de consulta del piloto Natsuki. Los IDs source-row son provisionales "
-            "hasta publicar productos con UUID estables."
+            "API de consulta del catálogo Natsuki. Los releases publicados usan UUID estables; "
+            "source-row solo aparece en el modo piloto XLSX explícito."
         ),
         lifespan=lifespan,
     )
@@ -130,9 +134,9 @@ def create_app(repository: CatalogReader) -> FastAPI:
             items=resources,
         )
 
-    @app.get("/api/v1/products/{source_row_number}", response_model=ProductResource, tags=["catalog"])
-    def product(source_row_number: int) -> ProductResource:
-        item = repository.product(source_row_number)
+    @app.get("/api/v1/products/{product_id}", response_model=ProductResource, tags=["catalog"])
+    def product(product_id: str) -> ProductResource:
+        item = repository.product(product_id)
         if item is None:
             raise HTTPException(status_code=404, detail="Producto no encontrado")
         return _product_resource(item)
@@ -159,16 +163,16 @@ def create_app(repository: CatalogReader) -> FastAPI:
             results=render_results(items),
         )
 
-    @app.get("/producto/{source_row_number}", response_class=HTMLResponse, include_in_schema=False)
-    def product_page(source_row_number: int) -> str:
-        item = repository.product(source_row_number)
+    @app.get("/producto/{product_id}", response_class=HTMLResponse, include_in_schema=False)
+    def product_page(product_id: str) -> str:
+        item = repository.product(product_id)
         if item is None:
             raise HTTPException(status_code=404, detail="Producto no encontrado")
         return render_product(item)
 
-    @app.get("/producto/{source_row_number}/ficha", response_class=HTMLResponse, include_in_schema=False)
-    def printable_product_page(source_row_number: int) -> str:
-        item = repository.product(source_row_number)
+    @app.get("/producto/{product_id}/ficha", response_class=HTMLResponse, include_in_schema=False)
+    def printable_product_page(product_id: str) -> str:
+        item = repository.product(product_id)
         if item is None:
             raise HTTPException(status_code=404, detail="Producto no encontrado")
         return render_product(item, printable=True)
@@ -180,17 +184,39 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Inicia el catálogo FastAPI de solo lectura")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
-    parser.add_argument("--source", type=Path, default=None)
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--source", type=Path, default=None)
+    source.add_argument("--source-dir", type=Path, default=None)
+    parser.add_argument("--brand", default="NATSUKI")
+    parser.add_argument("--database", default=None)
+    parser.add_argument("--user", default=None)
+    parser.add_argument("--db-host", dest="host_db", default=None)
+    parser.add_argument("--db-port", dest="port_db", type=int, default=None)
+    parser.add_argument("--prompt-password", action="store_true")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    repository: CatalogReader = (
-        ExcelCatalogRepository(str(args.source))
-        if args.source is not None
-        else AutoExcelCatalogRepository(Path("data/imports"))
-    )
+    try:
+        if args.source is not None:
+            repository: CatalogReader = ExcelCatalogRepository(str(args.source))
+        elif args.source_dir is not None:
+            repository = AutoExcelCatalogRepository(args.source_dir)
+        else:
+            database_args = argparse.Namespace(
+                host=args.host_db,
+                port=args.port_db,
+                database=args.database,
+                user=args.user,
+            )
+            config = DatabaseConfig.from_args(database_args)
+            repository = ReleaseCatalogRepository(
+                config, prompt_password(args.prompt_password), brand=args.brand
+            )
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     uvicorn.run(create_app(repository), host=args.host, port=args.port)
     return 0
 

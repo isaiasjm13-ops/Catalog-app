@@ -41,7 +41,7 @@ py -3.14 -m venv .venv
 
 # 4. Copiar una exportación autorizada a data\imports (no se versiona)
 
-# 5. Iniciar catálogo y API de solo lectura
+# 5. Iniciar el piloto local sobre el XLSX más reciente
 .\INICIAR-SERVER.cmd
 ```
 
@@ -51,20 +51,31 @@ Abrir:
 - Documentación OpenAPI: `http://127.0.0.1:8080/docs`
 - Estado: `http://127.0.0.1:8080/api/v1/health`
 
-El servidor detecta el XLSX más reciente de `data/imports`. Para fijar una fuente concreta:
+`INICIAR-SERVER.cmd` conserva deliberadamente el piloto XLSX y detecta el archivo más reciente de
+`data/imports`. Para fijar una fuente concreta:
 
 ```powershell
 .\.venv\Scripts\perfect-catalog-api.exe --source "data\imports\NATSUKI_EMPAQUES_MAESTRO.xlsx"
 ```
 
-La API piloto expone:
+La misma aplicación expone:
 
 - `GET /api/v1/products?q=&category=&limit=&offset=`
-- `GET /api/v1/products/{fila_origen}`
+- `GET /api/v1/products/{product_id}`
 - `GET /api/v1/categories`
 
-Los IDs `source-row:*` son provisionales. No deben tratarse como identidad empresarial; los UUID
-estables llegarán desde los productos/releases publicados en PostgreSQL.
+Sin `--source` ni `--source-dir`, la API v1.1 lee por defecto el último release publicado de la
+marca solicitada y expone UUID estables. El release completo y cada snapshot se validan contra sus
+checksums antes de responder:
+
+```powershell
+.\.venv\Scripts\perfect-catalog-api.exe --brand NATSUKI --prompt-password
+```
+
+Actualmente no existe un release empresarial publicado, por lo que ese comando debe fallar de
+forma explícita hasta completar una publicación controlada. Los IDs `source-row:*` solo existen en
+el modo piloto XLSX y nunca deben tratarse como identidad empresarial. El contrato del read model
+se documenta en [`docs/RELEASE_READ_MODEL.md`](docs/RELEASE_READ_MODEL.md).
 
 ### Pruebas
 
@@ -72,9 +83,9 @@ estables llegarán desde los productos/releases publicados en PostgreSQL.
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-La suite completa, incluidas las cuatro pruebas PostgreSQL y el dry-run real, se ejecuta con el
+La suite completa, incluidas las cinco pruebas PostgreSQL y el dry-run real, se ejecuta con el
 procedimiento controlado `scripts/run_productive_block_validation.ps1`. Solicita las credenciales
-de forma interactiva y nunca las guarda. La ejecución del 2026-08-24 terminó con 95/95 pruebas y
+de forma interactiva y nunca las guarda. La ejecución del 2026-08-24 terminó con 103/103 pruebas y
 `integration=0;import=0`.
 
 El dry-run limita el piloto a 5,000 filas de forma predeterminada. `--max-rows` permite cambiar el
@@ -178,7 +189,7 @@ git branch -a
 |-----------|--------|
 | Documentación | ✓ Arquitectura inicial definida |
 | Base de Datos | PostgreSQL instalado; migraciones `0001`–`0004` aplicadas y validadas localmente |
-| Backend | FastAPI de consulta v1 implementada sobre fuente provisional XLSX/staging |
+| Backend | FastAPI v1.1: release publicado con UUID por defecto y modo piloto XLSX explícito |
 | Apply | Workflow transaccional validado con el rol real y rollback sintético; plan empresarial no autorizado |
 | Frontend | Catálogo responsive y ficha imprimible piloto |
 | Exportación | ⏳ Pendiente BD |
@@ -192,4 +203,4 @@ git branch -a
 ---
 
 **Última actualización**: 2026-08-24
-**Siguiente revisión**: read model estable desde `catalog_release`
+**Siguiente revisión**: construcción y publicación controlada de `catalog_release`

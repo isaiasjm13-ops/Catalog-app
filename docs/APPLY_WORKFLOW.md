@@ -12,7 +12,7 @@ una aprobación humana separada, puede insertar registros empresariales en Postg
 Antes de cualquier prueba de base de datos se debe:
 
 1. confirmar que `0001`–`0004` están aplicadas en el entorno objetivo;
-2. ejecutar las 95 pruebas, incluidas las integraciones con rollback;
+2. ejecutar las 103 pruebas, incluidas las integraciones con rollback;
 3. generar un plan nuevo con el contrato y las reglas actuales;
 4. inspeccionar su reporte y resolver todos los bloqueos/conflictos;
 5. obtener autorización humana para ese fingerprint exacto.
@@ -78,3 +78,7 @@ editar un plan persistido: cualquier cambio requiere generar un plan sucesor rev
 
 Estos comandos no deben ejecutarse sobre un plan empresarial sin autorización humana expresa para
 ese plan y fingerprint exactos. La validación sintética no transfiere autorización a datos reales.
+
+Aplicar un plan no publica automáticamente un catálogo. La construcción y publicación de
+`catalog_release` será una compuerta posterior, separada e inmutable; el contrato de lectura vigente
+está en [`RELEASE_READ_MODEL.md`](RELEASE_READ_MODEL.md).

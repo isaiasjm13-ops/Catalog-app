@@ -455,6 +455,181 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
         ).fetchone()[0]
         self.assertIsNone(variant_count)
 
+    def test_published_release_read_model_as_application_role(self) -> None:
+        from perfect_catalog.releases import (
+            RELEASE_HASH_ALGORITHM,
+            SNAPSHOT_SCHEMA_VERSION,
+            product_snapshot_sha256,
+            release_snapshot_sha256,
+        )
+        from perfect_catalog.web import ReleaseCatalogRepository
+
+        ids = {
+            name: uuid.uuid4()
+            for name in (
+                "source",
+                "batch",
+                "file",
+                "row",
+                "brand",
+                "product",
+                "release",
+                "release_item",
+            )
+        }
+        now = datetime.now(UTC)
+        snapshot_data = {
+            "product_template_id": str(ids["product"]),
+            "product_variant_id": None,
+            "source_row_number": 2,
+            "internal_reference_original": "REL-001",
+            "internal_reference_normalized": "REL-001",
+            "name_original": "Producto release sintético",
+            "name_normalized": "PRODUCTO RELEASE SINTÉTICO",
+            "category_path": "Empaques / Publicados",
+            "quantity_available": 0,
+            "image_status": "absent",
+            "brand": "NATSUKI",
+            "family": "empaques",
+        }
+        item = {
+            "item_order": 1,
+            "product_template_id": ids["product"],
+            "product_variant_id": None,
+            "snapshot_schema_version": SNAPSHOT_SCHEMA_VERSION,
+            "snapshot_data": snapshot_data,
+            "snapshot_sha256": product_snapshot_sha256(snapshot_data),
+        }
+        release_sha = release_snapshot_sha256(ids["brand"], "2026.08.24-test", [item])
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            INSERT INTO perfect_catalog.source_system
+                (source_system_id,code,name,system_type)
+            VALUES (%s,%s,'Release synthetic','test')
+            """,
+            (ids["source"], f"release-{ids['source']}"),
+        )
+        cursor.execute(
+            """
+            INSERT INTO perfect_catalog.import_batch
+                (import_batch_id,source_system_id,mode,status,scope,started_at,finished_at)
+            VALUES (%s,%s,'apply','completed',%s,%s,%s)
+            """,
+            (ids["batch"], ids["source"], Jsonb({"synthetic": True}), now, now),
+        )
+        cursor.execute(
+            """
+            INSERT INTO perfect_catalog.import_file
+                (import_file_id,import_batch_id,original_name,storage_uri,size_bytes,sha256,
+                 media_type,received_at)
+            VALUES (%s,%s,'release.xlsx','synthetic/release',1,%s,'application/test',%s)
+            """,
+            (ids["file"], ids["batch"], "a" * 64, now),
+        )
+        cursor.execute(
+            """
+            INSERT INTO perfect_catalog.staging_row
+                (staging_row_id,import_file_id,sheet_name,source_row_number,raw_headers,raw_values,
+                 raw_excel_serials,structural_metadata,row_sha256)
+            VALUES (%s,%s,'Synthetic',2,%s,%s,%s,%s,%s)
+            """,
+            (
+                ids["row"],
+                ids["file"],
+                Jsonb([]),
+                Jsonb({}),
+                Jsonb({}),
+                Jsonb({}),
+                "b" * 64,
+            ),
+        )
+        cursor.execute(
+            """
+            INSERT INTO perfect_catalog.brand
+                (brand_id,source_system_id,code,name,normalized_name)
+            VALUES (%s,%s,'NATSUKI','Natsuki','NATSUKI')
+            """,
+            (ids["brand"], ids["source"]),
+        )
+        cursor.execute(
+            """
+            INSERT INTO perfect_catalog.product_template
+                (product_template_id,source_system_id,brand_id,name_original,
+                 variant_count_observed,created_from_staging_row_id,last_confirmed_batch_id)
+            VALUES (%s,%s,%s,'Producto release sintético',NULL,%s,%s)
+            """,
+            (ids["product"], ids["source"], ids["brand"], ids["row"], ids["batch"]),
+        )
+        cursor.execute(
+            """
+            INSERT INTO perfect_catalog.catalog_release
+                (catalog_release_id,brand_id,version,status,definition,created_at,created_by,
+                 published_at,published_by,snapshot_sha256)
+            VALUES (%s,%s,'2026.08.24-test','published',%s,%s,'integration-test',
+                    %s,'integration-test',%s)
+            """,
+            (
+                ids["release"],
+                ids["brand"],
+                Jsonb({
+                    "snapshot_schema_version": SNAPSHOT_SCHEMA_VERSION,
+                    "release_hash_algorithm": RELEASE_HASH_ALGORITHM,
+                }),
+                now,
+                now,
+                release_sha,
+            ),
+        )
+        cursor.execute(
+            """
+            INSERT INTO perfect_catalog.catalog_release_item
+                (catalog_release_item_id,catalog_release_id,brand_id,product_template_id,
+                 product_variant_id,item_order,snapshot_schema_version,snapshot_data,
+                 snapshot_sha256,section_key,grouping_keys,source_import_batch_id)
+            VALUES (%s,%s,%s,%s,NULL,1,%s,%s,%s,'empaques',%s,%s)
+            """,
+            (
+                ids["release_item"],
+                ids["release"],
+                ids["brand"],
+                ids["product"],
+                SNAPSHOT_SCHEMA_VERSION,
+                Jsonb(snapshot_data),
+                item["snapshot_sha256"],
+                Jsonb({"category": "Empaques / Publicados"}),
+                ids["batch"],
+            ),
+        )
+
+        self.connection.execute("SET ROLE perfect_catalog_app")
+        repository = ReleaseCatalogRepository.from_connection(self.connection)
+        self.assertEqual(repository.plan(), ("published:2026.08.24-test", 1, 1))
+        results = repository.search("release", "Publicados", 10, 0)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["id"], str(ids["product"]))
+        self.assertEqual(results[0]["identity_status"], "published_uuid")
+        self.assertEqual(results[0]["data"]["quantity_available"], 0)
+        self.assertEqual(
+            repository.categories(),
+            [{"value": "Empaques / Publicados", "count": 1}],
+        )
+        self.assertIsNotNone(repository.product(str(ids["product"])))
+        self.assertIsNone(repository.product("source-row:2"))
+
+        self.connection.execute("RESET ROLE")
+        self.connection.execute(
+            """
+            UPDATE perfect_catalog.catalog_release_item
+            SET snapshot_data = snapshot_data || '{"name_original":"alterado"}'::jsonb
+            WHERE catalog_release_item_id=%s
+            """,
+            (ids["release_item"],),
+        )
+        self.connection.execute("SET ROLE perfect_catalog_app")
+        with self.assertRaisesRegex(ValueError, "snapshot_sha256"):
+            ReleaseCatalogRepository.from_connection(self.connection)
+
 
 if __name__ == "__main__":
     unittest.main()
