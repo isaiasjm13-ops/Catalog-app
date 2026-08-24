@@ -14,6 +14,7 @@
 - ✓ Dry-run de Natsuki ejecutado sin escrituras empresariales
 - ✓ MVP web local de consulta sobre la muestra funcionando
 - ✓ Visor local detecta automáticamente el XLSX más reciente en `data/imports`
+- ✓ Ficha individual web y ficha imprimible funcionando
 
 ### Completado en Esta Sesión
 
@@ -151,6 +152,8 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 - Lanzamiento: `INICIAR-SERVER.cmd` o `scripts/run_catalog_web.py`
 - El MVP lee el Excel de muestra en modo solo lectura; no requiere contraseña ni conexión a PostgreSQL
 - Al copiar una nueva exportación `.xlsx` a `data/imports`, el visor la recarga automáticamente en la siguiente consulta
+- Ficha web: `/producto/<fila>`; versión imprimible: `/producto/<fila>/ficha`
+- La ficha imprimible se puede guardar como PDF desde el navegador; no genera aún un PDF automatizado
 - Usuario propietario: AzureAD\Diseño2
 - Política de ejecución PowerShell: Bypass
 - No se ejecuta como administrador (OK, no requerido)

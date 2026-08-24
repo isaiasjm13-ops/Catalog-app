@@ -118,6 +118,12 @@ class ExcelCatalogRepository:
                 break
         return matches
 
+    def product(self, source_row_number: int) -> dict[str, Any] | None:
+        for row in self.rows:
+            if row.source_row_number == source_row_number:
+                return {"row": row.source_row_number, "data": row.normalized}
+        return None
+
 
 class AutoExcelCatalogRepository:
     def __init__(self, source_dir: Path) -> None:
@@ -154,6 +160,9 @@ class AutoExcelCatalogRepository:
     def search(self, query: str, category: str, limit: int = 100) -> list[dict[str, Any]]:
         return self._current().search(query, category, limit)
 
+    def product(self, source_row_number: int) -> dict[str, Any] | None:
+        return self._current().product(source_row_number)
+
 
 def render_results(items: list[dict[str, Any]]) -> str:
     if not items:
@@ -163,7 +172,7 @@ def render_results(items: list[dict[str, Any]]) -> str:
         data = item["data"]
         rendered.append(
             '<article class="result">'
-            f'<div><div class="ref">{html.escape(str(data.get("internal_reference_original") or ""))}</div>'
+            f'<div><div class="ref"><a href="/producto/{item["row"]}">{html.escape(str(data.get("internal_reference_original") or ""))}</a></div>'
             f'<div class="meta">Fila Odoo {item["row"]}</div></div>'
             f'<div><div class="name">{html.escape(str(data.get("name_original") or ""))}</div>'
             f'<div class="meta">{html.escape(str(data.get("category_path") or "Sin categoría"))}</div></div>'
@@ -173,26 +182,66 @@ def render_results(items: list[dict[str, Any]]) -> str:
     return "".join(rendered)
 
 
+def render_product(product: dict[str, Any], printable: bool = False) -> str:
+    data = product["data"]
+    title = html.escape(str(data.get("name_original") or "Producto Natsuki"))
+    reference = html.escape(str(data.get("internal_reference_original") or ""))
+    category = html.escape(str(data.get("category_path") or "Sin categoría"))
+    quantity = html.escape(str(data.get("quantity_available") or 0))
+    currency = html.escape(str(data.get("currency") or ""))
+    image_status = html.escape(str(data.get("image_status") or "absent"))
+    back = '<a class="back" href="/">Volver al catálogo</a>' if not printable else ''
+    print_link = f'<a class="print-link" href="/producto/{product["row"]}/ficha">Ficha imprimible / PDF</a>' if not printable else ''
+    return f"""<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{reference} - Natsuki</title><style>
+:root {{ --ink:#17242a; --muted:#637279; --line:#dbe4e6; --accent:#0f766e; --warm:#e9b949; --paper:#f6f8f6; }}
+* {{ box-sizing:border-box; }} body {{ margin:0; background:var(--paper); color:var(--ink); font-family:Georgia,'Times New Roman',serif; }}
+.sheet {{ max-width:900px; margin:0 auto; padding:34px 22px 60px; }} .back,.print-link {{ font:14px Arial,sans-serif; color:var(--accent); text-decoration:none; }}
+.top {{ display:flex; justify-content:space-between; gap:20px; border-bottom:1px solid var(--line); padding-bottom:18px; }}
+.eyebrow {{ color:var(--accent); font:700 12px Arial,sans-serif; letter-spacing:2px; text-transform:uppercase; }} h1 {{ font-size:clamp(30px,5vw,58px); line-height:1; margin:12px 0 8px; font-weight:500; }}
+.ref {{ color:var(--accent); font:700 22px Arial,sans-serif; }} .actions {{ display:flex; gap:14px; align-items:start; }}
+.hero {{ display:grid; grid-template-columns:1fr 1fr; gap:26px; padding:30px 0; }} .image {{ min-height:300px; border:1px dashed var(--line); display:grid; place-items:center; color:var(--muted); font:14px Arial,sans-serif; text-align:center; padding:30px; }}
+.facts {{ background:#fff; border:1px solid var(--line); padding:22px; }} .fact {{ display:flex; justify-content:space-between; gap:18px; padding:12px 0; border-bottom:1px solid var(--line); font:14px Arial,sans-serif; }} .fact:last-child {{ border-bottom:0; }} .label {{ color:var(--muted); }}
+.notice {{ border-left:4px solid var(--warm); padding:14px 16px; background:#fff8e8; font:14px/1.5 Arial,sans-serif; }}
+@media print {{ body {{ background:#fff; }} .actions,.back {{ display:none; }} .sheet {{ padding:0; }} }} @media(max-width:700px) {{ .hero {{ grid-template-columns:1fr; }} .top {{ display:block; }} .actions {{ margin-top:18px; }} }}
+</style></head><body><main class="sheet">{back}<div class="top"><div><div class="eyebrow">Perfect Trading / Natsuki</div><h1>{title}</h1><div class="ref">{reference}</div></div><div class="actions">{print_link}</div></div>
+<section class="hero"><div class="image">Imagen: {image_status}<br><small>La muestra no incluye una ruta de archivo utilizable.</small></div><div class="facts"><div class="fact"><span class="label">Categoría</span><strong>{category}</strong></div><div class="fact"><span class="label">Disponible</span><strong>{quantity} {currency}</strong></div><div class="fact"><span class="label">Fila de origen</span><strong>{product["row"]}</strong></div></div></section>
+<div class="notice">Ficha basada en la exportación preliminar de Odoo. Los campos no presentes en la muestra, como aplicaciones, OEM, FMSI y especificaciones técnicas, permanecen pendientes de futuras fuentes.</div>
+</main></body></html>"""
+
+
 def make_handler(repository: CatalogRepository) -> type[BaseHTTPRequestHandler]:
     class CatalogHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             parsed = urlparse(self.path)
-            if parsed.path != "/":
+            if parsed.path == "/":
+                params = parse_qs(parsed.query)
+                query = params.get("q", [""])[0].strip()
+                category = params.get("category", [""])[0].strip()
+                status, total, _ = repository.plan()
+                items = repository.search(query, category) if query or category else repository.search("", "")
+                body = PAGE.format(
+                    query=html.escape(query, quote=True),
+                    category=html.escape(category, quote=True),
+                    plan_status=html.escape(status),
+                    total=total,
+                    shown=len(items),
+                    results=render_results(items),
+                ).encode("utf-8")
+            elif parsed.path.startswith("/producto/"):
+                parts = parsed.path.strip("/").split("/")
+                try:
+                    product = repository.product(int(parts[1]))
+                except (IndexError, ValueError):
+                    product = None
+                if product is None:
+                    self.send_error(404)
+                    return
+                body = render_product(product, len(parts) > 2 and parts[2] == "ficha").encode("utf-8")
+            else:
                 self.send_error(404)
                 return
-            params = parse_qs(parsed.query)
-            query = params.get("q", [""])[0].strip()
-            category = params.get("category", [""])[0].strip()
-            status, total, _ = repository.plan()
-            items = repository.search(query, category) if query or category else repository.search("", "")
-            body = PAGE.format(
-                query=html.escape(query, quote=True),
-                category=html.escape(category, quote=True),
-                plan_status=html.escape(status),
-                total=total,
-                shown=len(items),
-                results=render_results(items),
-            ).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
