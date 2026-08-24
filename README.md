@@ -65,6 +65,27 @@ La misma aplicación expone:
 - `GET /api/v1/products/{product_id}`
 - `GET /api/v1/categories`
 
+### Consola local de revisión
+
+La revisión humana usa un servidor separado del catálogo público. Haz doble clic en
+`INICIAR-REVISOR.cmd`; la consola solicitará, en este orden:
+
+1. contraseña de PostgreSQL para `perfect_catalog_app`;
+2. nombre del operador que quedará en auditoría;
+3. un código temporal de al menos 12 caracteres y su confirmación.
+
+Después abre `http://127.0.0.1:8081/operator` e introduce únicamente el código temporal. La
+contraseña de PostgreSQL nunca se escribe en el navegador. La sesión dura una hora y desaparece al
+detener el servidor.
+
+El modo operador lista planes aplicados, pagina 50 identidades por vista, busca por referencia,
+nombre o fila, filtra estados y permite aprobar/rechazar una sola ficha con motivo obligatorio. Usa
+el mismo fingerprint y `review_sha256` de la CLI. Está aislado en localhost, no monta el catálogo
+público ni OpenAPI, y aplica sesión firmada, CSRF, validación de origen, escape HTML y cabeceras CSP.
+
+Actualmente la pantalla mostrará “No hay planes aplicados para revisar”: es correcto, porque ningún
+plan empresarial ha sido aplicado. Véase [`docs/OPERATOR_WEB.md`](docs/OPERATOR_WEB.md).
+
 Sin `--source` ni `--source-dir`, la API v1.1 lee por defecto el último release publicado de la
 marca solicitada y expone UUID estables. El release completo y cada snapshot se validan contra sus
 checksums antes de responder:
@@ -85,9 +106,9 @@ se documenta en [`docs/RELEASE_READ_MODEL.md`](docs/RELEASE_READ_MODEL.md).
 ```
 
 La suite completa, incluidas las cinco pruebas PostgreSQL y el dry-run real, se ejecuta con el
-procedimiento controlado `scripts/run_productive_block_validation.ps1`. Solicita las credenciales
-de forma interactiva y nunca las guarda. La ejecución del 2026-08-24 terminó con 121/121 pruebas y
-`integration=0;import=0`.
+procedimiento controlado `scripts/run_productive_block_validation.ps1`, o haciendo doble clic en
+`VALIDAR-BLOQUE.cmd`. Solicita las credenciales de forma interactiva y nunca las guarda. La
+ejecución del 2026-08-24 terminó con 128/128 pruebas y `integration=0;import=0`.
 
 El dry-run limita el piloto a 5,000 filas de forma predeterminada. `--max-rows` permite cambiar el
 límite conscientemente, pero no debe ampliarse al catálogo completo antes de aprobar el piloto.
@@ -134,9 +155,10 @@ registra auditoría e impide cambiar una decisión previa:
   --actor <USUARIO> --reason "Identidad y referencia verificadas" --prompt-password
 ```
 
-`--decision reject` deja producto y referencia inactivos/rechazados sin borrarlos. La cola de
-consola tiene un límite explícito de 5,000 identidades mientras se implementa inspección web
-paginada. Ninguno de estos comandos está autorizado todavía sobre el plan empresarial real. Véase
+`--decision reject` deja producto y referencia inactivos/rechazados sin borrarlos. La CLI conserva
+un límite explícito de 5,000 identidades para su salida completa; la consola web usa consultas
+paginadas y no recorta silenciosamente. Ninguno de estos comandos está autorizado todavía sobre el
+plan empresarial real. Véase
 [`docs/PRODUCT_REVIEW_WORKFLOW.md`](docs/PRODUCT_REVIEW_WORKFLOW.md).
 
 ### Construcción y publicación controlada
@@ -239,7 +261,7 @@ git branch -a
 | Base de Datos | PostgreSQL instalado; migraciones `0001`–`0006` aplicadas y validadas localmente |
 | Backend | FastAPI v1.1: release publicado con UUID por defecto y modo piloto XLSX explícito |
 | Apply | Workflow transaccional validado con el rol real y rollback sintético; plan empresarial no autorizado |
-| Revisión | Decisión individual con hash, auditoría y estados atómicos; interfaz web pendiente |
+| Revisión | Consola web local protegida, paginada y validada; plan empresarial aún no aplicado |
 | Frontend | Catálogo responsive y ficha imprimible piloto |
 | Exportación | ⏳ Pendiente BD |
 | InDesign | ⏳ Pendiente exportación |

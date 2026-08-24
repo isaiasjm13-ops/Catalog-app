@@ -8,6 +8,7 @@ from contextlib import redirect_stderr
 from perfect_catalog.cli import build_parser
 from perfect_catalog.reviews import (
     _require_decision,
+    _require_review_state,
     _require_sha256,
     review_evidence_sha256,
 )
@@ -63,6 +64,9 @@ class ReviewContractTests(unittest.TestCase):
             _require_decision("activate")
         with self.assertRaises(ValueError):
             _require_sha256("abc", "review_sha256")
+        self.assertEqual(_require_review_state(" PENDING "), "pending")
+        with self.assertRaises(ValueError):
+            _require_review_state("deleted")
 
     def test_review_cli_requires_exact_human_evidence(self) -> None:
         parser = build_parser()

@@ -135,7 +135,7 @@ Esta fase no instala Alembic, no crea su configuración y no crea `alembic_versi
 
 Completado localmente: PostgreSQL 18.6, catálogo estructural, constraints, permisos del rol real,
 inserción/apply sintético, publicación/archivo sintéticos, rechazo de datos inválidos, triggers de
-inmutabilidad, idempotencia y rollback. La suite del 2026-08-24 aprobó 121/121 pruebas y el dry-run
+inmutabilidad, idempotencia y rollback. La suite del 2026-08-24 aprobó 128/128 pruebas y el dry-run
 posterior terminó sin escrituras empresariales.
 
 Antes de otro entorno se debe repetir el mismo procedimiento, registrar hashes/duración y obtener

@@ -13,9 +13,11 @@ class PackagingTests(unittest.TestCase):
                 sys.executable,
                 "-c",
                 "from perfect_catalog.api import API_VERSION; "
+                "from perfect_catalog.operator_api import OPERATOR_VERSION, _templates; "
                 "from perfect_catalog.publication import build_release; "
                 "from tools.odoo_profiler import read_tabular_source; "
-                "print(API_VERSION)",
+                "assert _templates().get_template('operator_login.html'); "
+                "print(API_VERSION, OPERATOR_VERSION)",
             ],
             cwd=Path(__file__).resolve().parent,
             check=False,
@@ -23,7 +25,7 @@ class PackagingTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(completed.stdout.strip(), "1.1.0")
+        self.assertEqual(completed.stdout.strip(), "1.1.0 1.0.0")
 
 
 if __name__ == "__main__":

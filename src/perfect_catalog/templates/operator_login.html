@@ -1,0 +1,30 @@
+{% extends "operator_base.html" %}
+{% block title %}Acceso de operador{% endblock %}
+{% block content %}
+<section class="login-layout">
+  <div class="login-intro">
+    <span class="kicker">Perfect Trading · Operaciones</span>
+    <h1>Revisar antes de publicar.</h1>
+    <p>Esta consola resuelve una identidad por vez. Ninguna aprobación es masiva ni implícita.</p>
+    <ul class="guard-list">
+      <li>Hash exacto por producto</li>
+      <li>Actor y motivo obligatorios</li>
+      <li>Historial sin borrado</li>
+    </ul>
+  </div>
+  <div class="login-card">
+    <div class="lock-icon" aria-hidden="true">⌁</div>
+    <span class="kicker">Sesión temporal</span>
+    <h2>Acceso de operador</h2>
+    <p>Introduce el código definido en la consola donde arrancaste este servidor.</p>
+    {% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
+    <form method="post" action="/operator/login" class="stack-form">
+      <input type="hidden" name="csrf_token" value="{{ login_csrf }}">
+      <label for="access_code">Código temporal</label>
+      <input id="access_code" name="access_code" type="password" minlength="12" required autofocus autocomplete="current-password">
+      <button class="primary-button" type="submit">Entrar a revisión</button>
+    </form>
+    <small>Disponible únicamente en este equipo y durante la sesión actual.</small>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends "operator_base.html" %}
+{% block title %}Planes aplicados{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <span class="kicker">Cola de control</span>
+    <h1>Planes aplicados</h1>
+    <p>Selecciona un lote para revisar sus identidades. La publicación permanece bloqueada mientras existan pendientes.</p>
+  </div>
+  <div class="safety-chip"><span>●</span> PostgreSQL · modo operador</div>
+</section>
+
+{% if plans %}
+<section class="plan-grid">
+  {% for plan in plans %}
+  <article class="plan-card">
+    <div class="plan-card-top">
+      <div><span class="file-label">{{ plan.original_name }}</span><h2>{{ plan.candidate_count }} identidades</h2></div>
+      <span class="state-pill {% if plan.pending_count %}pending{% else %}complete{% endif %}">
+        {% if plan.pending_count %}{{ plan.pending_count }} pendientes{% else %}Revisión resuelta{% endif %}
+      </span>
+    </div>
+    <div class="metric-row">
+      <div><strong>{{ plan.approved_count }}</strong><span>Aprobadas</span></div>
+      <div><strong>{{ plan.rejected_count }}</strong><span>Rechazadas</span></div>
+      <div><strong>{{ plan.inconsistent_count }}</strong><span>Inconsistentes</span></div>
+    </div>
+    <dl class="plan-details">
+      <div><dt>Plan</dt><dd><code>{{ plan.import_plan_id }}</code></dd></div>
+      <div><dt>Aplicado por</dt><dd>{{ plan.applied_by }}</dd></div>
+      <div><dt>Fingerprint</dt><dd><code>{{ plan.approval_fingerprint_sha256[:16] }}…</code></dd></div>
+    </dl>
+    <a class="primary-button" href="/operator/plans/{{ plan.import_plan_id }}?state=pending">Abrir cola</a>
+  </article>
+  {% endfor %}
+</section>
+{% else %}
+<section class="empty-state">
+  <span class="empty-symbol">◎</span>
+  <h2>No hay planes aplicados para revisar</h2>
+  <p>El sistema está protegido: primero debe existir un <code>apply-plan</code> autorizado. El dry-run no aparece aquí.</p>
+</section>
+{% endif %}
+{% endblock %}

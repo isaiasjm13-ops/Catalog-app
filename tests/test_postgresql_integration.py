@@ -527,10 +527,59 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
         from perfect_catalog.web import ReleaseCatalogRepository
         from perfect_catalog.reviews import (
             _inspect_review_queue_in_connection,
+            _list_review_plans_in_connection,
+            _review_queue_page_in_connection,
             _review_product_in_connection,
         )
 
         self.connection.execute("SET ROLE perfect_catalog_app")
+        listed_plan = next(
+            plan
+            for plan in _list_review_plans_in_connection(self.connection)
+            if plan["import_plan_id"] == str(ids["plan"])
+        )
+        self.assertEqual(listed_plan["candidate_count"], 2)
+        self.assertEqual(listed_plan["pending_count"], 2)
+        exact_plans = _list_review_plans_in_connection(
+            self.connection, limit=1, plan_id=ids["plan"]
+        )
+        self.assertEqual(
+            [plan["import_plan_id"] for plan in exact_plans],
+            [str(ids["plan"])],
+        )
+        first_page = _review_queue_page_in_connection(
+            self.connection,
+            ids["plan"],
+            fingerprint,
+            state="pending",
+            limit=1,
+        )
+        self.assertEqual(first_page["candidate_count"], 2)
+        self.assertEqual(first_page["filtered_count"], 2)
+        self.assertEqual(len(first_page["items"]), 1)
+        past_last_page = _review_queue_page_in_connection(
+            self.connection,
+            ids["plan"],
+            fingerprint,
+            state="pending",
+            limit=1,
+            offset=50,
+        )
+        self.assertEqual(past_last_page["filtered_count"], 2)
+        self.assertEqual(past_last_page["items"], [])
+        searched_page = _review_queue_page_in_connection(
+            self.connection,
+            ids["plan"],
+            fingerprint,
+            query="REJ-",
+            state="pending",
+            limit=50,
+        )
+        self.assertEqual(searched_page["filtered_count"], 1)
+        self.assertEqual(
+            searched_page["items"][0]["product_id"],
+            str(ids["product_rejected"]),
+        )
         review_queue = _inspect_review_queue_in_connection(
             self.connection, ids["plan"], fingerprint
         )
@@ -591,6 +640,14 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(rejected["status"], "rejected")
         self.connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        resolved_plan = next(
+            plan
+            for plan in _list_review_plans_in_connection(self.connection)
+            if plan["import_plan_id"] == str(ids["plan"])
+        )
+        self.assertEqual(resolved_plan["pending_count"], 0)
+        self.assertEqual(resolved_plan["approved_count"], 1)
+        self.assertEqual(resolved_plan["rejected_count"], 1)
         with self.assertRaisesRegex(PermissionError, "auditado"):
             _review_product_in_connection(
                 self.connection,

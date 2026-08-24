@@ -9,6 +9,7 @@ description = "Importador controlado para Perfect Trading Catalog System"
 requires-python = ">=3.14"
 dependencies = [
     "fastapi==0.141.1",
+    "jinja2==3.1.6",
     "psycopg[binary]==3.3.4",
     "uvicorn==0.50.1",
 ]
@@ -21,7 +22,11 @@ test = [
 [project.scripts]
 perfect-catalog = "perfect_catalog.cli:main"
 perfect-catalog-api = "perfect_catalog.api:main"
+perfect-catalog-operator = "perfect_catalog.operator_api:main"
 
 [tool.setuptools]
 packages = ["perfect_catalog", "tools", "tools.odoo_profiler"]
 package-dir = {perfect_catalog = "src/perfect_catalog", tools = "tools"}
+
+[tool.setuptools.package-data]
+perfect_catalog = ["templates/*.html", "static/*.css"]

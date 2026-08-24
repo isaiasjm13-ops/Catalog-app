@@ -12,7 +12,7 @@ una aprobación humana separada, puede insertar registros empresariales en Postg
 Antes de cualquier prueba de base de datos se debe:
 
 1. confirmar que `0001`–`0006` están aplicadas en el entorno objetivo;
-2. ejecutar las 121 pruebas, incluidas las integraciones con rollback;
+2. ejecutar las 128 pruebas, incluidas las integraciones con rollback;
 3. generar un plan nuevo con el contrato y las reglas actuales;
 4. inspeccionar su reporte y resolver todos los bloqueos/conflictos;
 5. obtener autorización humana para ese fingerprint exacto.
@@ -89,3 +89,6 @@ deben resolverse individualmente mediante el workflow con evidencia criptográfi
 [`PRODUCT_REVIEW_WORKFLOW.md`](PRODUCT_REVIEW_WORKFLOW.md). La migración `0006` concede solamente
 las columnas de esa transición, bloquea cambios de datos de catálogo y exige que producto y
 referencia terminen alineados dentro de la misma transacción.
+
+La interfaz protegida y paginada para ejecutar esas decisiones está documentada en
+[`OPERATOR_WEB.md`](OPERATOR_WEB.md). Su existencia no autoriza aplicar un plan empresarial.

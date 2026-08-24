@@ -1,0 +1,78 @@
+{% extends "operator_base.html" %}
+{% block title %}Cola de revisión{% endblock %}
+{% block content %}
+<nav class="breadcrumbs"><a href="/operator">Planes</a><span>/</span><span>{{ plan.original_name }}</span></nav>
+<section class="queue-heading">
+  <div>
+    <span class="kicker">Revisión individual</span>
+    <h1>{{ plan.original_name }}</h1>
+    <p><code>{{ plan.import_plan_id }}</code></p>
+  </div>
+  <div class="queue-total"><strong>{{ queue.candidate_count }}</strong><span>identidades del plan</span></div>
+</section>
+
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+
+<section class="evidence-strip">
+  <span>Fingerprint aplicado</span>
+  <code>{{ plan.approval_fingerprint_sha256 }}</code>
+</section>
+
+<form class="filter-bar" method="get">
+  <label class="search-field"><span>Buscar</span><input name="q" value="{{ q }}" maxlength="200" placeholder="Referencia, nombre o fila"></label>
+  <label><span>Estado</span><select name="state">
+    {% for state in states %}<option value="{{ state }}" {% if state == selected_state %}selected{% endif %}>{{ {'pending':'Pendientes','approved':'Aprobadas','rejected':'Rechazadas','inconsistent':'Inconsistentes','all':'Todas'}[state] }}</option>{% endfor %}
+  </select></label>
+  <button class="secondary-button" type="submit">Filtrar</button>
+</form>
+
+<div class="result-summary"><strong>{{ queue.filtered_count }}</strong> resultados · página {{ page }}</div>
+
+{% if queue["items"] %}
+<section class="review-list">
+  {% for item in queue["items"] %}
+  <article class="review-card state-{{ item.review_state }}">
+    <div class="identity-block">
+      <div class="row-label">Fila Odoo {{ item.source_row_number or '—' }}</div>
+      <div class="reference">{{ item.reference or 'Referencia ausente' }}</div>
+      <h2>{{ item.name or 'Nombre ausente' }}{% if item.variant_name %} · {{ item.variant_name }}{% endif %}</h2>
+      <div class="identity-id"><code>{{ item.product_id }}</code></div>
+    </div>
+    <div class="review-meta">
+      <span class="state-pill {{ item.review_state }}">{{ {'pending':'Pendiente','approved':'Aprobada','rejected':'Rechazada','inconsistent':'Inconsistente'}[item.review_state] }}</span>
+      <dl>
+        <div><dt>Producto</dt><dd>{{ item.catalog_status or 'ausente' }}</dd></div>
+        <div><dt>Referencia</dt><dd>{{ item.reference_status or 'pending' }}</dd></div>
+        <div><dt>Referencias primarias</dt><dd>{{ item.reference_count }}</dd></div>
+      </dl>
+      <details><summary>Evidencia exacta</summary><code class="hash-code">{{ item.review_sha256 }}</code></details>
+    </div>
+    {% if item.review_state == 'pending' and item.reference_count == 1 %}
+    <form class="decision-form" method="post" action="/operator/plans/{{ plan.import_plan_id }}/products/{{ item.product_id }}/decision">
+      <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+      <input type="hidden" name="fingerprint" value="{{ plan.approval_fingerprint_sha256 }}">
+      <input type="hidden" name="review_sha256" value="{{ item.review_sha256 }}">
+      <label><span>Motivo de la decisión</span><textarea name="reason" minlength="4" maxlength="500" required placeholder="Qué se verificó o por qué debe corregirse"></textarea></label>
+      <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo que revisé esta identidad y su evidencia.</span></label>
+      <div class="decision-actions">
+        <button class="reject-button" type="submit" name="decision" value="reject">Rechazar</button>
+        <button class="approve-button" type="submit" name="decision" value="approve">Aprobar</button>
+      </div>
+    </form>
+    {% elif item.review_state == 'inconsistent' %}
+    <div class="blocked-note">Esta identidad no puede decidirse desde la web: su estructura requiere investigación.</div>
+    {% else %}
+    <div class="resolved-note">Decisión final registrada. No puede sobrescribirse.</div>
+    {% endif %}
+  </article>
+  {% endfor %}
+</section>
+{% else %}
+<section class="empty-state compact"><span class="empty-symbol">✓</span><h2>No hay resultados en este filtro</h2><p>Cambia el estado o la búsqueda para inspeccionar otras identidades.</p></section>
+{% endif %}
+
+<nav class="pagination" aria-label="Paginación">
+  {% if previous_url %}<a class="secondary-button" href="{{ previous_url }}">← Anterior</a>{% else %}<span></span>{% endif %}
+  {% if next_url %}<a class="secondary-button" href="{{ next_url }}">Siguiente →</a>{% endif %}
+</nav>
+{% endblock %}

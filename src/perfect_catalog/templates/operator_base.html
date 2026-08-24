@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Revisión de catálogo{% endblock %} · Perfect Trading</title>
+  <link rel="stylesheet" href="/operator/static/operator.css">
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+  <main class="app-shell">
+    {% if session %}
+    <header class="topbar">
+      <a class="brand" href="/operator" aria-label="Volver a planes">
+        <span class="brand-mark">P</span>
+        <span><strong>Perfect Trading</strong><small>Control de catálogo</small></span>
+      </a>
+      <div class="operator-meta">
+        <span class="status-dot"></span>
+        <span>{{ session.actor }}</span>
+        <form method="post" action="/operator/logout">
+          <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+          <button class="link-button" type="submit">Cerrar sesión</button>
+        </form>
+      </div>
+    </header>
+    {% endif %}
+    {% block content %}{% endblock %}
+    <footer>Consola local · v{{ version }} · Las decisiones quedan auditadas</footer>
+  </main>
+</body>
+</html>

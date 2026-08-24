@@ -1,0 +1,10 @@
+{% extends "operator_base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<section class="empty-state error-state">
+  <span class="empty-symbol">!</span>
+  <h1>{{ title }}</h1>
+  <p>{{ detail }}</p>
+  <a class="secondary-button" href="/operator">Volver a planes</a>
+</section>
+{% endblock %}

@@ -67,11 +67,11 @@ fuera por estado, pero siguen preservados en la base y en auditoría.
 
 ## Límites vigentes
 
-La inspección por consola está limitada explícitamente a 5,000 identidades. Es suficiente para el
-piloto actual de 893 filas, pero el catálogo objetivo supera 25,000 referencias: antes de abrir esa
-escala se implementará una cola web paginada y filtrable. Este límite falla de forma explícita; no
+La inspección CLI completa está limitada explícitamente a 5,000 identidades. La consola web ya usa
+una consulta set-based paginada y filtrable de 50 registros, por lo que no materializa 25,000
+tarjetas a la vez ni ejecuta una consulta por identidad. El límite CLI falla de forma explícita; no
 recorta ni aprueba parcialmente la cola.
 
-La web abierta por `INICIAR-SERVER.cmd` continúa siendo el visor XLSX del piloto. Todavía no expone
-botones de revisión ni el catálogo PostgreSQL publicado. Esos controles serán la siguiente capa de
-interfaz sobre este workflow ya protegido.
+La web abierta por `INICIAR-SERVER.cmd` continúa siendo el visor XLSX del piloto. Los controles de
+revisión están deliberadamente separados en `INICIAR-REVISOR.cmd` y se documentan en
+[`OPERATOR_WEB.md`](OPERATOR_WEB.md).

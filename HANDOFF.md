@@ -1,8 +1,23 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
-## Sesión Actual: Revisión humana de productos aplicados (2026-08-24)
+## Sesión Actual: Consola web local de revisión (2026-08-24)
 
 ### Resultado de esta sesión
+
+- Consola Jinja2 separada implementada en `http://127.0.0.1:8081/operator`; el catálogo piloto de
+  `INICIAR-SERVER.cmd` permanece intacto y de solo lectura en el puerto 8080.
+- Nuevo `INICIAR-REVISOR.cmd`: solicita contraseña PostgreSQL, actor auditable y código temporal;
+  valida la conexión antes de escuchar y nunca admite un host distinto de localhost.
+- Cola set-based paginada (50 por página) con búsqueda, filtros y conteos; elimina el N+1 anterior
+  y conserva el inspector CLI completo con su límite explícito de 5,000.
+- Sesión en memoria de una hora, PBKDF2, límite de intentos, cookies firmadas HttpOnly/Strict, CSRF
+  de login y sesión, validación Origin, formularios limitados, Jinja autoescape y CSP/no-store.
+- Decisiones únicamente por POST individual con motivo; no existen GET mutantes, aprobación masiva,
+  OpenAPI ni rutas de catálogo público en el proceso operador.
+- Pruebas HTTP cubren autenticación, expiración, manipulación de cookie, CSRF, origen, XSS, cabeceras
+  y separación de superficies. Integración real valida paginación/búsqueda como rol de aplicación.
+- `VALIDAR-BLOQUE.cmd` permite repetir en una consola visible la suite PostgreSQL y el dry-run real
+  sin escribir credenciales en argumentos, variables o archivos.
 
 - Workflow `inspect-reviews` / `review-product` implementado para decisiones individuales con
   fingerprint del plan, `review_sha256` por ficha, actor y motivo obligatorios.
@@ -57,18 +72,16 @@
   UUID y detección de manipulación, todo con datos sintéticos y rollback.
 - Integración completa como rol real: apply sintético, activación/revisión sintética, build,
   checksum erróneo, publicación, lectura UUID, archivo, reintentos e inmutabilidad con rollback.
-- Pruebas: 121 descubiertas y 121 aprobadas, incluidas las 5 integraciones PostgreSQL.
+- Pruebas: 128 descubiertas y 128 aprobadas, incluidas las 5 integraciones PostgreSQL.
 - Dry-run real v0.3 repetido: 893 filas, 2,497 items, archivo intacto y 0 escrituras empresariales.
 - Ningún plan real fue aprobado/aplicado ni se publicó un release empresarial; no se modificó Odoo
   ni el Excel fuente y las ocho tablas empresariales siguen vacías.
 
 ### Próxima etapa por dependencias
 
-1. Exponer la cola de revisión en una interfaz web local paginada y filtrable, usando los mismos
-   hashes y transiciones; no añadir aprobación masiva ciega.
-2. Añadir reconciliación `update` campo por campo, con `before_values`, si la exportación completa
+1. Añadir reconciliación `update` campo por campo, con `before_values`, si la exportación completa
    aporta identidad Odoo estable; hasta entonces permanece bloqueada por diseño.
-3. Continuar con imágenes, catálogo enriquecido y PWA/offline sobre releases inmutables.
+2. Continuar con imágenes, catálogo enriquecido y PWA/offline sobre releases inmutables.
 
 ### Sesión anterior: Inicialización del Proyecto (2026-08-17)
 

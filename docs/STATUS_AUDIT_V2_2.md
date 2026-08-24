@@ -25,7 +25,7 @@ que solo existan en el PDF; no impide continuar las etapas deducibles y seguras.
 - Dry-run conservado: 893 filas staged/clasificadas, 893 altas propuestas, 893 snapshots,
   711 medios pendientes, 182 ausentes, 0 escrituras empresariales.
 - Migraciones forward-only `0001`–`0006` aplicadas en `perfect_catalog_dev`.
-- Al cierre de la sexta etapa: 121 pruebas descubiertas y 121 aprobadas, incluidas cinco
+- Al cierre de la séptima etapa: 128 pruebas descubiertas y 128 aprobadas, incluidas cinco
   integraciones PostgreSQL ejecutadas con credenciales interactivas.
 - Dry-run v0.3 posterior: 893 filas, 2,497 items, SHA fuente intacto y 0 escrituras empresariales.
 - Prueba de humo Uvicorn/FastAPI contra el XLSX real: 893 productos detectados y respuestas JSON.
@@ -46,7 +46,7 @@ que solo existan en el PDF; no impide continuar las etapas deducibles y seguras.
 | Modelo normalizado | Parcial | Esquema contempla productos, referencias, inventario, medios, vehículos, releases y auditoría. Las tablas empresariales continúan vacías por diseño del dry-run. |
 | Imágenes | No implementado salvo clasificación preliminar | Se detecta Base64 presente/ausente sin decodificar. Faltan indexación filesystem, variantes principal/A/B/GEN/empaque, validación, derivados web y reportes de calidad. |
 | FastAPI | Implementado y verificado | API v1.1 de solo lectura, OpenAPI, paginación, categorías, detalle y errores. Usa el último release publicado por defecto, UUID estable y validación criptográfica; XLSX/`source-row:*` queda como piloto explícito. No existen rutas admin. |
-| Catálogo web | Parcial | Búsqueda por referencia/nombre, filtro de categoría, responsive, ficha y estado vacío consumen el mismo release estable. Faltan OEM, aplicaciones, filtros multinivel, imágenes reales y un release empresarial publicado. |
+| Catálogo web | Parcial | El catálogo público sigue read-only; la consola operador separada añade cola PostgreSQL paginada, filtros y decisión individual protegida. Faltan OEM, aplicaciones, filtros multinivel, imágenes reales y un release empresarial publicado. |
 | PWA/offline | No implementado | No existen manifest, iconos, service worker, IndexedDB, paquetes/versiones/checksum, staging atómico, cuota, sincronización ni UI de estado. |
 | PDF QUICK | Parcial mínimo | Existe HTML imprimible manual. Faltan plantillas de impresión completas, QR, selección/categoría/cliente, Playwright, caché, manifest/checksum y QA visual renderizado. |
 | InDesign premium | No implementado | El modelo de releases y la decisión JSON canónico existen. Faltan paquete autocontenido, CSV/JSON/images/manifest, reportes, Data Merge, `.idjs`, preflight y salidas DIGITAL/PRINT. |
@@ -73,15 +73,13 @@ que solo existan en el PDF; no impide continuar las etapas deducibles y seguras.
    snapshots/auditoría, rollback e idempotencia; no ejecutar sobre datos empresariales sin aprobación.
 2. **Releases/read model:** implementados build, inspección, publicación, archivo y consumo de
    snapshots estables con UUID/checksum; falta una publicación empresarial autorizada.
-3. **Revisión web:** paginación, filtros y decisiones individuales sobre el workflow criptográfico
-   ya validado; sin aprobación masiva implícita.
-4. **Pipeline de imágenes:** índice no destructivo, roles, validación, hashes, derivados web y reportes.
-5. **Catálogo completo y PWA:** búsqueda estructurada, manifest/app shell, paquetes offline,
+3. **Pipeline de imágenes:** índice no destructivo, roles, validación, hashes, derivados web y reportes.
+4. **Catálogo completo y PWA:** búsqueda estructurada, manifest/app shell, paquetes offline,
    IndexedDB, actualización atómica, cuota y sincronización idempotente.
-6. **PDF QUICK:** HTML/CSS estable, QR, selección, Playwright, caché/manifest y revisión visual.
-7. **InDesign premium:** paquete autocontenido, muestra Data Merge, UXP `.idjs`, preflight,
+5. **PDF QUICK:** HTML/CSS estable, QR, selección, Playwright, caché/manifest y revisión visual.
+6. **InDesign premium:** paquete autocontenido, muestra Data Merge, UXP `.idjs`, preflight,
    PDF DIGITAL y PDF PRINT separados.
-8. **Piloto de aceptación:** matriz completa de datos/imágenes/fallos, tablets/laptops, rendimiento,
+7. **Piloto de aceptación:** matriz completa de datos/imágenes/fallos, tablets/laptops, rendimiento,
    documentación desde cero y decisión explícita antes de escalar a 25,000+ referencias.
 
 ## Primera etapa ejecutada
@@ -201,6 +199,21 @@ La suite completa aprobó 121/121 pruebas. La integración como `perfect_catalog
 incorrecto, actualización parcial rechazada, decisión correcta, reintentos, auditoría, publicación
 y rollback. El dry-run real terminó con `integration=0;import=0`; no quedó ningún dato sintético ni
 se autorizó un plan empresarial.
+
+## Séptima etapa ejecutada
+
+Se añadió la interfaz web local sobre el workflow de revisión ya validado:
+
+- proceso operador separado del catálogo público, limitado a `127.0.0.1:8081`;
+- credenciales solicitadas por consola, actor fijo por sesión y código temporal no persistido;
+- Jinja2 empaquetado con cola paginada, búsqueda, filtros, evidencia visible y decisiones POST;
+- consulta set-based que elimina N+1 y mantiene conteos correctos incluso fuera de la última página;
+- PBKDF2, sesión firmada/revocable, límite de intentos, CSRF, Origin, CSP, no-store y autoescape;
+- no se montan OpenAPI, API pública, CORS ni aprobación masiva en el proceso operador.
+
+La suite completa aprobó 128/128 pruebas. La integración PostgreSQL recorrió listado de planes,
+paginación, búsqueda, aprobación, rechazo, release y rollback como `perfect_catalog_app`; el dry-run
+real terminó con `integration=0;import=0`. No se aplicó ningún plan empresarial.
 
 ## Bloqueos externos exactos
 
