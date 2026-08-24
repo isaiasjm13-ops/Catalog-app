@@ -7,7 +7,8 @@ import uuid
 from pathlib import Path
 
 from .config import DatabaseConfig, prompt_password
-from .importer import DEFAULT_MAX_PILOT_ROWS, assert_apply_allowed, inspect_plan, run_dry_run
+from .application import apply_approved_plan, approve_plan
+from .importer import DEFAULT_MAX_PILOT_ROWS, inspect_plan, run_dry_run
 
 
 def _database_arguments(parser: argparse.ArgumentParser) -> None:
@@ -41,8 +42,18 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_parser.add_argument("plan_id", type=uuid.UUID)
     _database_arguments(inspect_parser)
 
-    apply_parser = subparsers.add_parser("apply-plan", help="Valida la compuerta de aprobación; no aplica en este bloque.")
+    approve_parser = subparsers.add_parser("approve-plan", help="Aprueba un fingerprint exacto sin aplicar datos.")
+    approve_parser.add_argument("plan_id", type=uuid.UUID)
+    approve_parser.add_argument("--fingerprint", required=True)
+    approve_parser.add_argument("--actor", required=True)
+    approve_parser.add_argument("--reason", required=True)
+    _database_arguments(approve_parser)
+
+    apply_parser = subparsers.add_parser("apply-plan", help="Aplica una vez un plan aprobado y verificable.")
     apply_parser.add_argument("plan_id", type=uuid.UUID)
+    apply_parser.add_argument("--fingerprint", required=True)
+    apply_parser.add_argument("--actor", required=True)
+    apply_parser.add_argument("--reason", required=True)
     _database_arguments(apply_parser)
     return parser
 
@@ -57,9 +68,24 @@ def main(argv: list[str] | None = None) -> int:
             result = run_dry_run(args.source, config, password, args.output_dir, args.max_rows)
         elif args.command == "inspect-plan":
             result = inspect_plan(args.plan_id, config, password)
+        elif args.command == "approve-plan":
+            result = approve_plan(
+                args.plan_id,
+                args.fingerprint,
+                args.actor,
+                args.reason,
+                config,
+                password,
+            )
         else:
-            assert_apply_allowed(args.plan_id, config, password)
-            return 0
+            result = apply_approved_plan(
+                args.plan_id,
+                args.fingerprint,
+                args.actor,
+                args.reason,
+                config,
+                password,
+            )
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
     except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:

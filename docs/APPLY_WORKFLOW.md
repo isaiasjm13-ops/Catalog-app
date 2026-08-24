@@ -1,0 +1,80 @@
+# Workflow controlado de aprobación y apply
+
+Estado: implementado en código y pruebas unitarias; migración `0003` no aplicada y apply real no
+autorizado.
+
+## Límite de seguridad
+
+El importador nunca escribe en Odoo ni modifica el XLSX/CSV fuente. El dry-run persiste evidencia y
+un plan en `awaiting_review`; aprobar un plan tampoco crea productos. Solo `apply-plan`, después de
+una aprobación humana separada, puede insertar registros empresariales en PostgreSQL.
+
+Antes de cualquier prueba de base de datos se debe:
+
+1. revisar el diff y el hash de `0003_apply_workflow_permissions.sql`;
+2. obtener aprobación para aplicarla en `perfect_catalog_dev`;
+3. probar con datos sintéticos dentro de una transacción revertida;
+4. generar un plan nuevo con el contrato y las reglas actuales;
+5. inspeccionar su reporte y resolver todos los bloqueos/conflictos.
+
+## Estados y evidencia
+
+```text
+awaiting_review --approve-plan--> approved --apply-plan--> applying --> applied
+                                              error ------rollback----> approved
+```
+
+Ambos comandos vuelven a calcular:
+
+- el hash canónico de cada item;
+- `plan_sha256` en el orden persistido;
+- el fingerprint sobre archivo, contrato, reglas y plan;
+- el SHA-256 del archivo físico.
+
+La operación se rechaza si difiere cualquiera de ellos, si el contrato/reglas no son los actuales,
+si falta actor o motivo, o si el estado no permite la transición. La aprobación queda registrada en
+`audit_event`; la creación de productos, snapshots y el cierre del plan comparten un `correlation_id`.
+
+## Alcance actual del apply
+
+Admitido:
+
+- `create`: producto nuevo y referencia interna pendiente de revisión;
+- `inventory_snapshot`: solo con cantidades y unidad completas, ligado a un producto creado por el
+  mismo plan;
+- `media_pending`: conserva el trabajo pendiente sin decodificar Base64;
+- `no_change`: no escribe datos empresariales.
+
+Bloqueado antes de escribir:
+
+- `update`: falta una comparación segura campo por campo y `before_values` completo;
+- `blocked` y `conflict`: requieren corregir/reconciliar y generar otro plan;
+- cualquier operación desconocida o snapshot huérfano.
+
+No se conceden permisos DELETE. El rol de aplicación solo puede actualizar las columnas de estado y
+evidencia necesarias, e insertar las entidades producidas por este flujo.
+
+## Idempotencia y recuperación
+
+El plan se bloquea con `FOR UPDATE` y el apply usa una transacción serializable. Si todas las
+escrituras terminan, el estado pasa a `applied`. Una llamada posterior con el mismo fingerprint
+válido responde `already_applied` y no repite inserts.
+
+Una excepción revierte el cambio a `applying` y todas las inserciones de esa llamada, por lo que el
+plan permanece `approved` y puede investigarse/reintentarse. No se debe reparar el estado a mano ni
+editar un plan persistido: cualquier cambio requiere generar un plan sucesor revisable.
+
+## Comandos
+
+```powershell
+.\.venv\Scripts\perfect-catalog.exe inspect-plan <PLAN_UUID> --prompt-password
+
+.\.venv\Scripts\perfect-catalog.exe approve-plan <PLAN_UUID> `
+  --fingerprint <SHA256> --actor <USUARIO> --reason "Motivo verificable" --prompt-password
+
+.\.venv\Scripts\perfect-catalog.exe apply-plan <PLAN_UUID> `
+  --fingerprint <MISMO_SHA256> --actor <USUARIO> --reason "Autorización de apply" --prompt-password
+```
+
+Estos comandos no deben ejecutarse sobre un plan empresarial hasta completar la validación
+PostgreSQL sintética y recibir autorización humana expresa para ese plan exacto.

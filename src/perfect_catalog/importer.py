@@ -21,7 +21,7 @@ from .config import DatabaseConfig
 
 
 CONTRACT_VERSION = "natsuki-empaques-v0.2"
-RULES_VERSION = "normalization-v0.2"
+RULES_VERSION = "normalization-v0.3"
 PROFILER_VERSION = "0.1"
 SOURCE_CODE = "odoo"
 SOURCE_MODEL = "product.template"
@@ -328,19 +328,29 @@ def plan_item_hash(item: dict[str, Any]) -> str:
     return canonical_sha256(evidence)
 
 
-def plan_hash(file_sha256: str, items: list[dict[str, Any]]) -> str:
+def plan_hash(
+    file_sha256: str,
+    items: list[dict[str, Any]],
+    contract_version: str = CONTRACT_VERSION,
+    rules_version: str = RULES_VERSION,
+) -> str:
     return canonical_sha256({
-        "contract_version": CONTRACT_VERSION,
-        "rules_version": RULES_VERSION,
+        "contract_version": contract_version,
+        "rules_version": rules_version,
         "file_sha256": file_sha256,
         "items": [item["item_sha256"] for item in items],
     })
 
 
-def approval_fingerprint(file_sha256: str, plan_sha256: str) -> str:
+def approval_fingerprint(
+    file_sha256: str,
+    plan_sha256: str,
+    contract_version: str = CONTRACT_VERSION,
+    rules_version: str = RULES_VERSION,
+) -> str:
     return canonical_sha256({
-        "contract_version": CONTRACT_VERSION,
-        "rules_version": RULES_VERSION,
+        "contract_version": contract_version,
+        "rules_version": rules_version,
         "file_sha256": file_sha256,
         "plan_sha256": plan_sha256,
     })
@@ -470,7 +480,11 @@ def run_dry_run(
     plan_id = uuid.uuid4()
     now = datetime.now(UTC)
     source_id_default = uuid.uuid5(NAMESPACE, "source-system:odoo")
-    storage_uri = source_path.relative_to(Path.cwd()).as_posix() if source_path.is_relative_to(Path.cwd()) else source_path.name
+    storage_uri = (
+        source_path.relative_to(Path.cwd()).as_posix()
+        if source_path.is_relative_to(Path.cwd())
+        else str(source_path)
+    )
 
     with psycopg.connect(**config.connection_kwargs(password)) as connection:
         business_before = _business_counts(connection)
@@ -645,6 +659,16 @@ def run_dry_run(
                     {"code": issue["code"], "severity": issue["severity"]}
                     for issue in row.issue_specs
                 ]
+                inventory_complete = (
+                    row.normalized["quantity_on_hand"] is not None
+                    and row.normalized["quantity_available"] is not None
+                    and bool(str(row.normalized["uom_original"] or "").strip())
+                )
+                if not inventory_complete:
+                    row_issue_codes.append({
+                        "code": "inventory_snapshot_not_planned",
+                        "severity": "warning",
+                    })
                 if any(issue["severity"] in {"error", "fatal"} for issue in row.issue_specs):
                     order += 1
                     items.append(_make_item(
@@ -664,23 +688,31 @@ def run_dry_run(
                         "internal_reference_original": row.normalized["internal_reference_original"],
                         "internal_reference_normalized": reference,
                         "category_path": row.normalized["category_path"],
+                        "currency": row.normalized["currency"],
+                        "activity_state": row.normalized["activity_state"],
+                        "is_favorite": row.normalized["is_favorite"],
+                        "variant_count_observed": row.normalized["variant_count_observed"],
+                        "uom_original": row.normalized["uom_original"],
+                        "show_quantity_status": row.normalized["show_quantity_status"],
+                        "source_updated_at": row.normalized["source_updated_at"],
                         "catalog_status": "pending_review",
                         "source_active": None,
                     },
                     row_issue_codes,
                 ))
-                order += 1
-                items.append(_make_item(
-                    plan_id, file_id, staging_id, order, "inventory_snapshot", planned_id, resolved_id,
-                    {
-                        "quantity_on_hand": row.normalized["quantity_on_hand"],
-                        "quantity_available": row.normalized["quantity_available"],
-                        "uom_original": row.normalized["uom_original"],
-                        "source_date_serial": row.normalized["source_date_serial"],
-                        "source_updated_at": None,
-                    },
-                    [issue for issue in row_issue_codes if issue["code"] == "excel_date_unconverted"],
-                ))
+                if inventory_complete:
+                    order += 1
+                    items.append(_make_item(
+                        plan_id, file_id, staging_id, order, "inventory_snapshot", planned_id, resolved_id,
+                        {
+                            "quantity_on_hand": row.normalized["quantity_on_hand"],
+                            "quantity_available": row.normalized["quantity_available"],
+                            "uom_original": row.normalized["uom_original"],
+                            "source_date_serial": row.normalized["source_date_serial"],
+                            "source_updated_at": None,
+                        },
+                        [issue for issue in row_issue_codes if issue["code"] == "excel_date_unconverted"],
+                    ))
                 if row.normalized["image_status"] == "present":
                     order += 1
                     items.append(_make_item(

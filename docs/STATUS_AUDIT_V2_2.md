@@ -25,7 +25,7 @@ que solo existan en el PDF; no impide continuar las etapas deducibles y seguras.
 - Dry-run conservado: 893 filas staged/clasificadas, 893 altas propuestas, 893 snapshots,
   711 medios pendientes, 182 ausentes, 0 escrituras empresariales.
 - Migraciones forward-only: 24 tablas en `0001`; ajuste de objetivos futuros en `0002`.
-- Al cierre de la segunda etapa: 75 pruebas descubiertas, 73 aprobadas y 2 integraciones
+- Al cierre de la tercera etapa: 90 pruebas descubiertas, 88 aprobadas y 2 integraciones
   PostgreSQL omitidas por requerir credenciales interactivas.
 - Prueba de humo Uvicorn/FastAPI contra el XLSX real: 893 productos detectados y respuestas JSON.
 
@@ -35,8 +35,8 @@ que solo existan en el PDF; no impide continuar las etapas deducibles y seguras.
 |---|---|---|
 | Perfilado Odoo | Implementado y verificado para las dos muestras | XLSX/CSV/TSV, hashes antes/después, nulos, duplicados y anomalías. Falta exportación completa con IDs/OEM/aplicaciones. |
 | Contrato de importación | Parcial verificado | v0.2 conserva raw/normalizado, acepta reordenamiento, opcionales ausentes, columnas nuevas y conteos variables con límite de piloto. Sigue siendo provisional hasta recibir la exportación completa. |
-| Dry-run y transacciones | Parcial verificado | Persiste batch, archivo, staging, resultados, issues y plan; comprueba cero escrituras empresariales. `apply` y rollback empresarial no están implementados. |
-| Idempotencia/historial | Parcial | Hashes canónicos, duplicado de archivo, planes y constraints existen. Falta aplicación única real, reintentos y plan sucesor por decisión humana. |
+| Dry-run y transacciones | Parcial verificado | Persiste evidencia y comprueba cero escrituras empresariales. Aprobación/apply atómicos están implementados y probados unitariamente; falta validarlos contra PostgreSQL con datos sintéticos. |
+| Idempotencia/historial | Parcial | Recalcula hashes/fingerprint, bloquea el plan y evita repetir un plan ya aplicado. Falta ensayo concurrente real y plan sucesor por decisión humana. |
 | PostgreSQL/migraciones | Implementado y verificado previamente; verificación actual parcial | DDL y pruebas estáticas sólidas; PostgreSQL funciona. Las pruebas reales actuales se omitieron por credenciales interactivas. No hay Alembic/registro automatizado de revisiones. |
 | Modelo normalizado | Parcial | Esquema contempla productos, referencias, inventario, medios, vehículos, releases y auditoría. Las tablas empresariales continúan vacías por diseño del dry-run. |
 | Imágenes | No implementado salvo clasificación preliminar | Se detecta Base64 presente/ausente sin decodificar. Faltan indexación filesystem, variantes principal/A/B/GEN/empaque, validación, derivados web y reportes de calidad. |
@@ -107,6 +107,26 @@ El contrato de entrada pasó a `natsuki-empaques-v0.2` y las reglas a `normaliza
 
 La muestra real de 237 filas y dos columnas críticas fue leída correctamente. Esta validación no
 es un apply y no produjo escrituras en PostgreSQL.
+
+## Tercera etapa ejecutada
+
+Las reglas pasaron a `normalization-v0.3` y se implementó la compuerta transaccional:
+
+- `approve-plan` y `apply-plan` exigen plan, fingerprint de 64 hexadecimales, actor y motivo;
+- se recalculan los hashes de cada item, del plan y del fingerprint usando las versiones persistidas,
+  y además se exige que coincidan con el código actual;
+- se vuelve a verificar el SHA-256 físico del archivo fuente antes de aprobar y antes de aplicar;
+- la aprobación y el apply bloquean la fila del plan; el apply usa aislamiento serializable;
+- las altas crean producto y referencia interna, y los snapshots conservan ceros y negativos;
+- si falla una escritura, toda la transacción revierte y el plan queda reintentable; si ya fue
+  aplicado, un reintento devuelve `already_applied` sin duplicar datos;
+- `update`, `blocked` y `conflict` se rechazan antes de escribir porque todavía no existe evidencia
+  `before_values` suficiente para una actualización empresarial segura;
+- la migración `0003` concede solo transiciones de estado por columna y los INSERT necesarios,
+  sin conceder DELETE ni modificar datos existentes.
+
+La migración `0003` no fue ejecutada y ninguna aprobación/aplicación real se realizó. La siguiente
+evidencia necesaria es una prueba PostgreSQL sintética, transaccional y revertida.
 
 ## Bloqueos externos exactos
 

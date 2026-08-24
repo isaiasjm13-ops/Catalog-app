@@ -1,6 +1,6 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
-## Sesión Actual: Auditoría v2.2 y API FastAPI (2026-08-24)
+## Sesión Actual: Aprobación y apply seguro (2026-08-24)
 
 ### Resultado de esta sesión
 
@@ -16,14 +16,24 @@
 - Contrato/importador v0.2: ya no exige 893 filas ni 13 columnas en orden exacto; acepta
   reordenamiento, conserva columnas nuevas y reporta opcionales ausentes, con límite de piloto.
 - Segunda muestra real verificada: 237 filas y solo 2 columnas críticas, sin inventar opcionales.
-- Pruebas: 75 descubiertas; 73 aprobadas y 2 integraciones PostgreSQL omitidas por ser opt-in.
+- Workflow `approve-plan` / `apply-plan` implementado con actor, motivo y fingerprint obligatorios.
+- El apply recalcula hashes, verifica el archivo, bloquea el plan y usa una transacción serializable;
+  un segundo intento sobre un plan aplicado responde `already_applied` sin repetir escrituras.
+- Alcance seguro actual: altas, snapshots completos, `no_change` y medios marcados pendientes. Las
+  operaciones `update`, `blocked` y `conflict` se rechazan antes de escribir.
+- La migración forward-only `0003` flexibiliza el conteo opcional de variantes y limita permisos
+  de transición del rol de aplicación por columna. Fue preparada y probada estáticamente, no aplicada.
+- Pruebas: 90 descubiertas; 88 aprobadas y 2 integraciones PostgreSQL omitidas por ser opt-in.
+- Ningún plan real fue aprobado ni aplicado; no se modificó Odoo ni el Excel fuente.
 
 ### Próxima etapa por dependencias
 
-1. Implementar y probar aprobación/aplicación idempotente sin ejecutar ningún plan empresarial
-   hasta revisión humana expresa.
-2. Crear el read model estable desde `catalog_release` para dejar de exponer `source-row:*`.
-3. Continuar con imágenes, catálogo enriquecido y PWA/offline sobre releases inmutables.
+1. Revisar/aprobar y aplicar `0003` primero en `perfect_catalog_dev`; ejecutar la integración
+   transaccional con datos sintéticos y rollback, sin aprobar ni aplicar el plan empresarial.
+2. Añadir reconciliación `update` campo por campo, con `before_values`, si la exportación completa
+   aporta identidad Odoo estable; hasta entonces permanece bloqueada por diseño.
+3. Crear el read model estable desde `catalog_release` para dejar de exponer `source-row:*`.
+4. Continuar con imágenes, catálogo enriquecido y PWA/offline sobre releases inmutables.
 
 ### Sesión anterior: Inicialización del Proyecto (2026-08-17)
 

@@ -1,9 +1,10 @@
 # Estrategia de migraciones PostgreSQL
 
-> **Versión v0.1 — Documental — PostgreSQL todavía no instalado**
+> **Versión v0.3 — PostgreSQL local disponible — `0003` pendiente de aplicación**
 
-Esta estrategia acompaña `db/migrations/0001_initial_schema.sql`. El DDL es revisable pero no
-ha sido ejecutado. No existe todavía ninguna tabla real ni se ha instalado Alembic.
+Esta estrategia gobierna las migraciones SQL forward-only del proyecto. `0001` y `0002` fueron
+validadas previamente en PostgreSQL local. `0003_apply_workflow_permissions.sql` está revisada por
+pruebas estáticas, pero no se ha ejecutado. No se ha instalado Alembic.
 
 ## 1. Principios
 
@@ -20,8 +21,10 @@ ha sido ejecutado. No existe todavía ninguna tabla real ni se ha instalado Alem
 
 - Directorio: `db/migrations/`.
 - Nombre: número de cuatro dígitos, guion bajo y descripción snake_case.
-- Primera migración: `0001_initial_schema.sql`.
-- Ejemplos posteriores: `0002_add_supplier_reference.sql`, `0003_index_product_search.sql`.
+- `0001_initial_schema.sql`: esquema base.
+- `0002_plan_future_product_targets.sql`: separación entre productos resueltos y planificados.
+- `0003_apply_workflow_permissions.sql`: opcionalidad del conteo de variantes y permisos mínimos
+  para aprobar/aplicar.
 - La numeración es monotónica y nunca se reutiliza.
 - Cada migración declara al inicio su objetivo, precondiciones y compatibilidad mínima.
 

@@ -78,6 +78,30 @@ interactiva. El procedimiento controlado está en `scripts/run_productive_block_
 El dry-run limita el piloto a 5,000 filas de forma predeterminada. `--max-rows` permite cambiar el
 límite conscientemente, pero no debe ampliarse al catálogo completo antes de aprobar el piloto.
 
+### Aprobación y aplicación controlada
+
+El flujo transaccional ya está implementado, pero la migración `0003` **no fue aplicada** y ningún
+plan empresarial fue aprobado ni ejecutado en esta etapa. Antes de usarlo se debe validar la
+migración en un entorno de prueba y generar un plan nuevo con las versiones actuales.
+
+```powershell
+# Inspección de solo lectura
+.\.venv\Scripts\perfect-catalog.exe inspect-plan <PLAN_UUID> --prompt-password
+
+# Registra una aprobación humana del fingerprint exacto; todavía no escribe productos
+.\.venv\Scripts\perfect-catalog.exe approve-plan <PLAN_UUID> `
+  --fingerprint <SHA256_DE_64_CARACTERES> `
+  --actor <USUARIO> --reason "Piloto revisado" --prompt-password
+
+# Solo después de la autorización operacional expresa
+.\.venv\Scripts\perfect-catalog.exe apply-plan <PLAN_UUID> `
+  --fingerprint <EL_MISMO_SHA256> `
+  --actor <USUARIO> --reason "Aplicación autorizada" --prompt-password
+```
+
+El detalle de estados, controles, alcance y recuperación está en
+[`docs/APPLY_WORKFLOW.md`](docs/APPLY_WORKFLOW.md).
+
 ### Estado y auditoría
 
 La matriz vigente de requisitos y el plan por dependencias están en
@@ -151,8 +175,9 @@ git branch -a
 | Componente | Estado |
 |-----------|--------|
 | Documentación | ✓ Arquitectura inicial definida |
-| Base de Datos | PostgreSQL instalado; 24 tablas/migraciones validadas previamente; integración actual opt-in |
+| Base de Datos | PostgreSQL instalado; migraciones `0001`/`0002` validadas; `0003` preparada, no aplicada |
 | Backend | FastAPI de consulta v1 implementada sobre fuente provisional XLSX/staging |
+| Apply | Workflow transaccional implementado y probado unitariamente; pendiente validación PostgreSQL sintética y autorización |
 | Frontend | Catálogo responsive y ficha imprimible piloto |
 | Exportación | ⏳ Pendiente BD |
 | InDesign | ⏳ Pendiente exportación |
@@ -165,4 +190,4 @@ git branch -a
 ---
 
 **Última actualización**: 2026-08-24
-**Siguiente revisión**: contrato flexible de importación y lectura desde releases publicados
+**Siguiente revisión**: validar `0003` y apply sintético; después leer releases publicados
