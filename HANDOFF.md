@@ -9,6 +9,9 @@
 - ✓ Documentación base creada
 - ✓ Estructura de carpetas planificada
 - ✓ Reglas no negociables documentadas
+- ✓ Muestra real de Odoo analizada preliminarmente
+- ✓ Schema y migración validados en PostgreSQL
+- ✓ Dry-run de Natsuki ejecutado sin escrituras empresariales
 
 ### Completado en Esta Sesión
 
@@ -31,42 +34,43 @@
      - README.md
      - .env.example
 
-3. **Documentación**
-   - Reglas no negociables: 25 reglas documentadas
+3. **Documentación y validación**
+   - Reglas no negociables documentadas
    - Estructura organizativa: empresa, marcas, fuente maestra
    - Funcionalidades: búsqueda, filtrado, generación de catálogos
    - Formatos de salida: web, PDF, InDesign
+   - `docs/DATA_SPEC.md`: perfil preliminar de la muestra de 893 filas
+   - Plan de importación persistido en `awaiting_review`
 
 ### Próximos Pasos (Orden de Prioridad)
 
-#### FASE 1: Análisis de Datos (BLOQUEANTE)
-- [ ] Obtener Excel/CSV real de Odoo (Natsuki)
-- [ ] Analizar estructura de columnas
-- [ ] Documentar campos disponibles
-- [ ] Identificar relaciones (OEM, cross-ref, FMSI, etc.)
-- [ ] Crear DATA_SPEC.md con especificación de importación
+#### FASE 1: Análisis de Datos (PRELIMINAR COMPLETADO)
+- [x] Analizar muestra real de Excel de Odoo (Natsuki / Empaques)
+- [x] Analizar estructura de columnas y completitud
+- [x] Documentar campos observados en DATA_SPEC.md
+- [ ] Obtener exportación completa de Odoo para ampliar la evidencia
+- [ ] Identificar relaciones OEM, cross-reference, FMSI y aplicaciones vehiculares
+- [ ] Convertir la especificación preliminar en contrato definitivo tras recibir más exportaciones
 
 **Responsable**: Analista de Datos / Odoo  
-**Dependencias**: Excel/CSV real  
-**Estimación**: 2-4 horas  
+**Dependencias actuales**: Exportación completa y/o nuevas muestras de Odoo
 
-#### FASE 2: Diseño de Base de Datos
-- [ ] Diseñar schema de PostgreSQL basado en Excel
-- [ ] Definir tablas: productos, referencias, marcas, modelos, categorías, líneas
-- [ ] Relaciones y constraints
-- [ ] Índices para búsqueda rápida
-- [ ] Script SQL de inicialización
+#### FASE 2: Diseño y Validación de Base de Datos
+- [x] Diseñar schema de PostgreSQL preliminar
+- [x] Definir tablas, relaciones, constraints e índices
+- [x] Validar DDL y migración en PostgreSQL
+- [ ] Revisar ajustes del schema contra la exportación completa
 
 **Responsable**: Coordinador + Ingeniero Backend  
 **Dependencias**: DATA_SPEC.md  
 **Bloqueado por**: FASE 1  
 
-#### FASE 3: Importador de Datos (Prototipo)
-- [ ] Importador Python para Excel/CSV
-- [ ] Validaciones de datos
-- [ ] Manejo de imágenes (copiar, no modificar)
-- [ ] Logging de importación
-- [ ] Rollback en caso de error
+#### FASE 3: Importador de Datos (Dry-run preliminar)
+- [x] Importador Python para la muestra Excel/CSV
+- [x] Validaciones, staging y resultados separados
+- [x] Plan persistido con hash canónico y compuerta de aprobación
+- [x] Control de imágenes sin decodificar ni modificar originales
+- [ ] Ampliar reglas con la exportación completa de Odoo
 
 **Responsable**: Ingeniero Backend  
 **Dependencias**: Schema de BD  
@@ -113,14 +117,11 @@
 
 ### NO Hacer Todavía
 
-- ❌ Instalar PostgreSQL (la arquitectura está definida, pero la instalación aún no corresponde)
-- ❌ Instalar pgAdmin
-- ❌ Crear .venv
-- ❌ pip install de librerías
-- ❌ Programar FastAPI
-- ❌ Programar importador definitivo (esperar Excel real)
+- ❌ Ejecutar APPLY sin revisión y aprobación humana explícita
+- ❌ Tratar la muestra de 893 filas como el catálogo completo
+- ❌ Declarar definitivo el contrato del importador con la evidencia actual
 - ❌ Tocar fotografías originales
-- ❌ Crear schema de BD (esperar análisis de datos)
+- ❌ Modificar el Excel maestro de muestra
 
 ### Decisiones de Arquitectura Cerradas
 
