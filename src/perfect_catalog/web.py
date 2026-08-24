@@ -5,7 +5,7 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import parse_qs, urlparse
 
 import psycopg
@@ -48,6 +48,24 @@ input {{ background:var(--card); color:var(--ink); }} button {{ background:var(-
 </main></body></html>"""
 
 
+class CatalogReader(Protocol):
+    def close(self) -> None: ...
+
+    def plan(self) -> tuple[str, int, int]: ...
+
+    def search(
+        self,
+        query: str,
+        category: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]: ...
+
+    def product(self, source_row_number: int) -> dict[str, Any] | None: ...
+
+    def categories(self) -> list[dict[str, Any]]: ...
+
+
 class CatalogRepository:
     def __init__(self, config: DatabaseConfig, password: str) -> None:
         self.connection = psycopg.connect(**config.connection_kwargs(password), autocommit=True)
@@ -68,7 +86,13 @@ class CatalogRepository:
         ).fetchone()
         return (str(row[0]), int(row[1]), int(row[2])) if row else ("sin_plan", 0, 0)
 
-    def search(self, query: str, category: str, limit: int = 100) -> list[dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        category: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
         like_query = f"%{query}%"
         like_category = f"%{category}%"
         rows = self.connection.execute(
@@ -82,11 +106,53 @@ class CatalogRepository:
                    OR r.normalized_data->>'name_normalized' ILIKE %s)
               AND r.normalized_data->>'category_path' ILIKE %s
             ORDER BY r.normalized_data->>'internal_reference_normalized'
-            LIMIT %s
+            LIMIT %s OFFSET %s
             """,
-            (like_query, like_query, like_category, limit),
+            (like_query, like_query, like_category, limit, offset),
         ).fetchall()
         return [{"row": int(source_row), "data": data} for source_row, data in rows]
+
+    def product(self, source_row_number: int) -> dict[str, Any] | None:
+        row = self.connection.execute(
+            """
+            SELECT sr.source_row_number, r.normalized_data
+            FROM perfect_catalog.staging_row_result AS r
+            JOIN perfect_catalog.staging_row AS sr ON sr.staging_row_id = r.staging_row_id
+            WHERE r.import_batch_id = (
+                SELECT import_batch_id
+                FROM perfect_catalog.import_plan
+                ORDER BY generated_at DESC
+                LIMIT 1
+            )
+              AND r.processing_stage = 'reconciled'
+              AND sr.source_row_number = %s
+            ORDER BY r.created_at DESC
+            LIMIT 1
+            """,
+            (source_row_number,),
+        ).fetchone()
+        return {"row": int(row[0]), "data": row[1]} if row else None
+
+    def categories(self) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            """
+            SELECT r.normalized_data->>'category_path' AS category, count(*)
+            FROM perfect_catalog.staging_row_result AS r
+            WHERE r.import_batch_id = (
+                SELECT import_batch_id
+                FROM perfect_catalog.import_plan
+                ORDER BY generated_at DESC
+                LIMIT 1
+            )
+              AND r.processing_stage = 'reconciled'
+            GROUP BY r.normalized_data->>'category_path'
+            ORDER BY r.normalized_data->>'category_path' NULLS LAST
+            """
+        ).fetchall()
+        return [
+            {"value": str(category) if category is not None else None, "count": int(count)}
+            for category, count in rows
+        ]
 
 
 class ExcelCatalogRepository:
@@ -104,14 +170,24 @@ class ExcelCatalogRepository:
     def plan(self) -> tuple[str, int, int]:
         return ("muestra_local", len(self.rows), len(self.rows))
 
-    def search(self, query: str, category: str, limit: int = 100) -> list[dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        category: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
         query_upper = query.upper()
         category_upper = category.upper()
         matches = []
+        skipped = 0
         for row in self.rows:
             data = row.normalized
             haystack = f"{data['internal_reference_normalized']} {data['name_normalized']}"
             if query_upper not in haystack or category_upper not in str(data.get("category_path") or "").upper():
+                continue
+            if skipped < offset:
+                skipped += 1
                 continue
             matches.append({"row": row.source_row_number, "data": data})
             if len(matches) >= limit:
@@ -123,6 +199,17 @@ class ExcelCatalogRepository:
             if row.source_row_number == source_row_number:
                 return {"row": row.source_row_number, "data": row.normalized}
         return None
+
+    def categories(self) -> list[dict[str, Any]]:
+        counts: dict[str | None, int] = {}
+        for row in self.rows:
+            value = row.normalized.get("category_path")
+            category = str(value) if value is not None and str(value).strip() else None
+            counts[category] = counts.get(category, 0) + 1
+        return [
+            {"value": category, "count": counts[category]}
+            for category in sorted(counts, key=lambda value: (value is None, value or ""))
+        ]
 
 
 class AutoExcelCatalogRepository:
@@ -157,11 +244,20 @@ class AutoExcelCatalogRepository:
     def plan(self) -> tuple[str, int, int]:
         return self._current().plan()
 
-    def search(self, query: str, category: str, limit: int = 100) -> list[dict[str, Any]]:
-        return self._current().search(query, category, limit)
+    def search(
+        self,
+        query: str,
+        category: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        return self._current().search(query, category, limit, offset)
 
     def product(self, source_row_number: int) -> dict[str, Any] | None:
         return self._current().product(source_row_number)
+
+    def categories(self) -> list[dict[str, Any]]:
+        return self._current().categories()
 
 
 def render_results(items: list[dict[str, Any]]) -> str:
@@ -211,7 +307,7 @@ def render_product(product: dict[str, Any], printable: bool = False) -> str:
 </main></body></html>"""
 
 
-def make_handler(repository: CatalogRepository) -> type[BaseHTTPRequestHandler]:
+def make_handler(repository: CatalogReader) -> type[BaseHTTPRequestHandler]:
     class CatalogHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             parsed = urlparse(self.path)
@@ -254,7 +350,7 @@ def make_handler(repository: CatalogRepository) -> type[BaseHTTPRequestHandler]:
     return CatalogHandler
 
 
-def serve(repository: CatalogRepository, host: str = "127.0.0.1", port: int = 8080) -> None:
+def serve(repository: CatalogReader, host: str = "127.0.0.1", port: int = 8080) -> None:
     server = ThreadingHTTPServer((host, port), make_handler(repository))
     print(f"Catálogo local: http://{host}:{port}")
     print("Solo lectura. Presiona Ctrl+C para detener.")

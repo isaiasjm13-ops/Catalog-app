@@ -1,6 +1,30 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
-## Sesión Actual: Inicialización del Proyecto (2026-08-17)
+## Sesión Actual: Auditoría v2.2 y API FastAPI (2026-08-24)
+
+### Resultado de esta sesión
+
+- Auditoría provisional documentada en `docs/STATUS_AUDIT_V2_2.md`.
+- Bloqueo exacto: no se recibió `Manual_Desde_Cero_Perfect_Trading_Natsuki_v2.2.pdf`; solo llegó
+  el texto del encargo. La conformidad literal con el manual no puede cerrarse hasta adjuntarlo.
+- API FastAPI v1 de solo lectura implementada sin retirar el visor existente.
+- Endpoints: salud, productos con búsqueda/paginación, detalle y categorías; OpenAPI en `/docs`.
+- El comando instalable `perfect-catalog-api` y `INICIAR-SERVER.cmd` arrancan el servidor Uvicorn.
+- Empaquetado corregido: `tools.odoo_profiler` funciona fuera de la raíz del repositorio.
+- `.env.example` corregido para no presentar SQLite como base de desarrollo.
+- Prueba de humo real: XLSX maestro de 893 filas, API devuelve catálogo y fichas correctamente.
+- Pruebas: 68 descubiertas; 66 aprobadas y 2 integraciones PostgreSQL omitidas por ser opt-in.
+
+### Próxima etapa por dependencias
+
+1. Sustituir el contrato rígido de 893 filas/13 posiciones por contratos versionados con columnas
+   críticas/opcionales y reportes explícitos de columnas nuevas o faltantes.
+2. Implementar y probar aprobación/aplicación idempotente sin ejecutar ningún plan empresarial
+   hasta revisión humana expresa.
+3. Crear el read model estable desde `catalog_release` para dejar de exponer `source-row:*`.
+4. Continuar con imágenes, catálogo enriquecido y PWA/offline sobre releases inmutables.
+
+### Sesión anterior: Inicialización del Proyecto (2026-08-17)
 
 ### Estado de Cumplimiento ✓
 
@@ -180,4 +204,3 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 3. **Continúa desde Último Checkpoint**: Busca checkboxes [ ] sin marcar
 4. **Antes de Cerrar Sesión**: Actualiza este archivo con tu progreso
 5. **Comenta Decisiones**: Explica el "por qué" no solo el "qué"
-

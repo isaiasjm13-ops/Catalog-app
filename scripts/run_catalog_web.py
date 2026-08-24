@@ -3,7 +3,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from perfect_catalog.web import AutoExcelCatalogRepository, ExcelCatalogRepository, serve
+import uvicorn
+
+from perfect_catalog.api import create_app
+from perfect_catalog.web import AutoExcelCatalogRepository, ExcelCatalogRepository
 
 
 parser = argparse.ArgumentParser(description="Inicia el catálogo local de solo lectura")
@@ -21,4 +24,4 @@ repository = (
 	if args.source is not None
 	else AutoExcelCatalogRepository(Path("data/imports"))
 )
-serve(repository, args.host, args.port)
+uvicorn.run(create_app(repository), host=args.host, port=args.port)
