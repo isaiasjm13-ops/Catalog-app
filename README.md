@@ -83,6 +83,11 @@ nombre o fila, filtra estados y permite aprobar/rechazar una sola ficha con moti
 el mismo fingerprint y `review_sha256` de la CLI. Está aislado en localhost, no monta el catálogo
 público ni OpenAPI, y aplica sesión firmada, CSRF, validación de origen, escape HTML y cabeceras CSP.
 
+La misma consola incorpora un centro de ingreso en `/operator/intake`. Antes de usarlo por primera
+vez, ejecuta `MIGRAR-INGRESOS.cmd`. Recibe XLSX/CSV/TSV de Odoo, PDF y paquetes ZIP de imágenes o
+InDesign, calcula SHA-256 y los conserva en cuarentena sin importar ni publicar automáticamente.
+Véase [`docs/INTAKE_WORKFLOW.md`](docs/INTAKE_WORKFLOW.md).
+
 Actualmente la pantalla mostrará “No hay planes aplicados para revisar”: es correcto, porque ningún
 plan empresarial ha sido aplicado. Véase [`docs/OPERATOR_WEB.md`](docs/OPERATOR_WEB.md).
 
@@ -105,10 +110,10 @@ se documenta en [`docs/RELEASE_READ_MODEL.md`](docs/RELEASE_READ_MODEL.md).
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-La suite completa, incluidas las cinco pruebas PostgreSQL y el dry-run real, se ejecuta con el
+La suite completa, incluidas las seis pruebas PostgreSQL y el dry-run real, se ejecuta con el
 procedimiento controlado `scripts/run_productive_block_validation.ps1`, o haciendo doble clic en
 `VALIDAR-BLOQUE.cmd`. Solicita las credenciales de forma interactiva y nunca las guarda. La
-ejecución del 2026-08-24 terminó con 128/128 pruebas y `integration=0;import=0`.
+ejecución del 2026-08-24 terminó con 143/143 pruebas y `integration=0;import=0`.
 
 El dry-run limita el piloto a 5,000 filas de forma predeterminada. `--max-rows` permite cambiar el
 límite conscientemente, pero no debe ampliarse al catálogo completo antes de aprobar el piloto.
@@ -258,10 +263,11 @@ git branch -a
 | Componente | Estado |
 |-----------|--------|
 | Documentación | ✓ Arquitectura inicial definida |
-| Base de Datos | PostgreSQL instalado; migraciones `0001`–`0006` aplicadas y validadas localmente |
+| Base de Datos | PostgreSQL instalado; migraciones `0001`–`0007` aplicadas y validadas localmente |
 | Backend | FastAPI v1.1: release publicado con UUID por defecto y modo piloto XLSX explícito |
 | Apply | Workflow transaccional validado con el rol real y rollback sintético; plan empresarial no autorizado |
 | Revisión | Consola web local protegida, paginada y validada; plan empresarial aún no aplicado |
+| Ingreso | Cuarentena web trazable para Odoo, imágenes, PDF e InDesign; procesamiento posterior explícito |
 | Frontend | Catálogo responsive y ficha imprimible piloto |
 | Exportación | ⏳ Pendiente BD |
 | InDesign | ⏳ Pendiente exportación |

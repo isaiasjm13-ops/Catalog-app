@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import re
+import tempfile
 import unittest
 import uuid
+from pathlib import Path
 from typing import Any
 
 import httpx
 
 from perfect_catalog.operator_api import (
+    MAX_UPLOAD_REQUEST_BYTES,
     OPERATOR_VERSION,
     OperatorAuthenticator,
     create_operator_app,
@@ -24,6 +27,7 @@ class SyntheticReviewGateway:
     def __init__(self) -> None:
         self.closed = False
         self.decisions: list[dict[str, Any]] = []
+        self.intake_records: list[dict[str, Any]] = []
         self.plan_data = {
             "import_plan_id": str(PLAN_ID),
             "approval_fingerprint_sha256": FINGERPRINT,
@@ -110,6 +114,38 @@ class SyntheticReviewGateway:
         )
         return {"status": "approved" if decision == "approve" else "rejected"}
 
+    def record_intake(self, record: dict[str, Any]) -> dict[str, Any]:
+        stored = {
+            **record,
+            "intake_submission_id": str(record["intake_submission_id"]),
+            "intake_asset_id": "asset-test" if record["validation_status"] == "quarantined" else None,
+            "duplicate_content": False,
+        }
+        self.intake_records.append(stored)
+        return stored
+
+    def intake_submissions(
+        self,
+        *,
+        kind: str = "all",
+        status: str = "all",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        items = list(reversed(self.intake_records))
+        if kind != "all":
+            items = [item for item in items if item["intake_kind"] == kind]
+        if status != "all":
+            items = [item for item in items if item["validation_status"] == status]
+        return {
+            "items": items[offset : offset + limit],
+            "filtered_count": len(items),
+            "kind": kind,
+            "status": status,
+            "limit": limit,
+            "offset": offset,
+        }
+
 
 def hidden_value(html: str, name: str) -> str:
     match = re.search(
@@ -150,6 +186,7 @@ class OperatorAuthenticatorTests(unittest.TestCase):
 
 class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
         self.gateway = SyntheticReviewGateway()
         self.auth = OperatorAuthenticator(
             "web-reviewer",
@@ -158,7 +195,11 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         )
         self.client = httpx.AsyncClient(
             transport=httpx.ASGITransport(
-                app=create_operator_app(self.gateway, self.auth)
+                app=create_operator_app(
+                    self.gateway,
+                    self.auth,
+                    intake_root=Path(self.temporary.name),
+                )
             ),
             base_url="http://testserver",
             follow_redirects=False,
@@ -166,6 +207,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         await self.client.aclose()
+        self.temporary.cleanup()
 
     async def login(self) -> None:
         login_page = await self.client.get("/operator/login")
@@ -278,7 +320,102 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.0.0")
+        self.assertEqual(OPERATOR_VERSION, "1.1.0")
+
+    async def test_intake_requires_auth_origin_csrf_and_confirmation(self) -> None:
+        unauthenticated = await self.client.get("/operator/intake")
+        self.assertEqual(unauthenticated.status_code, 303)
+        await self.login()
+        page = await self.client.get("/operator/intake")
+        csrf = hidden_value(page.text, "csrf_token")
+        files = {"file": ("manual.pdf", b"%PDF-1.7\nvalid", "application/pdf")}
+        fields = {
+            "csrf_token": csrf,
+            "kind": "manual_pdf",
+            "reason": "Manual oficial recibido",
+            "confirm": "yes",
+        }
+        missing_origin = await self.client.post("/operator/intake", data=fields, files=files)
+        self.assertEqual(missing_origin.status_code, 403)
+        wrong_csrf = await self.client.post(
+            "/operator/intake",
+            data={**fields, "csrf_token": "wrong"},
+            files=files,
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(wrong_csrf.status_code, 403)
+        unconfirmed = await self.client.post(
+            "/operator/intake",
+            data={key: value for key, value in fields.items() if key != "confirm"},
+            files=files,
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(unconfirmed.status_code, 422)
+        self.assertEqual(self.gateway.intake_records, [])
+
+        duplicated = await self.client.post(
+            "/operator/intake",
+            files=[
+                ("csrf_token", (None, csrf)),
+                ("kind", (None, "manual_pdf")),
+                ("kind", (None, "odoo_data")),
+                ("reason", (None, "Carga con parámetro duplicado")),
+                ("confirm", (None, "yes")),
+                ("file", ("manual.pdf", b"%PDF-1.7\nvalid", "application/pdf")),
+            ],
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(duplicated.status_code, 422)
+        self.assertEqual(self.gateway.intake_records, [])
+
+        oversized = await self.client.post(
+            "/operator/intake",
+            content=b"ignored",
+            headers={
+                "Origin": "http://testserver",
+                "Content-Type": "multipart/form-data; boundary=test",
+                "Content-Length": str(MAX_UPLOAD_REQUEST_BYTES + 1),
+            },
+        )
+        self.assertEqual(oversized.status_code, 413)
+
+    async def test_intake_quarantines_valid_file_and_records_rejection(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/intake")
+        csrf = hidden_value(page.text, "csrf_token")
+        fields = {
+            "csrf_token": csrf,
+            "kind": "manual_pdf",
+            "reason": "Manual oficial recibido",
+            "confirm": "yes",
+        }
+        accepted = await self.client.post(
+            "/operator/intake",
+            data=fields,
+            files={"file": ("manual<script>.pdf", b"%PDF-1.7\nvalid", "application/pdf")},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(accepted.status_code, 303)
+        self.assertIn("result=quarantined", accepted.headers["location"])
+        self.assertEqual(self.gateway.intake_records[0]["submitted_by"], "web-reviewer")
+
+        rejected = await self.client.post(
+            "/operator/intake",
+            data=fields,
+            files={"file": ("manual.pdf", b"not-pdf", "application/pdf")},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(rejected.status_code, 303)
+        self.assertIn("result=rejected", rejected.headers["location"])
+        history = await self.client.get("/operator/intake?result=rejected")
+        self.assertIn("Archivo rechazado", history.text)
+        self.assertIn("Manual oficial recibido", history.text)
+        self.assertIn("manual&lt;script&gt;.pdf", history.text)
+        self.assertNotIn("manual<script>.pdf", history.text)
+        self.assertEqual(len(self.gateway.intake_records), 2)
+
+        invalid_filter = await self.client.get("/operator/intake?kind=executable")
+        self.assertEqual(invalid_filter.status_code, 400)
 
 
 if __name__ == "__main__":

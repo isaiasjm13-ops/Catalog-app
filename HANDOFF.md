@@ -1,8 +1,22 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
-## Sesión Actual: Consola web local de revisión (2026-08-24)
+## Sesión Actual: Centro web de ingreso protegido (2026-08-24)
 
 ### Resultado de esta sesión
+
+- Centro de ingreso añadido a `http://127.0.0.1:8081/operator/intake` dentro de la sesión operador;
+  recibe Odoo XLSX/CSV/TSV, manual PDF y paquetes ZIP de imágenes o InDesign.
+- Migración forward-only `0007`: `intake_asset` deduplica objetos por SHA-256 y
+  `intake_submission` conserva cada evento; ambas tablas son append-only y el rol de aplicación
+  sólo recibe `SELECT`/`INSERT`.
+- Cuarentena local content-addressed en `data/intake`, excluida de Git; nombres recibidos nunca se
+  convierten en rutas y una carga no ejecuta importación, extracción, apply ni publicación.
+- Límites por tipo, `Content-Length`, multipart acotado, filename seguro, firma básica, SHA-256,
+  ZIP traversal/enlaces/cifrado/expansión, ejecutables bloqueados y compensación ante fallo de BD.
+- Historial paginado y filtrable con actor, motivo, hash, duplicados y causa de rechazo. Los bytes
+  rechazados se borran; su evidencia permanece en PostgreSQL.
+- `MIGRAR-INGRESOS.cmd` aplica `0007` y `docs/INTAKE_WORKFLOW.md` documenta operación, backup,
+  alcance de cuarentena y la separación del procesamiento posterior.
 
 - Consola Jinja2 separada implementada en `http://127.0.0.1:8081/operator`; el catálogo piloto de
   `INICIAR-SERVER.cmd` permanece intacto y de solo lectura en el puerto 8080.
@@ -27,8 +41,8 @@
   valida al final de la transacción que producto y referencia tengan estados coherentes.
 - El constructor de releases ahora rechaza una marca completa si conserva identidades pendientes;
   ya no puede omitirlas silenciosamente y publicar un subconjunto accidental.
-- La cola CLI tiene un límite explícito de 5,000 identidades; no trunca. El piloto de 893 cabe, pero
-  la escala objetivo requerirá una cola web paginada antes de abrir el catálogo completo.
+- La cola CLI tiene un límite explícito de 5,000 identidades; no trunca. La consola web ya pagina
+  por consulta para la escala objetivo.
 - `INICIAR-SERVER.cmd` abre el visor XLSX actual en `http://127.0.0.1:8080/`; todavía no presenta la
   cola PostgreSQL ni acciones de revisión.
 
@@ -72,16 +86,19 @@
   UUID y detección de manipulación, todo con datos sintéticos y rollback.
 - Integración completa como rol real: apply sintético, activación/revisión sintética, build,
   checksum erróneo, publicación, lectura UUID, archivo, reintentos e inmutabilidad con rollback.
-- Pruebas: 128 descubiertas y 128 aprobadas, incluidas las 5 integraciones PostgreSQL.
+- Pruebas: 143 descubiertas y 143 aprobadas, incluidas las 6 integraciones PostgreSQL.
 - Dry-run real v0.3 repetido: 893 filas, 2,497 items, archivo intacto y 0 escrituras empresariales.
 - Ningún plan real fue aprobado/aplicado ni se publicó un release empresarial; no se modificó Odoo
   ni el Excel fuente y las ocho tablas empresariales siguen vacías.
 
 ### Próxima etapa por dependencias
 
-1. Añadir reconciliación `update` campo por campo, con `before_values`, si la exportación completa
-   aporta identidad Odoo estable; hasta entonces permanece bloqueada por diseño.
-2. Continuar con imágenes, catálogo enriquecido y PWA/offline sobre releases inmutables.
+1. Añadir una promoción explícita desde cuarentena hacia perfilado/dry-run; la recepción nunca debe
+   importar automáticamente.
+2. Construir el índice no destructivo de imágenes sobre un ZIP de cuarentena validado.
+3. Añadir reconciliación `update` campo por campo cuando una exportación completa aporte identidad
+   Odoo estable; hasta entonces permanece bloqueada por diseño.
+4. Continuar con catálogo enriquecido y PWA/offline sobre releases inmutables.
 
 ### Sesión anterior: Inicialización del Proyecto (2026-08-17)
 

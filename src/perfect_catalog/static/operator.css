@@ -41,6 +41,9 @@ code { font-family: "Cascadia Code", Consolas, monospace; overflow-wrap: anywher
 .brand small { margin-top: 2px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; }
 .operator-meta { display: flex; gap: 10px; align-items: center; color: var(--muted); font-size: 13px; }
 .operator-meta form { display: inline; }
+.operator-nav { display: flex; align-items: center; gap: 5px; padding: 4px; border: 1px solid rgba(12, 91, 72, .13); border-radius: 999px; background: rgba(255,255,255,.55); }
+.operator-nav a { padding: 8px 13px; border-radius: 999px; color: var(--muted); font-size: 12px; font-weight: 700; text-decoration: none; }
+.operator-nav a:hover { color: var(--forest); background: white; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #42a66d; box-shadow: 0 0 0 4px rgba(66, 166, 109, .12); }
 .link-button { border: 0; background: transparent; color: var(--forest); cursor: pointer; text-decoration: underline; font: inherit; padding: 4px; }
 .kicker { display: inline-block; color: var(--forest); font-size: 11px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
@@ -146,9 +149,51 @@ dd { margin: 0; font-size: 12px; }
 .empty-state p { max-width: 550px; margin: 0 auto 22px; }
 .error-state { margin-top: 80px; }
 
+.intake-heading h1 { max-width: 760px; }
+.intake-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr); gap: 20px; align-items: start; }
+.upload-card, .intake-rules { border: 1px solid rgba(12, 91, 72, .13); border-radius: 22px; background: var(--card); box-shadow: var(--shadow); }
+.upload-card { padding: clamp(24px, 4vw, 38px); }
+.upload-card > p { max-width: 700px; }
+.upload-form { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 26px; }
+.upload-form label { display: grid; gap: 7px; }
+.upload-form label:nth-of-type(3), .upload-form .confirm-field, .upload-form button { grid-column: 1 / -1; }
+.upload-form input[type="file"] { padding: 11px 12px; }
+.upload-form label small { color: var(--muted); font-size: 10px; line-height: 1.5; }
+.upload-form .confirm-field { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.upload-form .confirm-field input { width: 17px; min-height: 17px; margin-top: 2px; accent-color: var(--forest); }
+.intake-rules { padding: 30px; }
+.intake-rules ol { display: grid; gap: 0; margin: 22px 0; padding: 0; list-style: none; counter-reset: intake-step; }
+.intake-rules li { counter-increment: intake-step; display: grid; grid-template-columns: 34px 1fr; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.intake-rules li::before { content: counter(intake-step, decimal-leading-zero); color: var(--forest); font: 600 13px "Cascadia Code", Consolas, monospace; grid-row: 1 / 3; }
+.intake-rules li strong, .intake-rules li span { display: block; }
+.intake-rules li strong { font-size: 13px; }
+.intake-rules li span { margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.quarantine-note { padding: 14px; border-radius: 12px; color: #6f541b; background: #fff3d8; font-size: 11px; line-height: 1.55; }
+.history-heading { display: flex; justify-content: space-between; align-items: end; padding: 48px 0 16px; }
+.history-heading h2 { margin-bottom: 0; }
+.history-heading > span { color: var(--muted); font-size: 11px; }
+.intake-filter { grid-template-columns: minmax(220px, 1fr) minmax(180px, .6fr) auto; padding-top: 8px; }
+.intake-history { display: grid; gap: 10px; }
+.intake-row { position: relative; display: grid; grid-template-columns: 58px minmax(240px, 1fr) minmax(230px, .72fr) 150px; gap: 18px; align-items: center; padding: 18px 20px; overflow: hidden; border: 1px solid rgba(12, 91, 72, .13); border-radius: 16px; background: var(--card); }
+.intake-row::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: #48a46f; }
+.intake-row.status-rejected::before { background: var(--red); }
+.file-icon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 13px; color: var(--forest); background: #e7eee7; font: 800 11px "Cascadia Code", Consolas, monospace; }
+.intake-file h3 { margin: 5px 0 7px; font: 600 17px Georgia, serif; overflow-wrap: anywhere; }
+.intake-facts { display: flex; flex-wrap: wrap; gap: 6px 13px; color: var(--muted); font-size: 10px; }
+.intake-proof { display: grid; gap: 7px; justify-items: start; }
+.intake-proof code { color: var(--muted); font-size: 9px; }
+.duplicate-chip { padding: 4px 7px; border-radius: 999px; color: #6f541b; background: #fff3d8; font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.intake-details { color: var(--muted); font-size: 11px; }
+.intake-details summary { color: var(--forest); cursor: pointer; font-weight: 700; }
+.intake-details dl { position: absolute; z-index: 2; right: 18px; width: min(480px, calc(100% - 36px)); margin-top: 10px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: white; box-shadow: var(--shadow); }
+.intake-details dl div { display: grid; grid-template-columns: 110px 1fr; gap: 10px; padding: 6px 0; }
+
 @media (max-width: 980px) {
   .review-card { grid-template-columns: 1fr 1fr; }
   .decision-form, .blocked-note, .resolved-note { grid-column: 1 / -1; }
+  .intake-layout { grid-template-columns: 1fr; }
+  .intake-row { grid-template-columns: 58px 1fr 1fr; }
+  .intake-details { grid-column: 2 / -1; }
 }
 
 @media (max-width: 760px) {
@@ -156,6 +201,8 @@ dd { margin: 0; font-size: 12px; }
   .login-layout { grid-template-columns: 1fr; padding: 45px 0 20px; }
   .login-intro h1 { font-size: 48px; }
   .topbar, .page-heading, .queue-heading { align-items: start; }
+  .topbar { flex-wrap: wrap; gap: 10px; padding: 14px 0; }
+  .operator-nav { order: 3; width: 100%; justify-content: center; }
   .page-heading, .queue-heading { display: grid; }
   .operator-meta > span:not(.status-dot) { display: none; }
   .plan-grid { grid-template-columns: 1fr; }
@@ -163,4 +210,8 @@ dd { margin: 0; font-size: 12px; }
   .review-card { grid-template-columns: 1fr; gap: 18px; }
   .decision-form, .blocked-note, .resolved-note { grid-column: auto; }
   .evidence-strip { grid-template-columns: 1fr; }
+  .upload-form { grid-template-columns: 1fr; }
+  .upload-form label:nth-of-type(3), .upload-form .confirm-field, .upload-form button { grid-column: auto; }
+  .intake-row { grid-template-columns: 48px 1fr; }
+  .intake-proof, .intake-details { grid-column: 1 / -1; }
 }

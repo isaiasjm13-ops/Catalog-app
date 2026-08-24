@@ -13,6 +13,7 @@ import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from importlib.resources import files
+from pathlib import Path
 from typing import Any, Callable, Protocol
 from urllib.parse import parse_qs, urlencode, urlsplit
 
@@ -23,13 +24,21 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import UploadFile
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import DatabaseConfig, prompt_password
+from .intake import (
+    INTAKE_KINDS,
+    MAX_UPLOAD_REQUEST_BYTES,
+    SecureIntakeService,
+    intake_kind_options,
+)
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.0.0"
+OPERATOR_VERSION = "1.1.0"
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
 MAX_FORM_BYTES = 16_384
@@ -67,6 +76,17 @@ class ReviewGateway(Protocol):
         actor: str,
         reason: str,
     ) -> dict[str, Any]: ...
+
+    def intake_submissions(
+        self,
+        *,
+        kind: str = "all",
+        status: str = "all",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]: ...
+
+    def record_intake(self, record: dict[str, Any]) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True)
@@ -274,6 +294,15 @@ def _uuid(value: str, label: str) -> uuid.UUID:
         raise ValueError(f"{label} no contiene un UUID válido.") from exc
 
 
+def _human_size(value: int) -> str:
+    size = float(value)
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if size < 1024 or unit == "GiB":
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    raise AssertionError("unreachable")
+
+
 def _error(
     environment: Environment,
     status_code: int,
@@ -295,9 +324,15 @@ def _error(
 
 
 def create_operator_app(
-    gateway: ReviewGateway, authenticator: OperatorAuthenticator
+    gateway: ReviewGateway,
+    authenticator: OperatorAuthenticator,
+    *,
+    intake_root: Path | None = None,
 ) -> FastAPI:
     environment = _templates()
+    intake_service = SecureIntakeService(
+        intake_root or Path("data/intake"), gateway
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -455,6 +490,204 @@ def create_operator_app(
             version=OPERATOR_VERSION,
         )
 
+    @app.get("/operator/intake", response_class=HTMLResponse)
+    async def intake_page(
+        request: Request,
+        kind: str = "all",
+        status: str = "all",
+        page: int = 1,
+    ) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            if page < 1 or page > 100_000:
+                raise ValueError("Página fuera del rango permitido.")
+            limit = 50
+            submissions = await run_in_threadpool(
+                intake_service.list,
+                kind=kind,
+                status=status,
+                limit=limit,
+                offset=(page - 1) * limit,
+            )
+        except ValueError as exc:
+            return _error(
+                environment,
+                400,
+                "Filtro inválido",
+                str(exc),
+                session=session_or_redirect,
+            )
+        except Exception:
+            return _error(
+                environment,
+                503,
+                "PostgreSQL no disponible",
+                "No se pudo leer el historial de ingresos. "
+                "Revisa la consola del servidor operador.",
+                session=session_or_redirect,
+            )
+        for submission in submissions["items"]:
+            submission["size_label"] = _human_size(submission["size_bytes"])
+            submitted_at = submission["submitted_at"]
+            submission["submitted_label"] = (
+                submitted_at.strftime("%Y-%m-%d %H:%M UTC")
+                if hasattr(submitted_at, "strftime")
+                else str(submitted_at)
+            )
+        result = request.query_params.get("result")
+        message = {
+            "quarantined": (
+                "Archivo validado y guardado en cuarentena. "
+                "No fue importado ni publicado."
+            ),
+            "duplicate": (
+                "Contenido duplicado reconocido. "
+                "Se conservó el nuevo evento sin copiar los bytes."
+            ),
+            "rejected": "Archivo rechazado por el validador. No se conservaron sus bytes.",
+        }.get(result)
+        query_args = {"kind": kind, "status": status}
+        previous_url = (
+            f"/operator/intake?{urlencode({**query_args, 'page': page - 1})}"
+            if page > 1
+            else None
+        )
+        next_url = (
+            f"/operator/intake?{urlencode({**query_args, 'page': page + 1})}"
+            if page * limit < submissions["filtered_count"]
+            else None
+        )
+        return _render(
+            environment,
+            "operator_intake.html",
+            submissions=submissions,
+            kinds=intake_kind_options(),
+            kind_labels={
+                key: value["label"] for key, value in INTAKE_KINDS.items()
+            },
+            selected_kind=kind,
+            selected_status=status,
+            page=page,
+            previous_url=previous_url,
+            next_url=next_url,
+            message=message,
+            request_result=result,
+            session=session_or_redirect,
+            version=OPERATOR_VERSION,
+        )
+
+    @app.post("/operator/intake")
+    async def submit_intake(request: Request) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        if not _same_origin(request):
+            return _error(
+                environment,
+                403,
+                "Solicitud rechazada",
+                "El origen de la carga no coincide.",
+                session=session,
+            )
+        content_type = request.headers.get("content-type", "")
+        if not content_type.lower().startswith("multipart/form-data;"):
+            return _error(
+                environment,
+                415,
+                "Formulario inválido",
+                "La carga debe usar multipart/form-data.",
+                session=session,
+            )
+        try:
+            content_length = int(request.headers.get("content-length", ""))
+        except ValueError:
+            return _error(
+                environment,
+                411,
+                "Longitud requerida",
+                "La carga debe declarar un tamaño válido.",
+                session=session,
+            )
+        if content_length <= 0 or content_length > MAX_UPLOAD_REQUEST_BYTES:
+            return _error(
+                environment,
+                413,
+                "Carga demasiado grande",
+                "La solicitud supera el límite global de 2 GiB.",
+                session=session,
+            )
+        try:
+            async with request.form(
+                max_files=1, max_fields=5, max_part_size=MAX_FORM_BYTES
+            ) as form:
+                expected_fields = {"csrf_token", "kind", "reason", "confirm", "file"}
+                if set(form.keys()) != expected_fields or any(
+                    len(form.getlist(field)) != 1 for field in expected_fields
+                ):
+                    raise ValueError(
+                        "El formulario contiene campos ausentes, desconocidos o duplicados."
+                    )
+                upload = form.getlist("file")[0]
+                if not isinstance(upload, UploadFile):
+                    raise ValueError("Debes seleccionar exactamente un archivo.")
+                if not hmac.compare_digest(
+                    str(form.get("csrf_token") or ""), session.csrf_token
+                ):
+                    return _error(
+                        environment,
+                        403,
+                        "Solicitud rechazada",
+                        "La evidencia CSRF no coincide.",
+                        session=session,
+                    )
+                if form.get("confirm") != "yes":
+                    raise ValueError(
+                        "Debes confirmar que la carga no ejecuta una importación."
+                    )
+                submitted = await run_in_threadpool(
+                    intake_service.submit,
+                    upload.file,
+                    filename=upload.filename,
+                    claimed_media_type=upload.content_type,
+                    kind=str(form.get("kind") or ""),
+                    actor=session.actor,
+                    reason=str(form.get("reason") or ""),
+                )
+        except StarletteHTTPException:
+            return _error(
+                environment,
+                400,
+                "Formulario inválido",
+                "La estructura multipart de la carga no es válida.",
+                session=session,
+            )
+        except (ValueError, RuntimeError) as exc:
+            return _error(
+                environment,
+                422,
+                "Carga no aceptada",
+                str(exc),
+                session=session,
+            )
+        except Exception:
+            return _error(
+                environment,
+                503,
+                "Ingreso no disponible",
+                "El archivo no quedó registrado. "
+                "Revisa la consola del servidor operador.",
+                session=session,
+            )
+        result = str(submitted["validation_status"])
+        if submitted.get("duplicate_content"):
+            result = "duplicate"
+        return RedirectResponse(
+            f"/operator/intake?{urlencode({'result': result})}", status_code=303
+        )
+
     @app.get("/operator/plans/{plan_id}", response_class=HTMLResponse)
     async def review_queue(
         request: Request,
@@ -579,6 +812,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--user", default=None)
     parser.add_argument("--db-host", dest="host_db", default=None)
     parser.add_argument("--db-port", dest="port_db", type=int, default=None)
+    parser.add_argument("--intake-dir", default="data/intake")
     parser.add_argument("--prompt-password", action="store_true")
     parser.add_argument("--prompt-operator", action="store_true")
     parser.add_argument("--prompt-access-code", action="store_true")
@@ -617,6 +851,7 @@ def main(argv: list[str] | None = None) -> int:
         database_password = prompt_password(args.prompt_password)
         gateway = DatabaseReviewGateway(config, database_password)
         gateway.plans(limit=1)
+        gateway.intake_submissions(limit=1)
         actor = _prompt_actor(args.prompt_operator)
         access_code = _prompt_access_code(args.prompt_access_code)
         authenticator = OperatorAuthenticator(actor, access_code)
@@ -630,7 +865,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Consola de revisión: http://{args.host}:{args.port}/operator")
     print("Acceso temporal, solo local. Presiona Ctrl+C para detener.")
     uvicorn.run(
-        create_operator_app(gateway, authenticator),
+        create_operator_app(
+            gateway, authenticator, intake_root=Path(args.intake_dir)
+        ),
         host=args.host,
         port=args.port,
         access_log=False,

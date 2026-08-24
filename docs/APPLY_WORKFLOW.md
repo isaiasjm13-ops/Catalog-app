@@ -11,8 +11,8 @@ una aprobación humana separada, puede insertar registros empresariales en Postg
 
 Antes de cualquier prueba de base de datos se debe:
 
-1. confirmar que `0001`–`0006` están aplicadas en el entorno objetivo;
-2. ejecutar las 128 pruebas, incluidas las integraciones con rollback;
+1. confirmar que `0001`–`0007` están aplicadas en el entorno objetivo;
+2. ejecutar las 143 pruebas, incluidas las integraciones con rollback;
 3. generar un plan nuevo con el contrato y las reglas actuales;
 4. inspeccionar su reporte y resolver todos los bloqueos/conflictos;
 5. obtener autorización humana para ese fingerprint exacto.

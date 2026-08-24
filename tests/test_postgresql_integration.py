@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import getpass
+import io
 import os
+import tempfile
 import unittest
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 try:
     import psycopg
@@ -73,7 +76,105 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
                WHERE n.nspname='perfect_catalog' AND c.contype='f' AND c.confdeltype='c')
             """
         ).fetchone()
-        self.assertEqual(counts, (24, 24, 59, 174, 21, 127, 6, 0))
+        self.assertEqual(counts, (26, 26, 60, 192, 23, 133, 6, 0))
+
+    def test_secure_intake_as_application_role(self) -> None:
+        from perfect_catalog.intake import (
+            SecureIntakeService,
+            _list_intake_submissions_in_connection,
+            _record_intake_in_connection,
+        )
+
+        class TransactionPersistence:
+            def __init__(self, connection):
+                self.connection = connection
+
+            def record_intake(self, record):
+                return _record_intake_in_connection(self.connection, record)
+
+            def intake_submissions(
+                self, *, kind="all", status="all", limit=50, offset=0
+            ):
+                return _list_intake_submissions_in_connection(
+                    self.connection,
+                    kind=kind,
+                    status=status,
+                    limit=limit,
+                    offset=offset,
+                )
+
+        self.connection.execute("SET ROLE perfect_catalog_app")
+        privileges = self.connection.execute(
+            """
+            SELECT
+              has_table_privilege('perfect_catalog_app', 'perfect_catalog.intake_asset', 'SELECT'),
+              has_table_privilege('perfect_catalog_app', 'perfect_catalog.intake_asset', 'INSERT'),
+              has_table_privilege('perfect_catalog_app', 'perfect_catalog.intake_asset', 'UPDATE'),
+              has_table_privilege('perfect_catalog_app', 'perfect_catalog.intake_asset', 'DELETE'),
+              has_table_privilege('perfect_catalog_app', 'perfect_catalog.intake_submission', 'SELECT'),
+              has_table_privilege('perfect_catalog_app', 'perfect_catalog.intake_submission', 'INSERT'),
+              has_table_privilege('perfect_catalog_app', 'perfect_catalog.intake_submission', 'UPDATE'),
+              has_table_privilege('perfect_catalog_app', 'perfect_catalog.intake_submission', 'DELETE')
+            """
+        ).fetchone()
+        self.assertEqual(privileges, (True, True, False, False, True, True, False, False))
+
+        with tempfile.TemporaryDirectory() as directory:
+            service = SecureIntakeService(
+                Path(directory), TransactionPersistence(self.connection)
+            )
+            first = service.submit(
+                io.BytesIO(b"%PDF-1.7\nintegration"),
+                filename="manual-v2.2.pdf",
+                claimed_media_type="application/pdf",
+                kind="manual_pdf",
+                actor="integration-user",
+                reason="Documento sintético de integración",
+            )
+            second = service.submit(
+                io.BytesIO(b"%PDF-1.7\nintegration"),
+                filename="manual-duplicate.pdf",
+                claimed_media_type="application/pdf",
+                kind="manual_pdf",
+                actor="integration-user",
+                reason="Reintento sintético de integración",
+            )
+            rejected = service.submit(
+                io.BytesIO(b"invalid-pdf"),
+                filename="manual-invalid.pdf",
+                claimed_media_type="application/pdf",
+                kind="manual_pdf",
+                actor="integration-user",
+                reason="Rechazo sintético de integración",
+            )
+            self.assertEqual(first["validation_status"], "quarantined")
+            self.assertTrue(second["duplicate_content"])
+            self.assertEqual(rejected["validation_status"], "rejected")
+            page = service.list(kind="manual_pdf", status="all", limit=2)
+            self.assertEqual(page["filtered_count"], 3)
+            self.assertEqual(len(page["items"]), 2)
+            last_page = service.list(
+                kind="manual_pdf", status="all", limit=2, offset=10
+            )
+            self.assertEqual(last_page["filtered_count"], 3)
+            self.assertEqual(last_page["items"], [])
+            asset_id = first["intake_asset_id"]
+            submission_id = first["intake_submission_id"]
+            self.connection.execute("SET ROLE perfect_catalog_owner")
+            with self.assertRaises(psycopg.errors.InsufficientPrivilege):
+                with self.connection.transaction():
+                    self.connection.execute("SET ROLE perfect_catalog_app")
+                    self.connection.execute(
+                        "UPDATE perfect_catalog.intake_asset SET received_by='changed' WHERE intake_asset_id=%s",
+                        (asset_id,),
+                    )
+            with self.assertRaisesRegex(psycopg.Error, "append-only"):
+                with self.connection.transaction():
+                    self.connection.execute("SET ROLE perfect_catalog_owner")
+                    self.connection.execute(
+                        "DELETE FROM perfect_catalog.intake_submission WHERE intake_submission_id=%s",
+                        (submission_id,),
+                    )
 
     def test_future_existing_snapshot_variant_and_invalid_contexts(self) -> None:
         ids = {name: uuid.uuid4() for name in (

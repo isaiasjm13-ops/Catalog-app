@@ -13,6 +13,7 @@ from psycopg.types.json import Jsonb
 from .application import _load_plan_items
 from .canonical import canonical_sha256, json_compatible
 from .config import DatabaseConfig
+from .intake import list_intake_submissions, record_intake
 from .publication import _load_applied_plan
 
 
@@ -866,6 +867,26 @@ class DatabaseReviewGateway:
             limit=limit,
             offset=offset,
         )
+
+    def intake_submissions(
+        self,
+        *,
+        kind: str = "all",
+        status: str = "all",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        return list_intake_submissions(
+            self._config,
+            self._password,
+            kind=kind,
+            status=status,
+            limit=limit,
+            offset=offset,
+        )
+
+    def record_intake(self, record: dict[str, Any]) -> dict[str, Any]:
+        return record_intake(self._config, self._password, record)
 
     def decide(
         self,

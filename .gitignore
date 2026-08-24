@@ -58,6 +58,11 @@ data/imports/*.json
 data/images/
 !data/images/.gitkeep
 
+# === CUARENTENA DE INGRESOS ===
+# Originales recibidos por la consola; nunca se versionan ni se sirven directamente.
+data/intake/**
+!data/intake/.gitkeep
+
 # === EXPORTACIONES ===
 # Archivos generados localmente
 data/exports/*.pdf

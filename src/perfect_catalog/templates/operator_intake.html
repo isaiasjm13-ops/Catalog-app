@@ -1,0 +1,109 @@
+{% extends "operator_base.html" %}
+{% block title %}Centro de ingreso{% endblock %}
+{% block content %}
+<section class="page-heading intake-heading">
+  <div>
+    <span class="kicker">Recepción controlada</span>
+    <h1>Centro de ingreso</h1>
+    <p>Recibe originales en cuarentena y conserva su evidencia. Subir un archivo nunca importa, aplica ni publica datos.</p>
+  </div>
+  <div class="safety-chip"><span>●</span> Cuarentena · append-only</div>
+</section>
+
+{% if message %}<div class="alert {% if request_result == 'rejected' %}alert-error{% else %}alert-success{% endif %}" role="status">{{ message }}</div>{% endif %}
+
+<section class="intake-layout">
+  <article class="upload-card">
+    <span class="kicker">Nueva recepción</span>
+    <h2>Subir un original</h2>
+    <p>Elige el propósito exacto. El sistema validará la envoltura y calculará SHA-256 antes de conservarla.</p>
+    <form class="upload-form" method="post" action="/operator/intake" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+      <label><span>Tipo de ingreso</span>
+        <select name="kind" required>
+          <option value="" selected disabled>Selecciona el destino</option>
+          {% for kind in kinds %}<option value="{{ kind.value }}">{{ kind.label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label><span>Archivo</span>
+        <input name="file" type="file" accept=".xlsx,.csv,.tsv,.pdf,.zip" required>
+        <small>Odoo: XLSX/CSV/TSV · Imágenes/InDesign: ZIP · Manuales: PDF</small>
+      </label>
+      <label><span>Motivo y procedencia</span>
+        <textarea name="reason" minlength="4" maxlength="500" required placeholder="Ej.: Exportación completa de Odoo recibida de Operaciones el 24/08/2026"></textarea>
+      </label>
+      <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Entiendo que esta acción sólo pone el original en cuarentena; no ejecuta importación.</span></label>
+      <button class="primary-button" type="submit">Validar y recibir</button>
+    </form>
+  </article>
+
+  <aside class="intake-rules">
+    <span class="kicker">Controles activos</span>
+    <h2>Antes de guardar</h2>
+    <ol>
+      <li><strong>Identidad</strong><span>Nombre seguro, actor y motivo.</span></li>
+      <li><strong>Integridad</strong><span>Tamaño, firma de archivo y SHA-256.</span></li>
+      <li><strong>Archivo ZIP</strong><span>Rutas, cifrado, enlaces, expansión y contenido.</span></li>
+      <li><strong>Persistencia</strong><span>Objeto inmutable y evento PostgreSQL.</span></li>
+    </ol>
+    <div class="quarantine-note">Los archivos en cuarentena no tienen ruta de descarga y nunca se ejecutan ni se extraen durante la recepción.</div>
+  </aside>
+</section>
+
+<section class="history-heading">
+  <div><span class="kicker">Trazabilidad</span><h2>Últimos ingresos</h2></div>
+  <span>{{ submissions.filtered_count }} eventos encontrados</span>
+</section>
+
+<form class="filter-bar intake-filter" method="get">
+  <label><span>Tipo</span><select name="kind">
+    <option value="all" {% if selected_kind == 'all' %}selected{% endif %}>Todos</option>
+    {% for kind in kinds %}<option value="{{ kind.value }}" {% if selected_kind == kind.value %}selected{% endif %}>{{ kind.label }}</option>{% endfor %}
+  </select></label>
+  <label><span>Estado</span><select name="status">
+    <option value="all" {% if selected_status == 'all' %}selected{% endif %}>Todos</option>
+    <option value="quarantined" {% if selected_status == 'quarantined' %}selected{% endif %}>En cuarentena</option>
+    <option value="rejected" {% if selected_status == 'rejected' %}selected{% endif %}>Rechazados</option>
+  </select></label>
+  <button class="secondary-button" type="submit">Filtrar</button>
+</form>
+
+{% if submissions["items"] %}
+<section class="intake-history">
+  {% for submission in submissions["items"] %}
+  <article class="intake-row status-{{ submission.validation_status }}">
+    <div class="file-icon">{{ submission.extension[1:4]|upper }}</div>
+    <div class="intake-file">
+      <div class="row-label">{{ kind_labels[submission.intake_kind] }}</div>
+      <h3>{{ submission.original_name }}</h3>
+      <div class="intake-facts"><span>{{ submission.size_label }}</span><span>{{ submission.submitted_by }}</span><span>{{ submission.submitted_label }}</span></div>
+    </div>
+    <div class="intake-proof">
+      <span class="state-pill {% if submission.validation_status == 'quarantined' %}approved{% else %}rejected{% endif %}">
+        {% if submission.validation_status == 'quarantined' %}En cuarentena{% else %}Rechazado{% endif %}
+      </span>
+      {% if submission.duplicate_content %}<span class="duplicate-chip">Contenido duplicado</span>{% endif %}
+      <code>{{ submission.sha256 }}</code>
+    </div>
+    <details class="intake-details">
+      <summary>Ver evidencia</summary>
+      <dl>
+        <div><dt>Motivo</dt><dd>{{ submission.reason }}</dd></div>
+        <div><dt>Tipo detectado</dt><dd>{{ submission.detected_media_type }}</dd></div>
+        {% if submission.validation_report.get('archive_files') is not none %}<div><dt>Archivos ZIP</dt><dd>{{ submission.validation_report.get('archive_files') }}</dd></div>{% endif %}
+        {% if submission.validation_report.get('image_files') is not none %}<div><dt>Imágenes</dt><dd>{{ submission.validation_report.get('image_files') }}</dd></div>{% endif %}
+        {% if submission.validation_report.get('errors') %}<div><dt>Error</dt><dd>{{ submission.validation_report.get('errors')|join('; ') }}</dd></div>{% endif %}
+      </dl>
+    </details>
+  </article>
+  {% endfor %}
+</section>
+{% else %}
+<section class="empty-state compact"><span class="empty-symbol">↓</span><h2>Aún no hay ingresos</h2><p>El primer archivo validado aparecerá aquí con su hash y actor.</p></section>
+{% endif %}
+
+<nav class="pagination" aria-label="Paginación del historial">
+  {% if previous_url %}<a class="secondary-button" href="{{ previous_url }}">← Anterior</a>{% else %}<span></span>{% endif %}
+  {% if next_url %}<a class="secondary-button" href="{{ next_url }}">Siguiente →</a>{% endif %}
+</nav>
+{% endblock %}

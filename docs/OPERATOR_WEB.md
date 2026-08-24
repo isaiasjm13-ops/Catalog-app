@@ -1,17 +1,21 @@
 # Consola web local de revisión
 
-Estado: implementada y validada localmente. No requiere una migración posterior a `0006` y no se
-ha aplicado ni revisado ningún plan empresarial real.
+Estado: implementada y validada localmente. La revisión usa `0006` y el centro de ingreso usa la
+migración `0007`. No se ha aplicado ni revisado ningún plan empresarial real.
 
 ## Separación de superficies
 
 | Superficie | Dirección | Fuente | Mutaciones |
 |---|---|---|---|
 | Catálogo piloto | `http://127.0.0.1:8080/` | XLSX más reciente | Ninguna |
-| Consola de revisión | `http://127.0.0.1:8081/operator` | PostgreSQL | Solo decisión individual |
+| Consola operativa | `http://127.0.0.1:8081/operator` | PostgreSQL | Ingreso y decisión individual |
 
 `INICIAR-SERVER.cmd` continúa abriendo el visor XLSX. `INICIAR-REVISOR.cmd` arranca otro proceso y
 otro puerto; no agrega rutas administrativas al catálogo público.
+
+La navegación **Ingresos** abre `http://127.0.0.1:8081/operator/intake`. Antes del primer uso se
+debe ejecutar `MIGRAR-INGRESOS.cmd`. El flujo y sus límites están documentados en
+[`INTAKE_WORKFLOW.md`](INTAKE_WORKFLOW.md).
 
 ## Inicio seguro
 
@@ -52,6 +56,8 @@ transacción serializable. La web no implementa una ruta de aprobación masiva.
 - Jinja2 con autoescape y `StrictUndefined`; CSP, `frame-ancestors none`, `no-store`, `nosniff` y
   `Referrer-Policy: no-referrer`.
 - Sin OpenAPI, endpoints JSON de catálogo, CORS, secretos en URL ni credenciales en `.env`.
+- Las cargas usan multipart limitado, cuarentena content-addressed e historial append-only; no
+  existe descarga, extracción, importación o publicación automática.
 
 El uso es local, pero eso no reemplaza los controles: un navegador puede recibir solicitudes de
 otros sitios aun cuando el servidor escuche solo en loopback.
