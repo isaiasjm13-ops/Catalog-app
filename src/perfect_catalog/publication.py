@@ -107,9 +107,13 @@ def snapshot_from_record(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _load_applied_plan(
-    connection: Connection[Any], plan_id: uuid.UUID, expected_fingerprint: str
+    connection: Connection[Any],
+    plan_id: uuid.UUID,
+    expected_fingerprint: str,
+    *,
+    lock: bool = True,
 ) -> dict[str, Any]:
-    plan = _load_plan(connection, plan_id, lock=True)
+    plan = _load_plan(connection, plan_id, lock=lock)
     items = _load_plan_items(connection, plan_id)
     verify_plan_integrity(plan, items, expected_fingerprint)
     if plan["plan_status"] != "applied":
@@ -144,6 +148,25 @@ def _resolve_brand(
 def _load_release_records(
     connection: Connection[Any], brand_id: uuid.UUID
 ) -> list[dict[str, Any]]:
+    pending_count = connection.execute(
+        """
+        SELECT
+            (SELECT count(*) FROM perfect_catalog.product_template
+             WHERE brand_id=%s AND catalog_status='pending_review')
+          + (SELECT count(*)
+             FROM perfect_catalog.product_variant AS v
+             JOIN perfect_catalog.product_template AS p
+               ON p.product_template_id=v.product_template_id
+             WHERE p.brand_id=%s AND p.catalog_status='active'
+               AND v.catalog_status='pending_review')
+        """,
+        (brand_id, brand_id),
+    ).fetchone()[0]
+    if pending_count:
+        raise RuntimeError(
+            f"La marca conserva {pending_count} identidades pendientes de revisión."
+        )
+
     inactive_variant_templates = connection.execute(
         """
         SELECT count(*)

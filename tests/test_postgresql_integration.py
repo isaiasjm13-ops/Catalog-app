@@ -235,6 +235,15 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
         self.assertTrue(column_privilege("catalog_release", "archived_by"))
         self.assertFalse(column_privilege("catalog_release", "definition"))
         self.assertFalse(table_privilege("catalog_release_item", "UPDATE"))
+        self.assertFalse(table_privilege("product_template", "UPDATE"))
+        self.assertTrue(column_privilege("product_template", "catalog_status"))
+        self.assertFalse(column_privilege("product_template", "name_original"))
+        self.assertTrue(column_privilege("product_variant", "catalog_status"))
+        self.assertFalse(column_privilege("product_variant", "variant_name"))
+        self.assertFalse(table_privilege("product_reference", "UPDATE"))
+        self.assertTrue(column_privilege("product_reference", "review_status"))
+        self.assertTrue(column_privilege("product_reference", "reviewed_by"))
+        self.assertFalse(column_privilege("product_reference", "value_original"))
 
     def test_approve_apply_and_retry_as_application_role(self) -> None:
         from perfect_catalog.application import (
@@ -251,12 +260,26 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
 
         ids = {
             name: uuid.uuid4()
-            for name in ("source", "batch", "file", "row", "plan", "product")
+            for name in (
+                "source",
+                "batch",
+                "file",
+                "row",
+                "plan",
+                "product",
+                "product_rejected",
+            )
         }
         now = datetime.now(UTC)
         file_sha = "a" * 64
 
-        def make_item(order: int, operation: str, proposed: dict[str, object]) -> dict[str, object]:
+        def make_item(
+            order: int,
+            operation: str,
+            proposed: dict[str, object],
+            product_id: uuid.UUID | None = None,
+        ) -> dict[str, object]:
+            target_id = product_id or ids["product"]
             item: dict[str, object] = {
                 "import_plan_item_id": uuid.uuid5(ids["plan"], f"item:{order}:{operation}"),
                 "import_plan_id": ids["plan"],
@@ -265,7 +288,7 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
                 "staging_row_id": ids["row"],
                 "resolved_product_template_id": None,
                 "resolved_product_variant_id": None,
-                "planned_product_template_id": ids["product"],
+                "planned_product_template_id": target_id,
                 "planned_product_variant_id": None,
                 "operation_type": operation,
                 "before_values": {},
@@ -301,6 +324,29 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
             ),
             make_item(
                 2,
+                "create",
+                {
+                    "brand": "NATSUKI",
+                    "family": "empaques",
+                    "source_model": "product.template",
+                    "name_original": "Producto sintético rechazado",
+                    "internal_reference_original": f"REJ-{ids['product_rejected']}",
+                    "internal_reference_normalized": f"REJ-{ids['product_rejected']}".upper(),
+                    "category_path": "Synthetic / Apply",
+                    "currency": "USD",
+                    "activity_state": None,
+                    "is_favorite": False,
+                    "variant_count_observed": None,
+                    "uom_original": "Units",
+                    "show_quantity_status": True,
+                    "source_updated_at": None,
+                    "catalog_status": "pending_review",
+                    "source_active": None,
+                },
+                ids["product_rejected"],
+            ),
+            make_item(
+                3,
                 "inventory_snapshot",
                 {
                     "quantity_on_hand": -2,
@@ -310,7 +356,7 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
                     "source_updated_at": None,
                 },
             ),
-            make_item(3, "media_pending", {"status": "presente", "decoded": False}),
+            make_item(4, "media_pending", {"status": "presente", "decoded": False}),
         ]
         digest = plan_hash(file_sha, items)
         fingerprint = approval_fingerprint(file_sha, digest)
@@ -427,7 +473,7 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
             verify_source=False,
         )
         self.assertEqual(applied["status"], "applied")
-        self.assertEqual(applied["counts"]["create"], 1)
+        self.assertEqual(applied["counts"]["create"], 2)
         self.assertEqual(applied["counts"]["inventory_snapshot"], 1)
         self.assertEqual(applied["counts"]["media_pending"], 1)
 
@@ -447,7 +493,7 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
             _publish_release_in_connection,
         )
 
-        with self.assertRaisesRegex(RuntimeError, "no tiene productos activos"):
+        with self.assertRaisesRegex(RuntimeError, "pendientes de revisi"):
             _build_release_in_connection(
                 self.connection,
                 ids["plan"],
@@ -471,34 +517,102 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
             """,
             (ids["product"], ids["product"], ids["plan"], ids["plan"]),
         ).fetchone()
-        self.assertEqual(counts, (1, 1, 1, 4))
+        self.assertEqual(counts, (1, 1, 1, 5))
         variant_count = self.connection.execute(
             "SELECT variant_count_observed FROM perfect_catalog.product_template WHERE product_template_id=%s",
             (ids["product"],),
         ).fetchone()[0]
         self.assertIsNone(variant_count)
 
-        self.connection.execute(
-            """
-            UPDATE perfect_catalog.product_template
-            SET catalog_status='active'
-            WHERE product_template_id=%s
-            """,
-            (ids["product"],),
-        )
-        self.connection.execute(
-            """
-            UPDATE perfect_catalog.product_reference
-            SET review_status='approved', reviewed_by='integration-reviewer', reviewed_at=%s,
-                review_note='synthetic publication approval'
-            WHERE product_template_id=%s
-            """,
-            (datetime.now(UTC), ids["product"]),
-        )
-
         from perfect_catalog.web import ReleaseCatalogRepository
+        from perfect_catalog.reviews import (
+            _inspect_review_queue_in_connection,
+            _review_product_in_connection,
+        )
 
         self.connection.execute("SET ROLE perfect_catalog_app")
+        review_queue = _inspect_review_queue_in_connection(
+            self.connection, ids["plan"], fingerprint
+        )
+        self.assertEqual(review_queue["candidate_count"], 2)
+        self.assertEqual(review_queue["pending_count"], 2)
+        review_item = next(
+            item
+            for item in review_queue["items"]
+            if item["product_id"] == str(ids["product"])
+        )
+        rejected_review_item = next(
+            item
+            for item in review_queue["items"]
+            if item["product_id"] == str(ids["product_rejected"])
+        )
+        with self.assertRaises(psycopg.errors.RaiseException):
+            with self.connection.transaction():
+                self.connection.execute(
+                    """
+                    UPDATE perfect_catalog.product_template
+                    SET catalog_status='active', updated_at=%s
+                    WHERE product_template_id=%s
+                    """,
+                    (datetime.now(UTC), ids["product"]),
+                )
+                self.connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        with self.assertRaisesRegex(PermissionError, "review_sha256"):
+            _review_product_in_connection(
+                self.connection,
+                ids["plan"],
+                ids["product"],
+                fingerprint,
+                "0" * 64,
+                "approve",
+                "integration-reviewer",
+                "wrong evidence must fail",
+            )
+        reviewed = _review_product_in_connection(
+            self.connection,
+            ids["plan"],
+            ids["product"],
+            fingerprint,
+            review_item["review_sha256"],
+            "approve",
+            "integration-reviewer",
+            "synthetic publication approval",
+        )
+        self.assertEqual(reviewed["status"], "approved")
+        rejected = _review_product_in_connection(
+            self.connection,
+            ids["plan"],
+            ids["product_rejected"],
+            fingerprint,
+            rejected_review_item["review_sha256"],
+            "reject",
+            "integration-reviewer",
+            "synthetic rejection preserves the identity",
+        )
+        self.assertEqual(rejected["status"], "rejected")
+        self.connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        with self.assertRaisesRegex(PermissionError, "auditado"):
+            _review_product_in_connection(
+                self.connection,
+                ids["plan"],
+                ids["product"],
+                fingerprint,
+                "0" * 64,
+                "approve",
+                "integration-reviewer",
+                "wrong retry evidence must fail",
+            )
+        reviewed_again = _review_product_in_connection(
+            self.connection,
+            ids["plan"],
+            ids["product"],
+            fingerprint,
+            review_item["review_sha256"],
+            "approve",
+            "integration-reviewer",
+            "synthetic review retry",
+        )
+        self.assertEqual(reviewed_again["status"], "already_approved")
         built = _build_release_in_connection(
             self.connection,
             ids["plan"],
@@ -590,6 +704,45 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
                 "catalog_release.built",
                 "catalog_release.published",
                 "catalog_release.archived",
+            ],
+        )
+        review_audits = self.connection.execute(
+            """
+            SELECT event_type, actor_type, actor_id,
+                   metadata->>'review_evidence_sha256'
+            FROM perfect_catalog.audit_event
+            WHERE entity_type='product_template' AND entity_id=%s
+              AND event_type='catalog_identity.approved'
+            """,
+            (ids["product"],),
+        ).fetchall()
+        self.assertEqual(
+            review_audits,
+            [
+                (
+                    "catalog_identity.approved",
+                    "human",
+                    "integration-reviewer",
+                    review_item["review_sha256"],
+                )
+            ],
+        )
+        rejected_audits = self.connection.execute(
+            """
+            SELECT event_type, metadata->>'review_evidence_sha256'
+            FROM perfect_catalog.audit_event
+            WHERE entity_type='product_template' AND entity_id=%s
+              AND event_type='catalog_identity.rejected'
+            """,
+            (ids["product_rejected"],),
+        ).fetchall()
+        self.assertEqual(
+            rejected_audits,
+            [
+                (
+                    "catalog_identity.rejected",
+                    rejected_review_item["review_sha256"],
+                )
             ],
         )
 

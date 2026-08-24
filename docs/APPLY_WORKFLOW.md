@@ -1,7 +1,7 @@
 # Workflow controlado de aprobación y apply
 
-Estado: implementado y validado en PostgreSQL local con el rol de aplicación. Migraciones `0003` y
-`0005` aplicadas; apply empresarial no autorizado.
+Estado: implementado y validado en PostgreSQL local con el rol de aplicación. Migraciones
+`0003`–`0006` aplicadas; apply empresarial no autorizado.
 
 ## Límite de seguridad
 
@@ -11,8 +11,8 @@ una aprobación humana separada, puede insertar registros empresariales en Postg
 
 Antes de cualquier prueba de base de datos se debe:
 
-1. confirmar que `0001`–`0005` están aplicadas en el entorno objetivo;
-2. ejecutar las 114 pruebas, incluidas las integraciones con rollback;
+1. confirmar que `0001`–`0006` están aplicadas en el entorno objetivo;
+2. ejecutar las 121 pruebas, incluidas las integraciones con rollback;
 3. generar un plan nuevo con el contrato y las reglas actuales;
 4. inspeccionar su reporte y resolver todos los bloqueos/conflictos;
 5. obtener autorización humana para ese fingerprint exacto.
@@ -83,3 +83,9 @@ Aplicar un plan no publica automáticamente un catálogo. La construcción y pub
 `catalog_release` usa una compuerta posterior, separada e inmutable; sus reglas están en
 [`RELEASE_PUBLICATION_WORKFLOW.md`](RELEASE_PUBLICATION_WORKFLOW.md) y el contrato de lectura en
 [`RELEASE_READ_MODEL.md`](RELEASE_READ_MODEL.md).
+
+Tampoco activa productos. Después de `apply-plan`, cada identidad y su referencia interna primaria
+deben resolverse individualmente mediante el workflow con evidencia criptográfica descrito en
+[`PRODUCT_REVIEW_WORKFLOW.md`](PRODUCT_REVIEW_WORKFLOW.md). La migración `0006` concede solamente
+las columnas de esa transición, bloquea cambios de datos de catálogo y exige que producto y
+referencia terminen alineados dentro de la misma transacción.

@@ -51,7 +51,8 @@ Abrir:
 - Documentación OpenAPI: `http://127.0.0.1:8080/docs`
 - Estado: `http://127.0.0.1:8080/api/v1/health`
 
-`INICIAR-SERVER.cmd` conserva deliberadamente el piloto XLSX y detecta el archivo más reciente de
+Al hacer doble clic en `INICIAR-SERVER.cmd`, la web queda visible en
+`http://127.0.0.1:8080/`. Ese iniciador conserva deliberadamente el piloto XLSX y detecta el archivo más reciente de
 `data/imports`. Para fijar una fuente concreta:
 
 ```powershell
@@ -85,7 +86,7 @@ se documenta en [`docs/RELEASE_READ_MODEL.md`](docs/RELEASE_READ_MODEL.md).
 
 La suite completa, incluidas las cinco pruebas PostgreSQL y el dry-run real, se ejecuta con el
 procedimiento controlado `scripts/run_productive_block_validation.ps1`. Solicita las credenciales
-de forma interactiva y nunca las guarda. La ejecución del 2026-08-24 terminó con 114/114 pruebas y
+de forma interactiva y nunca las guarda. La ejecución del 2026-08-24 terminó con 121/121 pruebas y
 `integration=0;import=0`.
 
 El dry-run limita el piloto a 5,000 filas de forma predeterminada. `--max-rows` permite cambiar el
@@ -93,7 +94,7 @@ límite conscientemente, pero no debe ampliarse al catálogo completo antes de a
 
 ### Aprobación y aplicación controlada
 
-El flujo transaccional está implementado y las migraciones `0003`–`0005` fueron aplicadas y
+El flujo transaccional está implementado y las migraciones `0003`–`0006` fueron aplicadas y
 validadas en `perfect_catalog_dev`. La prueba de apply usa datos sintéticos y revierte la transacción.
 Ningún plan empresarial fue aprobado ni aplicado.
 
@@ -115,10 +116,34 @@ Ningún plan empresarial fue aprobado ni aplicado.
 El detalle de estados, controles, alcance y recuperación está en
 [`docs/APPLY_WORKFLOW.md`](docs/APPLY_WORKFLOW.md).
 
+### Revisión humana de productos aplicados
+
+Cada alta aplicada queda en `pending_review`; no se activa por lote ni se publica por omisión. La
+cola devuelve un `review_sha256` distinto por identidad, ligado al plan, fila fuente, nombre y
+referencia visibles. La decisión actualiza atómicamente producto y referencia, exige actor/motivo,
+registra auditoría e impide cambiar una decisión previa:
+
+```powershell
+.\.venv\Scripts\perfect-catalog.exe inspect-reviews <PLAN_UUID> `
+  --fingerprint <FINGERPRINT_APLICADO> --prompt-password
+
+.\.venv\Scripts\perfect-catalog.exe review-product <PLAN_UUID> <PRODUCT_UUID> `
+  --fingerprint <FINGERPRINT_APLICADO> `
+  --review-sha256 <HASH_MOSTRADO_PARA_ESE_PRODUCTO> `
+  --decision approve `
+  --actor <USUARIO> --reason "Identidad y referencia verificadas" --prompt-password
+```
+
+`--decision reject` deja producto y referencia inactivos/rechazados sin borrarlos. La cola de
+consola tiene un límite explícito de 5,000 identidades mientras se implementa inspección web
+paginada. Ninguno de estos comandos está autorizado todavía sobre el plan empresarial real. Véase
+[`docs/PRODUCT_REVIEW_WORKFLOW.md`](docs/PRODUCT_REVIEW_WORKFLOW.md).
+
 ### Construcción y publicación controlada
 
-Aplicar un plan no publica el catálogo. Un borrador solo puede construirse desde un plan aplicado y
-productos `active` con exactamente una referencia interna primaria `approved`. La construcción
+Aplicar un plan no publica el catálogo. Un borrador solo puede construirse desde un plan aplicado,
+sin identidades pendientes en la marca, y con productos `active` que tengan exactamente una
+referencia interna primaria `approved`. La construcción
 devuelve el checksum que debe inspeccionarse y aprobarse de forma separada:
 
 ```powershell
@@ -211,9 +236,10 @@ git branch -a
 | Componente | Estado |
 |-----------|--------|
 | Documentación | ✓ Arquitectura inicial definida |
-| Base de Datos | PostgreSQL instalado; migraciones `0001`–`0005` aplicadas y validadas localmente |
+| Base de Datos | PostgreSQL instalado; migraciones `0001`–`0006` aplicadas y validadas localmente |
 | Backend | FastAPI v1.1: release publicado con UUID por defecto y modo piloto XLSX explícito |
 | Apply | Workflow transaccional validado con el rol real y rollback sintético; plan empresarial no autorizado |
+| Revisión | Decisión individual con hash, auditoría y estados atómicos; interfaz web pendiente |
 | Frontend | Catálogo responsive y ficha imprimible piloto |
 | Exportación | ⏳ Pendiente BD |
 | InDesign | ⏳ Pendiente exportación |

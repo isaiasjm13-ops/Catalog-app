@@ -1,8 +1,21 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
-## Sesión Actual: Publicación controlada de releases (2026-08-24)
+## Sesión Actual: Revisión humana de productos aplicados (2026-08-24)
 
 ### Resultado de esta sesión
+
+- Workflow `inspect-reviews` / `review-product` implementado para decisiones individuales con
+  fingerprint del plan, `review_sha256` por ficha, actor y motivo obligatorios.
+- Aprobación y rechazo actualizan atómicamente producto y referencia primaria; una decisión previa
+  no puede sobrescribirse y el reintento idempotente exige el mismo hash guardado en auditoría.
+- Migración forward-only `0006` aplicada: protege datos de identidad, limita UPDATE por columna y
+  valida al final de la transacción que producto y referencia tengan estados coherentes.
+- El constructor de releases ahora rechaza una marca completa si conserva identidades pendientes;
+  ya no puede omitirlas silenciosamente y publicar un subconjunto accidental.
+- La cola CLI tiene un límite explícito de 5,000 identidades; no trunca. El piloto de 893 cabe, pero
+  la escala objetivo requerirá una cola web paginada antes de abrir el catálogo completo.
+- `INICIAR-SERVER.cmd` abre el visor XLSX actual en `http://127.0.0.1:8080/`; todavía no presenta la
+  cola PostgreSQL ni acciones de revisión.
 
 - Auditoría provisional documentada en `docs/STATUS_AUDIT_V2_2.md`.
 - Bloqueo exacto: no se recibió `Manual_Desde_Cero_Perfect_Trading_Natsuki_v2.2.pdf`; solo llegó
@@ -44,15 +57,15 @@
   UUID y detección de manipulación, todo con datos sintéticos y rollback.
 - Integración completa como rol real: apply sintético, activación/revisión sintética, build,
   checksum erróneo, publicación, lectura UUID, archivo, reintentos e inmutabilidad con rollback.
-- Pruebas: 114 descubiertas y 114 aprobadas, incluidas las 5 integraciones PostgreSQL.
+- Pruebas: 121 descubiertas y 121 aprobadas, incluidas las 5 integraciones PostgreSQL.
 - Dry-run real v0.3 repetido: 893 filas, 2,497 items, archivo intacto y 0 escrituras empresariales.
 - Ningún plan real fue aprobado/aplicado ni se publicó un release empresarial; no se modificó Odoo
   ni el Excel fuente y las ocho tablas empresariales siguen vacías.
 
 ### Próxima etapa por dependencias
 
-1. Implementar la revisión y activación humana de productos y referencias aplicados; el publisher
-   ya rechaza cualquier identidad que siga pendiente o no tenga referencia primaria aprobada.
+1. Exponer la cola de revisión en una interfaz web local paginada y filtrable, usando los mismos
+   hashes y transiciones; no añadir aprobación masiva ciega.
 2. Añadir reconciliación `update` campo por campo, con `before_values`, si la exportación completa
    aporta identidad Odoo estable; hasta entonces permanece bloqueada por diseño.
 3. Continuar con imágenes, catálogo enriquecido y PWA/offline sobre releases inmutables.

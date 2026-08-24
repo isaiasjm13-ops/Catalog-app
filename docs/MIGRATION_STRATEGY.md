@@ -1,8 +1,8 @@
 # Estrategia de migraciones PostgreSQL
 
-> **Versión v0.5 — PostgreSQL local disponible — `0001`–`0005` aplicadas**
+> **Versión v0.6 — PostgreSQL local disponible — `0001`–`0006` aplicadas**
 
-Esta estrategia gobierna las migraciones SQL forward-only del proyecto. `0001`–`0005` fueron
+Esta estrategia gobierna las migraciones SQL forward-only del proyecto. `0001`–`0006` fueron
 aplicadas y validadas en `perfect_catalog_dev`. No se ha instalado Alembic.
 
 ## 1. Principios
@@ -28,6 +28,8 @@ aplicadas y validadas en `perfect_catalog_dev`. No se ha instalado Alembic.
   limitada a las 18 tablas consumidas por la aplicación actual.
 - `0005_release_publication_workflow.sql`: inmutabilidad física de releases/items/auditoría,
   identidad pública única y permisos mínimos para construir, publicar y archivar.
+- `0006_product_review_workflow.sql`: transiciones humanas de producto/referencia, alineación
+  atómica diferida, protección de datos de identidad y permisos UPDATE por columna.
 - La numeración es monotónica y nunca se reutiliza.
 - Cada migración declara al inicio su objetivo, precondiciones y compatibilidad mínima.
 
@@ -133,7 +135,7 @@ Esta fase no instala Alembic, no crea su configuración y no crea `alembic_versi
 
 Completado localmente: PostgreSQL 18.6, catálogo estructural, constraints, permisos del rol real,
 inserción/apply sintético, publicación/archivo sintéticos, rechazo de datos inválidos, triggers de
-inmutabilidad, idempotencia y rollback. La suite del 2026-08-24 aprobó 114/114 pruebas y el dry-run
+inmutabilidad, idempotencia y rollback. La suite del 2026-08-24 aprobó 121/121 pruebas y el dry-run
 posterior terminó sin escrituras empresariales.
 
 Antes de otro entorno se debe repetir el mismo procedimiento, registrar hashes/duración y obtener

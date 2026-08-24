@@ -24,8 +24,8 @@ que solo existan en el PDF; no impide continuar las etapas deducibles y seguras.
   `e1693b821cfa871961e1c3cfd0c503f6acc06ba44c7eecb0ba8e734132a09a96`.
 - Dry-run conservado: 893 filas staged/clasificadas, 893 altas propuestas, 893 snapshots,
   711 medios pendientes, 182 ausentes, 0 escrituras empresariales.
-- Migraciones forward-only `0001`–`0005` aplicadas en `perfect_catalog_dev`.
-- Al cierre de la quinta etapa: 114 pruebas descubiertas y 114 aprobadas, incluidas cinco
+- Migraciones forward-only `0001`–`0006` aplicadas en `perfect_catalog_dev`.
+- Al cierre de la sexta etapa: 121 pruebas descubiertas y 121 aprobadas, incluidas cinco
   integraciones PostgreSQL ejecutadas con credenciales interactivas.
 - Dry-run v0.3 posterior: 893 filas, 2,497 items, SHA fuente intacto y 0 escrituras empresariales.
 - Prueba de humo Uvicorn/FastAPI contra el XLSX real: 893 productos detectados y respuestas JSON.
@@ -41,8 +41,8 @@ que solo existan en el PDF; no impide continuar las etapas deducibles y seguras.
 | Perfilado Odoo | Implementado y verificado para las dos muestras | XLSX/CSV/TSV, hashes antes/después, nulos, duplicados y anomalías. Falta exportación completa con IDs/OEM/aplicaciones. |
 | Contrato de importación | Parcial verificado | v0.2 conserva raw/normalizado, acepta reordenamiento, opcionales ausentes, columnas nuevas y conteos variables con límite de piloto. Sigue siendo provisional hasta recibir la exportación completa. |
 | Dry-run y transacciones | Verificado localmente | Persiste evidencia y comprueba cero escrituras empresariales. Aprobación/apply atómicos fueron validados en PostgreSQL con rol real, datos sintéticos y rollback. |
-| Idempotencia/historial | Parcial | Apply, build, publish y archive son idempotentes; hashes/fingerprint se recalculan y los releases no se reescriben. Falta ensayo concurrente real y plan sucesor por decisión humana. |
-| PostgreSQL/migraciones | Implementado y verificado localmente | `0001`–`0005` aplicadas; catálogo, constraints, triggers append-only y permisos reales probados. No hay Alembic/registro automatizado de revisiones. |
+| Idempotencia/historial | Parcial | Apply, revisión, build, publish y archive son idempotentes; hashes/fingerprint se recalculan y los releases no se reescriben. Falta ensayo concurrente real y plan sucesor por decisión humana. |
+| PostgreSQL/migraciones | Implementado y verificado localmente | `0001`–`0006` aplicadas; catálogo, constraints, triggers append-only, revisión atómica y permisos reales probados. No hay Alembic/registro automatizado de revisiones. |
 | Modelo normalizado | Parcial | Esquema contempla productos, referencias, inventario, medios, vehículos, releases y auditoría. Las tablas empresariales continúan vacías por diseño del dry-run. |
 | Imágenes | No implementado salvo clasificación preliminar | Se detecta Base64 presente/ausente sin decodificar. Faltan indexación filesystem, variantes principal/A/B/GEN/empaque, validación, derivados web y reportes de calidad. |
 | FastAPI | Implementado y verificado | API v1.1 de solo lectura, OpenAPI, paginación, categorías, detalle y errores. Usa el último release publicado por defecto, UUID estable y validación criptográfica; XLSX/`source-row:*` queda como piloto explícito. No existen rutas admin. |
@@ -50,7 +50,7 @@ que solo existan en el PDF; no impide continuar las etapas deducibles y seguras.
 | PWA/offline | No implementado | No existen manifest, iconos, service worker, IndexedDB, paquetes/versiones/checksum, staging atómico, cuota, sincronización ni UI de estado. |
 | PDF QUICK | Parcial mínimo | Existe HTML imprimible manual. Faltan plantillas de impresión completas, QR, selección/categoría/cliente, Playwright, caché, manifest/checksum y QA visual renderizado. |
 | InDesign premium | No implementado | El modelo de releases y la decisión JSON canónico existen. Faltan paquete autocontenido, CSV/JSON/images/manifest, reportes, Data Merge, `.idjs`, preflight y salidas DIGITAL/PRINT. |
-| Seguridad/roles web | No aplicable aún a mutaciones; incompleto para administración futura | El servicio es local y solo lectura. No hay funciones admin expuestas; antes de crearlas se requieren identidad, roles, autorización y pruebas de backend. |
+| Seguridad/roles web | Incompleto para administración futura | La CLI de revisión usa el rol mínimo y evidencia humana, pero el servicio web sigue siendo de solo lectura. Antes de exponer mutaciones se requieren identidad, roles, autorización y pruebas de backend. |
 | Pruebas representativas v2.2 | Parcial | Hay reglas de hashes, duplicados, nulos, negativos, Base64 no expuesto, DDL y API. Falta el dataset visual/límite completo, fallos offline, PDF visual, lotes grandes e InDesign preflight. |
 | Instalación limpia/documentación | Parcial | README y comandos actuales fueron corregidos. Varios documentos históricos conservan estados viejos y deben rotularse/actualizarse por etapa sin borrar evidencia. |
 | Conformidad literal con manual v2.2 | Bloqueado | Falta adjuntar el PDF fuente. |
@@ -73,13 +73,15 @@ que solo existan en el PDF; no impide continuar las etapas deducibles y seguras.
    snapshots/auditoría, rollback e idempotencia; no ejecutar sobre datos empresariales sin aprobación.
 2. **Releases/read model:** implementados build, inspección, publicación, archivo y consumo de
    snapshots estables con UUID/checksum; falta una publicación empresarial autorizada.
-3. **Pipeline de imágenes:** índice no destructivo, roles, validación, hashes, derivados web y reportes.
-4. **Catálogo completo y PWA:** búsqueda estructurada, manifest/app shell, paquetes offline,
+3. **Revisión web:** paginación, filtros y decisiones individuales sobre el workflow criptográfico
+   ya validado; sin aprobación masiva implícita.
+4. **Pipeline de imágenes:** índice no destructivo, roles, validación, hashes, derivados web y reportes.
+5. **Catálogo completo y PWA:** búsqueda estructurada, manifest/app shell, paquetes offline,
    IndexedDB, actualización atómica, cuota y sincronización idempotente.
-5. **PDF QUICK:** HTML/CSS estable, QR, selección, Playwright, caché/manifest y revisión visual.
-6. **InDesign premium:** paquete autocontenido, muestra Data Merge, UXP `.idjs`, preflight,
+6. **PDF QUICK:** HTML/CSS estable, QR, selección, Playwright, caché/manifest y revisión visual.
+7. **InDesign premium:** paquete autocontenido, muestra Data Merge, UXP `.idjs`, preflight,
    PDF DIGITAL y PDF PRINT separados.
-7. **Piloto de aceptación:** matriz completa de datos/imágenes/fallos, tablets/laptops, rendimiento,
+8. **Piloto de aceptación:** matriz completa de datos/imágenes/fallos, tablets/laptops, rendimiento,
    documentación desde cero y decisión explícita antes de escalar a 25,000+ referencias.
 
 ## Primera etapa ejecutada
@@ -179,6 +181,26 @@ activación y aprobación sintéticas, build, rechazo de checksum incorrecto, pu
 UUID, archivo, reintentos y triggers; luego revirtió la transacción. El dry-run real posterior dejó
 893 filas, 2,497 items, origen intacto y las ocho tablas empresariales en cero. Ningún producto ni
 release empresarial fue activado o publicado.
+
+## Sexta etapa ejecutada
+
+Se implementó la compuerta de revisión humana posterior al apply:
+
+- `inspect-reviews` enumera cada identidad creada y entrega un `review_sha256` ligado a la ficha;
+- `review-product` exige fingerprint, UUID, hash exacto, decisión, actor y motivo;
+- aprobar activa producto y aprueba su referencia; rechazar los deja inactivos/rechazados sin
+  borrar evidencia; ninguna decisión final puede sobrescribirse;
+- el reintento idempotente verifica el hash conservado en el evento de auditoría;
+- la migración `0006` protege datos de identidad, restringe UPDATE por columna y usa constraints
+  diferidos para impedir estados parciales entre producto y referencia;
+- el publisher rechaza toda la marca mientras exista una identidad pendiente, evitando publicar
+  silenciosamente un subconjunto;
+- la cola CLI falla por encima de 5,000 elementos; la escala de 25,000 requiere UI paginada.
+
+La suite completa aprobó 121/121 pruebas. La integración como `perfect_catalog_app` verificó hash
+incorrecto, actualización parcial rechazada, decisión correcta, reintentos, auditoría, publicación
+y rollback. El dry-run real terminó con `integration=0;import=0`; no quedó ningún dato sintético ni
+se autorizó un plan empresarial.
 
 ## Bloqueos externos exactos
 

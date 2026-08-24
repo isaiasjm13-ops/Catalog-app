@@ -15,6 +15,7 @@ from .publication import (
     inspect_release,
     publish_release,
 )
+from .reviews import inspect_review_queue, review_product
 
 
 def _database_arguments(parser: argparse.ArgumentParser) -> None:
@@ -64,6 +65,28 @@ def build_parser() -> argparse.ArgumentParser:
     apply_parser.add_argument("--fingerprint", required=True)
     _human_evidence_arguments(apply_parser)
     _database_arguments(apply_parser)
+
+    inspect_reviews_parser = subparsers.add_parser(
+        "inspect-reviews",
+        help="Lista las identidades creadas por un plan y su evidencia exacta.",
+    )
+    inspect_reviews_parser.add_argument("plan_id", type=uuid.UUID)
+    inspect_reviews_parser.add_argument("--fingerprint", required=True)
+    _database_arguments(inspect_reviews_parser)
+
+    review_product_parser = subparsers.add_parser(
+        "review-product",
+        help="Aprueba o rechaza una identidad y su referencia primaria.",
+    )
+    review_product_parser.add_argument("plan_id", type=uuid.UUID)
+    review_product_parser.add_argument("product_id", type=uuid.UUID)
+    review_product_parser.add_argument("--fingerprint", required=True)
+    review_product_parser.add_argument("--review-sha256", required=True)
+    review_product_parser.add_argument(
+        "--decision", choices=("approve", "reject"), required=True
+    )
+    _human_evidence_arguments(review_product_parser)
+    _database_arguments(review_product_parser)
 
     build_release_parser = subparsers.add_parser(
         "build-release",
@@ -123,6 +146,25 @@ def main(argv: list[str] | None = None) -> int:
             result = apply_approved_plan(
                 args.plan_id,
                 args.fingerprint,
+                args.actor,
+                args.reason,
+                config,
+                password,
+            )
+        elif args.command == "inspect-reviews":
+            result = inspect_review_queue(
+                args.plan_id,
+                args.fingerprint,
+                config,
+                password,
+            )
+        elif args.command == "review-product":
+            result = review_product(
+                args.plan_id,
+                args.product_id,
+                args.fingerprint,
+                args.review_sha256,
+                args.decision,
                 args.actor,
                 args.reason,
                 config,
