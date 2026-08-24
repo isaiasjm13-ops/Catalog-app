@@ -13,7 +13,7 @@ from psycopg.types.json import Jsonb
 
 from tools.odoo_profiler import sha256_file
 
-from .canonical import canonical_sha256, normalize_name, normalize_reference
+from .canonical import canonical_sha256, json_compatible, normalize_name, normalize_reference
 from .config import DatabaseConfig
 from .importer import (
     BRAND,
@@ -44,7 +44,7 @@ def _require_fingerprint(value: str) -> str:
 
 
 def _load_plan(connection: Connection[Any], plan_id: uuid.UUID, *, lock: bool) -> dict[str, Any]:
-    suffix = " FOR UPDATE" if lock else ""
+    suffix = " FOR UPDATE OF p" if lock else ""
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(
             f"""
@@ -215,8 +215,8 @@ def _insert_audit_event(
             entity_id,
             occurred_at,
             actor,
-            Jsonb(before_data) if before_data is not None else None,
-            Jsonb(after_data),
+            Jsonb(json_compatible(before_data)) if before_data is not None else None,
+            Jsonb(json_compatible(after_data)),
             reason,
             correlation_id,
             canonical_sha256(evidence),
@@ -296,26 +296,27 @@ def _ensure_brand(
 ) -> uuid.UUID:
     normalized = normalize_name(brand_name)
     code = normalized.replace(" ", "-")
-    row = connection.execute(
-        "SELECT brand_id, source_system_id, normalized_name FROM perfect_catalog.brand WHERE code=%s FOR UPDATE",
-        (code,),
-    ).fetchone()
-    if row:
-        if row[1] != source_system_id or row[2] != normalized:
-            raise RuntimeError(
-                f"La marca existente con código {code!r} no coincide con la fuente y nombre del plan."
-            )
-        return row[0]
     brand_id = uuid.uuid5(NAMESPACE, f"brand:{normalized}")
     connection.execute(
         """
         INSERT INTO perfect_catalog.brand (
             brand_id, source_system_id, code, name, normalized_name
         ) VALUES (%s,%s,%s,%s,%s)
+        ON CONFLICT DO NOTHING
         """,
         (brand_id, source_system_id, code, brand_name, normalized),
     )
-    return brand_id
+    row = connection.execute(
+        "SELECT brand_id, source_system_id, normalized_name FROM perfect_catalog.brand WHERE code=%s",
+        (code,),
+    ).fetchone()
+    if row is None:
+        raise RuntimeError(f"No se pudo resolver la marca {code!r} después del insert idempotente.")
+    if row[1] != source_system_id or row[2] != normalized:
+        raise RuntimeError(
+            f"La marca existente con código {code!r} no coincide con la fuente y nombre del plan."
+        )
+    return row[0]
 
 
 def _ensure_category(
@@ -331,7 +332,6 @@ def _ensure_category(
         WHERE source_system_id=%s AND source_path=%s
         ORDER BY product_category_id
         LIMIT 1
-        FOR UPDATE
         """,
         (source_system_id, path),
     ).fetchone()
@@ -344,9 +344,20 @@ def _ensure_category(
         INSERT INTO perfect_catalog.product_category (
             product_category_id, source_system_id, name, normalized_name, source_path
         ) VALUES (%s,%s,%s,%s,%s)
+        ON CONFLICT (product_category_id) DO NOTHING
         """,
         (category_id, source_system_id, name, normalize_name(name), path),
     )
+    persisted = connection.execute(
+        """
+        SELECT source_system_id, source_path
+        FROM perfect_catalog.product_category
+        WHERE product_category_id=%s
+        """,
+        (category_id,),
+    ).fetchone()
+    if persisted is None or persisted[0] != source_system_id or persisted[1] != path:
+        raise RuntimeError("La categoría determinista colisionó con datos incompatibles.")
     return category_id
 
 

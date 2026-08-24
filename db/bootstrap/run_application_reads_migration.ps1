@@ -1,8 +1,8 @@
 $ErrorActionPreference = 'Stop'
 
 $psqlPath = 'C:\Program Files\PostgreSQL\18\bin\psql.exe'
-$sqlPath = Join-Path $PSScriptRoot 'apply_apply_workflow_migration.sql'
-$resultPath = Join-Path $env:LOCALAPPDATA 'Temp\perfect_catalog_0003.exit'
+$sqlPath = Join-Path $PSScriptRoot 'apply_application_reads_migration.sql'
+$resultPath = Join-Path $env:LOCALAPPDATA 'Temp\perfect_catalog_0004.exit'
 
 if (Test-Path -LiteralPath $resultPath) {
     Remove-Item -LiteralPath $resultPath -Force
@@ -12,7 +12,7 @@ if (-not (Test-Path -LiteralPath $psqlPath)) {
     throw "psql no existe en la ruta esperada: $psqlPath"
 }
 
-Write-Host 'Aplicando migracion 0003 en perfect_catalog_dev.'
+Write-Host 'Aplicando migracion 0004 en perfect_catalog_dev.'
 Write-Host 'La contrasena de postgres no muestra caracteres mientras se escribe.'
 & $psqlPath -X -h localhost -p 5432 -U postgres -d perfect_catalog_dev -W -v ON_ERROR_STOP=1 -f $sqlPath
 $exitCode = $LASTEXITCODE

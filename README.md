@@ -72,17 +72,19 @@ estables llegarán desde los productos/releases publicados en PostgreSQL.
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-Las dos pruebas de integración PostgreSQL son opt-in porque solicitan credenciales de forma
-interactiva. El procedimiento controlado está en `scripts/run_productive_block_validation.ps1`.
+La suite completa, incluidas las cuatro pruebas PostgreSQL y el dry-run real, se ejecuta con el
+procedimiento controlado `scripts/run_productive_block_validation.ps1`. Solicita las credenciales
+de forma interactiva y nunca las guarda. La ejecución del 2026-08-24 terminó con 95/95 pruebas y
+`integration=0;import=0`.
 
 El dry-run limita el piloto a 5,000 filas de forma predeterminada. `--max-rows` permite cambiar el
 límite conscientemente, pero no debe ampliarse al catálogo completo antes de aprobar el piloto.
 
 ### Aprobación y aplicación controlada
 
-El flujo transaccional ya está implementado, pero la migración `0003` **no fue aplicada** y ningún
-plan empresarial fue aprobado ni ejecutado en esta etapa. Antes de usarlo se debe validar la
-migración en un entorno de prueba y generar un plan nuevo con las versiones actuales.
+El flujo transaccional está implementado y las migraciones `0003` y `0004` fueron aplicadas y
+validadas en `perfect_catalog_dev`. La prueba de apply usa datos sintéticos y revierte la transacción.
+Ningún plan empresarial fue aprobado ni aplicado.
 
 ```powershell
 # Inspección de solo lectura
@@ -175,9 +177,9 @@ git branch -a
 | Componente | Estado |
 |-----------|--------|
 | Documentación | ✓ Arquitectura inicial definida |
-| Base de Datos | PostgreSQL instalado; migraciones `0001`/`0002` validadas; `0003` preparada, no aplicada |
+| Base de Datos | PostgreSQL instalado; migraciones `0001`–`0004` aplicadas y validadas localmente |
 | Backend | FastAPI de consulta v1 implementada sobre fuente provisional XLSX/staging |
-| Apply | Workflow transaccional implementado y probado unitariamente; pendiente validación PostgreSQL sintética y autorización |
+| Apply | Workflow transaccional validado con el rol real y rollback sintético; plan empresarial no autorizado |
 | Frontend | Catálogo responsive y ficha imprimible piloto |
 | Exportación | ⏳ Pendiente BD |
 | InDesign | ⏳ Pendiente exportación |
@@ -190,4 +192,4 @@ git branch -a
 ---
 
 **Última actualización**: 2026-08-24
-**Siguiente revisión**: validar `0003` y apply sintético; después leer releases publicados
+**Siguiente revisión**: read model estable desde `catalog_release`

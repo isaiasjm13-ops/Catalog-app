@@ -1,10 +1,9 @@
 # Estrategia de migraciones PostgreSQL
 
-> **Versión v0.3 — PostgreSQL local disponible — `0003` pendiente de aplicación**
+> **Versión v0.4 — PostgreSQL local disponible — `0001`–`0004` aplicadas**
 
-Esta estrategia gobierna las migraciones SQL forward-only del proyecto. `0001` y `0002` fueron
-validadas previamente en PostgreSQL local. `0003_apply_workflow_permissions.sql` está revisada por
-pruebas estáticas, pero no se ha ejecutado. No se ha instalado Alembic.
+Esta estrategia gobierna las migraciones SQL forward-only del proyecto. `0001`–`0004` fueron
+aplicadas y validadas en `perfect_catalog_dev`. No se ha instalado Alembic.
 
 ## 1. Principios
 
@@ -25,6 +24,8 @@ pruebas estáticas, pero no se ha ejecutado. No se ha instalado Alembic.
 - `0002_plan_future_product_targets.sql`: separación entre productos resueltos y planificados.
 - `0003_apply_workflow_permissions.sql`: opcionalidad del conteo de variantes y permisos mínimos
   para aprobar/aplicar.
+- `0004_restore_application_reads.sql`: corrección forward-only del drift de permisos SELECT,
+  limitada a las 18 tablas consumidas por la aplicación actual.
 - La numeración es monotónica y nunca se reutiliza.
 - Cada migración declara al inicio su objetivo, precondiciones y compatibilidad mínima.
 
@@ -116,7 +117,7 @@ conteos y mecanismo para detenerse. Nunca debe alterar evidencia original para �
 
 ## 10. Adopción futura de Alembic
 
-Alembic se adoptará cuando comience la implementación de FastAPI. En ese momento:
+Alembic se evaluará antes de promover migraciones a un entorno compartido. En ese momento:
 
 - se instalará y configurará mediante una tarea separada y aprobada;
 - `alembic_version` será administrada exclusivamente por Alembic;
@@ -126,11 +127,11 @@ Alembic se adoptará cuando comience la implementación de FastAPI. En ese momen
 
 Esta fase no instala Alembic, no crea su configuración y no crea `alembic_version`.
 
-## 11. Próxima validación antes de ejecutar
+## 11. Validación local completada y siguiente promoción
 
-1. Revisión manual usando `docs/DDL_REVIEW.md`.
-2. Instalación posterior y separada de PostgreSQL 16+ en el entorno local.
-3. Ejecución de la migración en una base vacía de prueba.
-4. Inspección del catálogo PostgreSQL para confirmar tablas, FKs, checks e índices.
-5. Pruebas de inserción sintética, rechazo de datos inválidos y rollback transaccional.
-6. Registro del tiempo de ejecución y de cualquier ajuste requerido en una nueva migración.
+Completado localmente: PostgreSQL 18.6, catálogo estructural, constraints, permisos del rol real,
+inserción/apply sintético, rechazo de datos inválidos, idempotencia y rollback. La suite del
+2026-08-24 aprobó 95/95 pruebas y el dry-run posterior terminó sin escrituras empresariales.
+
+Antes de otro entorno se debe repetir el mismo procedimiento, registrar hashes/duración y obtener
+la aprobación correspondiente; la validación local no autoriza promoción ni apply empresarial.

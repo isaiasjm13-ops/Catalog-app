@@ -190,6 +190,271 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
             with self.connection.transaction():
                 insert_item(6, "create", uuid.uuid4(), plan="plan", file="file2", row="row2")
 
+    def test_apply_role_permissions_are_exact(self) -> None:
+        def table_privilege(table: str, privilege: str) -> bool:
+            return bool(
+                self.connection.execute(
+                    "SELECT has_table_privilege('perfect_catalog_app', %s, %s)",
+                    (f"perfect_catalog.{table}", privilege),
+                ).fetchone()[0]
+            )
+
+        def column_privilege(table: str, column: str, privilege: str = "UPDATE") -> bool:
+            return bool(
+                self.connection.execute(
+                    "SELECT has_column_privilege('perfect_catalog_app', %s, %s, %s)",
+                    (f"perfect_catalog.{table}", column, privilege),
+                ).fetchone()[0]
+            )
+
+        self.assertFalse(table_privilege("import_batch", "UPDATE"))
+        self.assertTrue(table_privilege("import_file", "SELECT"))
+        self.assertTrue(table_privilege("import_plan_item", "SELECT"))
+        self.assertTrue(column_privilege("import_batch", "status"))
+        self.assertTrue(column_privilege("import_batch", "statistics"))
+        self.assertFalse(column_privilege("import_batch", "scope"))
+        self.assertTrue(column_privilege("import_plan", "plan_status"))
+        self.assertFalse(column_privilege("import_plan", "plan_sha256"))
+        self.assertTrue(column_privilege("source_system", "updated_at"))
+        self.assertFalse(column_privilege("source_system", "code"))
+        for table in (
+            "brand",
+            "product_category",
+            "product_template",
+            "product_reference",
+            "inventory_snapshot",
+            "audit_event",
+        ):
+            with self.subTest(table=table):
+                self.assertTrue(table_privilege(table, "INSERT"))
+                self.assertFalse(table_privilege(table, "DELETE"))
+
+    def test_approve_apply_and_retry_as_application_role(self) -> None:
+        from perfect_catalog.application import (
+            _apply_plan_in_connection,
+            _approve_plan_in_connection,
+        )
+        from perfect_catalog.importer import (
+            CONTRACT_VERSION,
+            RULES_VERSION,
+            approval_fingerprint,
+            plan_hash,
+            plan_item_hash,
+        )
+
+        ids = {
+            name: uuid.uuid4()
+            for name in ("source", "batch", "file", "row", "plan", "product")
+        }
+        now = datetime.now(UTC)
+        file_sha = "a" * 64
+
+        def make_item(order: int, operation: str, proposed: dict[str, object]) -> dict[str, object]:
+            item: dict[str, object] = {
+                "import_plan_item_id": uuid.uuid5(ids["plan"], f"item:{order}:{operation}"),
+                "import_plan_id": ids["plan"],
+                "import_file_id": ids["file"],
+                "item_order": order,
+                "staging_row_id": ids["row"],
+                "resolved_product_template_id": None,
+                "resolved_product_variant_id": None,
+                "planned_product_template_id": ids["product"],
+                "planned_product_variant_id": None,
+                "operation_type": operation,
+                "before_values": {},
+                "proposed_values": proposed,
+                "issues": [],
+                "requires_review": True,
+            }
+            item["item_sha256"] = plan_item_hash(item)
+            return item
+
+        items = [
+            make_item(
+                1,
+                "create",
+                {
+                    "brand": "NATSUKI",
+                    "family": "empaques",
+                    "source_model": "product.template",
+                    "name_original": "Producto sintético apply",
+                    "internal_reference_original": f"SYN-{ids['product']}",
+                    "internal_reference_normalized": f"SYN-{ids['product']}".upper(),
+                    "category_path": "Synthetic / Apply",
+                    "currency": "USD",
+                    "activity_state": None,
+                    "is_favorite": False,
+                    "variant_count_observed": None,
+                    "uom_original": "Units",
+                    "show_quantity_status": True,
+                    "source_updated_at": None,
+                    "catalog_status": "pending_review",
+                    "source_active": None,
+                },
+            ),
+            make_item(
+                2,
+                "inventory_snapshot",
+                {
+                    "quantity_on_hand": -2,
+                    "quantity_available": 0,
+                    "uom_original": "Units",
+                    "source_date_serial": 46000.5,
+                    "source_updated_at": None,
+                },
+            ),
+            make_item(3, "media_pending", {"status": "presente", "decoded": False}),
+        ]
+        digest = plan_hash(file_sha, items)
+        fingerprint = approval_fingerprint(file_sha, digest)
+
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            INSERT INTO perfect_catalog.source_system
+                (source_system_id,code,name,system_type)
+            VALUES (%s,%s,'Synthetic apply','test')
+            """,
+            (ids["source"], f"apply-{ids['source']}"),
+        )
+        cursor.execute(
+            """
+            INSERT INTO perfect_catalog.import_batch
+                (import_batch_id,source_system_id,mode,status,scope,started_at,requested_by)
+            VALUES (%s,%s,'dry_run','awaiting_review',%s,%s,'integration-test')
+            """,
+            (ids["batch"], ids["source"], Jsonb({"synthetic": True}), now),
+        )
+        cursor.execute(
+            """
+            INSERT INTO perfect_catalog.import_file
+                (import_file_id,import_batch_id,original_name,storage_uri,size_bytes,sha256,
+                 media_type,received_at)
+            VALUES (%s,%s,'synthetic.xlsx','synthetic/not-read',1,%s,'application/test',%s)
+            """,
+            (ids["file"], ids["batch"], file_sha, now),
+        )
+        cursor.execute(
+            """
+            INSERT INTO perfect_catalog.staging_row
+                (staging_row_id,import_file_id,sheet_name,source_row_number,raw_headers,raw_values,
+                 raw_excel_serials,structural_metadata,row_sha256)
+            VALUES (%s,%s,'Synthetic',2,%s,%s,%s,%s,%s)
+            """,
+            (
+                ids["row"],
+                ids["file"],
+                Jsonb([]),
+                Jsonb({}),
+                Jsonb({}),
+                Jsonb({}),
+                "b" * 64,
+            ),
+        )
+        cursor.execute(
+            """
+            INSERT INTO perfect_catalog.import_plan
+                (import_plan_id,import_batch_id,import_file_id,file_sha256,contract_version,
+                 rules_version,plan_status,plan_sha256,approval_fingerprint_sha256,
+                 generated_at,generated_by)
+            VALUES (%s,%s,%s,%s,%s,%s,'awaiting_review',%s,%s,%s,'integration-test')
+            """,
+            (
+                ids["plan"],
+                ids["batch"],
+                ids["file"],
+                file_sha,
+                CONTRACT_VERSION,
+                RULES_VERSION,
+                digest,
+                fingerprint,
+                now,
+            ),
+        )
+        for item in items:
+            cursor.execute(
+                """
+                INSERT INTO perfect_catalog.import_plan_item
+                    (import_plan_item_id,import_plan_id,import_file_id,item_order,staging_row_id,
+                     resolved_product_template_id,resolved_product_variant_id,
+                     planned_product_template_id,planned_product_variant_id,operation_type,
+                     before_values,proposed_values,issues,requires_review,item_sha256)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """,
+                (
+                    item["import_plan_item_id"],
+                    item["import_plan_id"],
+                    item["import_file_id"],
+                    item["item_order"],
+                    item["staging_row_id"],
+                    item["resolved_product_template_id"],
+                    item["resolved_product_variant_id"],
+                    item["planned_product_template_id"],
+                    item["planned_product_variant_id"],
+                    item["operation_type"],
+                    Jsonb(item["before_values"]),
+                    Jsonb(item["proposed_values"]),
+                    Jsonb(item["issues"]),
+                    item["requires_review"],
+                    item["item_sha256"],
+                ),
+            )
+
+        self.connection.execute("SET ROLE perfect_catalog_app")
+        approved = _approve_plan_in_connection(
+            self.connection,
+            ids["plan"],
+            fingerprint,
+            "integration-reviewer",
+            "synthetic approval",
+            verify_source=False,
+        )
+        self.assertEqual(approved["status"], "approved")
+
+        applied = _apply_plan_in_connection(
+            self.connection,
+            ids["plan"],
+            fingerprint,
+            "integration-reviewer",
+            "synthetic apply",
+            verify_source=False,
+        )
+        self.assertEqual(applied["status"], "applied")
+        self.assertEqual(applied["counts"]["create"], 1)
+        self.assertEqual(applied["counts"]["inventory_snapshot"], 1)
+        self.assertEqual(applied["counts"]["media_pending"], 1)
+
+        retried = _apply_plan_in_connection(
+            self.connection,
+            ids["plan"],
+            fingerprint,
+            "integration-reviewer",
+            "synthetic retry",
+            verify_source=False,
+        )
+        self.assertEqual(retried["status"], "already_applied")
+        self.connection.execute("RESET ROLE")
+        counts = self.connection.execute(
+            """
+            SELECT
+                (SELECT count(*) FROM perfect_catalog.product_template
+                 WHERE product_template_id=%s),
+                (SELECT count(*) FROM perfect_catalog.product_reference
+                 WHERE product_template_id=%s),
+                (SELECT count(*) FROM perfect_catalog.inventory_snapshot
+                 WHERE import_plan_id=%s),
+                (SELECT count(*) FROM perfect_catalog.audit_event
+                 WHERE import_plan_id=%s)
+            """,
+            (ids["product"], ids["product"], ids["plan"], ids["plan"]),
+        ).fetchone()
+        self.assertEqual(counts, (1, 1, 1, 4))
+        variant_count = self.connection.execute(
+            "SELECT variant_count_observed FROM perfect_catalog.product_template WHERE product_template_id=%s",
+            (ids["product"],),
+        ).fetchone()[0]
+        self.assertIsNone(variant_count)
+
 
 if __name__ == "__main__":
     unittest.main()

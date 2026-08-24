@@ -1,9 +1,15 @@
 $ErrorActionPreference = 'Stop'
 
 $pythonPath = Join-Path $PSScriptRoot '..\.venv\Scripts\python.exe'
-$resultPath = Join-Path $env:TEMP 'perfect_catalog_productive_block.exit'
-$transcriptPath = Join-Path $env:TEMP 'perfect_catalog_productive_block.log'
+$resultPath = Join-Path $env:LOCALAPPDATA 'Temp\perfect_catalog_productive_block.exit'
+$transcriptPath = Join-Path $env:LOCALAPPDATA 'Temp\perfect_catalog_productive_block.log'
 $sourcePath = Join-Path $PSScriptRoot '..\data\imports\NATSUKI_EMPAQUES_MAESTRO.xlsx'
+
+foreach ($path in ($resultPath, $transcriptPath)) {
+    if (Test-Path -LiteralPath $path) {
+        Remove-Item -LiteralPath $path -Force
+    }
+}
 
 if (-not (Test-Path -LiteralPath $pythonPath)) {
     throw "No existe el Python del entorno virtual: $pythonPath"
@@ -13,9 +19,9 @@ Set-Location (Join-Path $PSScriptRoot '..')
 $env:PERFECT_CATALOG_RUN_INTEGRATION = '1'
 Start-Transcript -LiteralPath $transcriptPath -Force | Out-Null
 
-Write-Host '1/2 Pruebas de integracion PostgreSQL (usuario postgres).'
+Write-Host '1/2 Suite completa, incluidas integraciones PostgreSQL (usuario postgres).'
 Write-Host 'La entrada de contraseña permanece completamente oculta.'
-& $pythonPath -m unittest discover -s tests -p test_postgresql_integration.py -v
+& $pythonPath -m unittest discover -s tests -v
 $integrationExit = $LASTEXITCODE
 if ($integrationExit -ne 0) {
     Set-Content -LiteralPath $resultPath -Value "integration=$integrationExit;import=not-run" -Encoding ascii

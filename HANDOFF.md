@@ -21,19 +21,22 @@
   un segundo intento sobre un plan aplicado responde `already_applied` sin repetir escrituras.
 - Alcance seguro actual: altas, snapshots completos, `no_change` y medios marcados pendientes. Las
   operaciones `update`, `blocked` y `conflict` se rechazan antes de escribir.
-- La migración forward-only `0003` flexibiliza el conteo opcional de variantes y limita permisos
-  de transición del rol de aplicación por columna. Fue preparada y probada estáticamente, no aplicada.
-- Pruebas: 90 descubiertas; 88 aprobadas y 2 integraciones PostgreSQL omitidas por ser opt-in.
+- `0003` fue aplicada en `perfect_catalog_dev`; flexibiliza el conteo opcional de variantes y limita
+  por columna las transiciones permitidas al rol de aplicación.
+- `0004` fue creada y aplicada forward-only para corregir drift de lectura con mínimo privilegio:
+  `perfect_catalog_app` recibe SELECT solo en las 18 tablas que consume actualmente.
+- Integración real como `perfect_catalog_app`: aprobación, alta, snapshot con -2/0, auditoría,
+  reintento `already_applied`, permisos y rollback transaccional verificados.
+- Pruebas: 95 descubiertas y 95 aprobadas, incluidas las 4 integraciones PostgreSQL.
+- Dry-run real v0.3 repetido: 893 filas, 2,497 items, archivo intacto y 0 escrituras empresariales.
 - Ningún plan real fue aprobado ni aplicado; no se modificó Odoo ni el Excel fuente.
 
 ### Próxima etapa por dependencias
 
-1. Revisar/aprobar y aplicar `0003` primero en `perfect_catalog_dev`; ejecutar la integración
-   transaccional con datos sintéticos y rollback, sin aprobar ni aplicar el plan empresarial.
+1. Crear el read model estable desde `catalog_release` para dejar de exponer `source-row:*`.
 2. Añadir reconciliación `update` campo por campo, con `before_values`, si la exportación completa
    aporta identidad Odoo estable; hasta entonces permanece bloqueada por diseño.
-3. Crear el read model estable desde `catalog_release` para dejar de exponer `source-row:*`.
-4. Continuar con imágenes, catálogo enriquecido y PWA/offline sobre releases inmutables.
+3. Continuar con imágenes, catálogo enriquecido y PWA/offline sobre releases inmutables.
 
 ### Sesión anterior: Inicialización del Proyecto (2026-08-17)
 

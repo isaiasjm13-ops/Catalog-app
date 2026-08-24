@@ -24,9 +24,10 @@ que solo existan en el PDF; no impide continuar las etapas deducibles y seguras.
   `e1693b821cfa871961e1c3cfd0c503f6acc06ba44c7eecb0ba8e734132a09a96`.
 - Dry-run conservado: 893 filas staged/clasificadas, 893 altas propuestas, 893 snapshots,
   711 medios pendientes, 182 ausentes, 0 escrituras empresariales.
-- Migraciones forward-only: 24 tablas en `0001`; ajuste de objetivos futuros en `0002`.
-- Al cierre de la tercera etapa: 90 pruebas descubiertas, 88 aprobadas y 2 integraciones
-  PostgreSQL omitidas por requerir credenciales interactivas.
+- Migraciones forward-only `0001`–`0004` aplicadas en `perfect_catalog_dev`.
+- Al cierre de la tercera etapa: 95 pruebas descubiertas y 95 aprobadas, incluidas cuatro
+  integraciones PostgreSQL ejecutadas con credenciales interactivas.
+- Dry-run v0.3 posterior: 893 filas, 2,497 items, SHA fuente intacto y 0 escrituras empresariales.
 - Prueba de humo Uvicorn/FastAPI contra el XLSX real: 893 productos detectados y respuestas JSON.
 
 ## Matriz de situación
@@ -35,9 +36,9 @@ que solo existan en el PDF; no impide continuar las etapas deducibles y seguras.
 |---|---|---|
 | Perfilado Odoo | Implementado y verificado para las dos muestras | XLSX/CSV/TSV, hashes antes/después, nulos, duplicados y anomalías. Falta exportación completa con IDs/OEM/aplicaciones. |
 | Contrato de importación | Parcial verificado | v0.2 conserva raw/normalizado, acepta reordenamiento, opcionales ausentes, columnas nuevas y conteos variables con límite de piloto. Sigue siendo provisional hasta recibir la exportación completa. |
-| Dry-run y transacciones | Parcial verificado | Persiste evidencia y comprueba cero escrituras empresariales. Aprobación/apply atómicos están implementados y probados unitariamente; falta validarlos contra PostgreSQL con datos sintéticos. |
+| Dry-run y transacciones | Verificado localmente | Persiste evidencia y comprueba cero escrituras empresariales. Aprobación/apply atómicos fueron validados en PostgreSQL con rol real, datos sintéticos y rollback. |
 | Idempotencia/historial | Parcial | Recalcula hashes/fingerprint, bloquea el plan y evita repetir un plan ya aplicado. Falta ensayo concurrente real y plan sucesor por decisión humana. |
-| PostgreSQL/migraciones | Implementado y verificado previamente; verificación actual parcial | DDL y pruebas estáticas sólidas; PostgreSQL funciona. Las pruebas reales actuales se omitieron por credenciales interactivas. No hay Alembic/registro automatizado de revisiones. |
+| PostgreSQL/migraciones | Implementado y verificado localmente | `0001`–`0004` aplicadas; catálogo, constraints y permisos reales probados. No hay Alembic/registro automatizado de revisiones. |
 | Modelo normalizado | Parcial | Esquema contempla productos, referencias, inventario, medios, vehículos, releases y auditoría. Las tablas empresariales continúan vacías por diseño del dry-run. |
 | Imágenes | No implementado salvo clasificación preliminar | Se detecta Base64 presente/ausente sin decodificar. Faltan indexación filesystem, variantes principal/A/B/GEN/empaque, validación, derivados web y reportes de calidad. |
 | FastAPI | Implementado en primera etapa, verificado | API v1 de solo lectura, OpenAPI, paginación, categorías, detalle y errores. Fuente provisional XLSX/staging e IDs `source-row:*`; falta read model de releases y autenticación cuando existan rutas admin. |
@@ -125,8 +126,11 @@ Las reglas pasaron a `normalization-v0.3` y se implementó la compuerta transacc
 - la migración `0003` concede solo transiciones de estado por columna y los INSERT necesarios,
   sin conceder DELETE ni modificar datos existentes.
 
-La migración `0003` no fue ejecutada y ninguna aprobación/aplicación real se realizó. La siguiente
-evidencia necesaria es una prueba PostgreSQL sintética, transaccional y revertida.
+Las migraciones `0003` y `0004` fueron ejecutadas en `perfect_catalog_dev`. La suite completa aprobó
+95/95 pruebas: incluyó permisos efectivos, aprobación, alta, snapshot con valores -2/0, auditoría,
+reintento idempotente y rollback. Después se repitió el dry-run real de 893 filas con reglas v0.3:
+el archivo mantuvo su SHA-256 y las ocho tablas empresariales permanecieron en cero. Ningún plan
+empresarial fue aprobado ni aplicado.
 
 ## Bloqueos externos exactos
 
@@ -136,5 +140,3 @@ evidencia necesaria es una prueba PostgreSQL sintética, transaccional y reverti
 - Directorio/muestra real de originales de imagen y reglas confirmadas de nombres/roles.
 - Plantillas InDesign, nombres reales de estilos/capas/Script Labels y fuentes licenciadas.
 - Especificaciones de imprenta para PDF PRINT.
-- Credenciales introducidas por el usuario para repetir pruebas PostgreSQL opt-in; nunca deben
-  enviarse por chat ni guardarse en el repositorio.
