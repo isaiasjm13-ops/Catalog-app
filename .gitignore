@@ -131,7 +131,7 @@ passwords.txt
 # Temporales de desarrollo
 scratch/
 temp/
-test_*.py
+/test_*.py
 debug_*.py
 
 # Salidas temporales de comandos Git
