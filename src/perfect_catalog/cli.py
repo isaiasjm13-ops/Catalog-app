@@ -9,6 +9,7 @@ from pathlib import Path
 from .config import DatabaseConfig, prompt_password
 from .application import apply_approved_plan, approve_plan
 from .importer import DEFAULT_MAX_PILOT_ROWS, inspect_plan, run_dry_run
+from .intake_promotion import promote_intake_to_dry_run
 from .publication import (
     archive_release,
     build_release,
@@ -49,6 +50,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Límite de seguridad del piloto; amplíelo solo después de validar una muestra.",
     )
     _database_arguments(import_parser)
+
+    promotion_parser = subparsers.add_parser(
+        "promote-intake",
+        help="Promueve explícitamente un ingreso Odoo en cuarentena hacia perfilado y dry-run.",
+    )
+    promotion_parser.add_argument("submission_id", type=uuid.UUID)
+    promotion_parser.add_argument("--intake-root", type=Path, default=Path("data/intake"))
+    promotion_parser.add_argument("--output-dir", type=Path, default=Path("data/exports/imports"))
+    promotion_parser.add_argument("--max-rows", type=int, default=DEFAULT_MAX_PILOT_ROWS)
+    _human_evidence_arguments(promotion_parser)
+    _database_arguments(promotion_parser)
 
     inspect_parser = subparsers.add_parser("inspect-plan", help="Inspecciona un plan persistido.")
     inspect_parser.add_argument("plan_id", type=uuid.UUID)
@@ -131,6 +143,11 @@ def main(argv: list[str] | None = None) -> int:
         password = prompt_password(args.prompt_password)
         if args.command == "import-odoo":
             result = run_dry_run(args.source, config, password, args.output_dir, args.max_rows)
+        elif args.command == "promote-intake":
+            result = promote_intake_to_dry_run(
+                args.submission_id, args.intake_root, config, password, args.output_dir,
+                actor=args.actor, reason=args.reason, max_rows=args.max_rows,
+            )
         elif args.command == "inspect-plan":
             result = inspect_plan(args.plan_id, config, password)
         elif args.command == "approve-plan":
