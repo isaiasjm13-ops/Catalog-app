@@ -26,7 +26,7 @@ PostgreSQL no crea automáticamente índices sobre las columnas que referencian 
 índices de acceso incluidos se eligieron por conciliación, estado, cronología y relaciones
 operativas documentadas. No se incluyeron índices GIN sobre JSONB.
 
-## 2. Matriz de las 24 tablas
+## 2. Matriz de las 24 tablas del núcleo inicial
 
 | # | Tabla | Sección | PK | FKs principales | Restricciones críticas | Índices explícitos principales | Append-only por contrato | Decisión pendiente |
 |---:|---|---|---|---|---|---|---|---|
@@ -59,7 +59,7 @@ operativas documentadas. No se incluyeron índices GIN sobre JSONB.
 
 | Decisión de `DATABASE_DESIGN.md` | Implementación en el DDL |
 |---|---|
-| UUID interno estable | Las 24 PK son `uuid` sin generador ni dependencia externa |
+| UUID interno estable | Las PK del núcleo son `uuid` sin generador ni dependencia externa |
 | IDs Odoo contextuales | Columnas nullable e índices únicos parciales por `source_system_id` |
 | Nombre no identifica | Ningún `name` de producto tiene unique |
 | Referencias duplicadas permitidas | Índice no único `(source_system_id, brand_id, value_normalized)` |
@@ -196,7 +196,12 @@ el clúster, pero `Spanish_Panama.1252` no será la collation definitiva de la b
 - [x] Verificar hash y segunda revisión manual aprobada de la migración.
 - [ ] Confirmar que la base de destino esté vacía y sea la correcta.
 - [ ] Confirmar respaldo y restauración cuando aplique.
-- [ ] Revisar las 24 tablas y que no exista ninguna adicional.
+- [ ] Revisar las 24 tablas del núcleo y las extensiones forward-only documentadas.
+
+## Extensiones forward-only posteriores
+
+- `0007`: `intake_asset` e `intake_submission`, evidencia append-only de cuarentena.
+- `0008`: `intake_promotion`, vínculo append-only y contextual entre ingreso, hash y dry-run.
 - [ ] Revisar las 57 FKs y sus acciones restrictivas.
 - [ ] Revisar 171 checks, 21 unique constraints y 80 índices explícitos.
 - [ ] Confirmar que no hay extensiones, credenciales ni datos empresariales.

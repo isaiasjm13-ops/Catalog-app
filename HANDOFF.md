@@ -1,5 +1,27 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Sesión Actual: Promoción explícita de cuarentena (2026-08-26)
+
+### Resultado de esta sesión
+
+- Implementado `promote-intake` para datos Odoo aceptados: exige UUID, actor, motivo y contraseña;
+  revalida ruta, tamaño y SHA-256 antes de copiar o procesar.
+- Perfilado, sugerencias flexibles de columnas y dry-run quedan encadenados sólo por acción explícita.
+  El resultado sigue en `awaiting_review`; no existe aprobación, apply o publicación automática.
+- Migración forward-only `0008` añade evidencia append-only con relaciones exactas entre submission,
+  asset/hash y batch/plan, más permisos `SELECT`/`INSERT` mínimos para la aplicación.
+- Copia aislada y trazable bajo `data/intake/processing`; el objeto content-addressed original nunca
+  se modifica. Promociones repetidas son idempotentes y las concurrentes usan advisory lock.
+- Documentación operativa y launcher `MIGRAR-PROMOCIONES.cmd` añadidos.
+- Suite local: 156 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas hasta aplicar `0008`.
+
+### Pendiente siguiente
+
+1. Aplicar `0008` en `perfect_catalog_dev` y ejecutar la integración real con un fixture sintético.
+2. Exponer la promoción como POST individual en la consola operador, con CSRF, confirmación y motivo;
+   no añadir acciones masivas.
+3. Construir el índice no destructivo de imágenes sobre ZIP validado en cuarentena.
+
 ## Sesión Actual: Parser y exportaciones verificadas (2026-08-26)
 
 ### Resultado de esta sesión

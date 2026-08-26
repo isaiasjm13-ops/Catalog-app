@@ -131,6 +131,10 @@ erDiagram
 | 23 | `catalog_release_item` | Publicación | Producto y snapshot exacto de una versión |
 | 24 | `audit_event` | Auditoría | Eventos append-only de cambios y decisiones |
 
+Las migraciones forward-only posteriores amplían este núcleo con `intake_asset`,
+`intake_submission` e `intake_promotion`. Estas tablas no sustituyen staging ni auditoría: preservan
+la cadena previa desde cuarentena hasta el plan de dry-run.
+
 ## 6. Especificación de tablas
 
 ### 6.1 `source_system`
@@ -640,10 +644,9 @@ Solo permanecen abiertos estos datos o reglas que el repositorio no puede determ
 
 ## 13. Próximo paso
 
-Las 24 tablas y sus responsabilidades quedan aprobadas documentalmente. El DDL v0.2 corregido y
-la estrategia de migraciones existen como borradores revisables, pero no se han ejecutado. Se debe
-completar una segunda revisión manual de `DDL_REVIEW.md` y del SQL antes de preparar PostgreSQL 16+
-local para una validación real en una base vacía.
+Las 24 tablas del núcleo y sus responsabilidades quedan aprobadas documentalmente. Las extensiones
+de ingreso y promoción se aplican exclusivamente mediante migraciones forward-only y conservan el
+mismo modelo de mínimo privilegio, hashes y evidencia append-only.
 
 ## 14. Aclaraciones del mapeo físico v0.2
 
