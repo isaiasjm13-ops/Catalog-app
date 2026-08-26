@@ -71,14 +71,23 @@ class CatalogExportTests(unittest.TestCase):
     def test_generated_pdf_and_pptx_are_valid_containers_with_content(self) -> None:
         release, items = fixture_release()
         rows = export_rows_from_release(release, items)
-        pdf = generate_catalog_pdf(rows, {"title": "Catálogo sintético", "columns_per_row": 3})
+        pdf = generate_catalog_pdf(
+            rows, {"title": "Catálogo sintético", "columns_per_row": 3, "theme": "industrial"},
+            release=release,
+        )
         self.assertTrue(pdf.startswith(b"%PDF-"))
         self.assertIn(b"%%EOF", pdf[-64:])
-        pptx = generate_catalog_pptx(rows, {"title": "Catálogo sintético", "columns_per_row": 3})
+        pptx = generate_catalog_pptx(
+            rows, {"title": "Catálogo sintético", "columns_per_row": 3, "theme": "industrial"},
+            release=release,
+        )
         self.assertTrue(pptx.startswith(b"PK"))
         with zipfile.ZipFile(io.BytesIO(pptx)) as archive:
             slides = [name for name in archive.namelist() if name.startswith("ppt/slides/slide") and name.endswith(".xml")]
+            slide_xml = "".join(archive.read(name).decode("utf-8") for name in slides)
         self.assertGreaterEqual(len(slides), 2)
+        self.assertIn("C34A21", slide_xml)
+        self.assertIn(str(release["snapshot_sha256"])[:16], slide_xml)
 
     def test_pdf_escapes_untrusted_snapshot_text(self) -> None:
         release, items = fixture_release()

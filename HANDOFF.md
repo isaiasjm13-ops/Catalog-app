@@ -92,6 +92,10 @@
 - Nuevo `verify-catalog-export MANIFEST`: validación offline sin contraseña que exige coincidencia
   exacta de directorio, bytes y hashes; inspecciona ZIP digital/InDesign, rutas, cifrado, tamaño
   descomprimido, archivos requeridos e imágenes. Devuelve `perfect-catalog.export-verification.v1`.
+- PDF aplica el tema a jerarquía de portada y encabezados, añade regla editorial, versión, checksum
+  abreviado y número de página. PPTX aplica la paleta a portada, fondos, títulos, subtítulo y fichas.
+- QA visual real del PDF industrial completado en el visor integrado: portada de dos páginas sin
+  recortes, título/subtítulo centrados, color temático, márgenes y pie legibles. Artefacto QA eliminado.
 - Suite local actual: 198 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)

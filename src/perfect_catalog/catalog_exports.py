@@ -13,6 +13,8 @@ from pptx.util import Inches, Pt
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.units import cm
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
@@ -89,21 +91,39 @@ def _pdf_cell(row: dict[str, Any], styles: Any, bundle_dir: Path | None) -> list
 
 def generate_catalog_pdf(
     rows: list[dict[str, Any]], config: dict[str, Any] | None = None,
-    *, bundle_dir: Path | None = None,
+    *, bundle_dir: Path | None = None, release: dict[str, Any] | None = None,
 ) -> bytes:
     config = config or {}
+    release = release or {}
     columns = max(1, min(3, int(config.get("columns_per_row", 2))))
     title = str(config.get("title") or "Catálogo de productos")
     palette = _theme(config)
     styles = getSampleStyleSheet()
+    cover_title_style = ParagraphStyle(
+        "PerfectCatalogCoverTitle", parent=styles["Title"],
+        textColor=colors.HexColor(palette["primary"]), fontName="Helvetica-Bold",
+        fontSize=32, leading=36, alignment=TA_CENTER, spaceAfter=14,
+    )
+    cover_subtitle_style = ParagraphStyle(
+        "PerfectCatalogCoverSubtitle", parent=styles["Heading2"],
+        textColor=colors.HexColor(palette["ink"]), fontName="Helvetica",
+        fontSize=15, leading=20, alignment=TA_CENTER,
+    )
+    section_style = ParagraphStyle(
+        "PerfectCatalogSection", parent=styles["Heading1"],
+        textColor=colors.HexColor(palette["primary"]), fontName="Helvetica-Bold",
+    )
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, title=title, leftMargin=1.2*cm, rightMargin=1.2*cm)
-    story: list[Any] = [Spacer(1, 6*cm), Paragraph(escape(title), styles["Title"]), Paragraph(escape(str(config.get("subtitle") or "")), styles["Heading2"]), PageBreak()]
+    story: list[Any] = [
+        Spacer(1, 6 * cm), Paragraph(escape(title), cover_title_style),
+        Paragraph(escape(str(config.get("subtitle") or "")), cover_subtitle_style), PageBreak(),
+    ]
     for section, section_rows in _groups(
         rows, str(config.get("group_by") or "category_path"),
         str(config["group_by_secondary"]) if config.get("group_by_secondary") else None,
     ):
-        story.extend([Paragraph(escape(section), styles["Heading1"]), Spacer(1, .25*cm)])
+        story.extend([Paragraph(escape(section), section_style), Spacer(1, .25*cm)])
         cells = [_pdf_cell(row, styles, bundle_dir) for row in section_rows]
         grid = [cells[index:index+columns] for index in range(0, len(cells), columns)]
         if grid and len(grid[-1]) < columns:
@@ -111,23 +131,45 @@ def generate_catalog_pdf(
         table = Table(grid, colWidths=[(A4[0]-2.4*cm)/columns]*columns, repeatRows=0)
         table.setStyle(TableStyle([("BOX", (0,0), (-1,-1), .5, colors.HexColor(palette["primary"])), ("INNERGRID", (0,0), (-1,-1), .25, colors.lightgrey), ("VALIGN", (0,0), (-1,-1), "TOP"), ("PADDING", (0,0), (-1,-1), 8)]))
         story.extend([table, Spacer(1, .4*cm)])
-    doc.build(story)
+    def decorate(canvas: Any, document: Any) -> None:
+        canvas.saveState()
+        canvas.setStrokeColor(colors.HexColor(palette["primary"]))
+        canvas.setLineWidth(2)
+        canvas.line(1.2 * cm, A4[1] - .8 * cm, A4[0] - 1.2 * cm, A4[1] - .8 * cm)
+        canvas.setFillColor(colors.HexColor(palette["ink"]))
+        canvas.setFont("Helvetica", 7)
+        version = str(release.get("version") or "")
+        checksum = str(release.get("snapshot_sha256") or "")[:16]
+        proof = " · ".join(value for value in (version, checksum) if value)
+        canvas.drawString(1.2 * cm, .65 * cm, proof)
+        canvas.drawRightString(A4[0] - 1.2 * cm, .65 * cm, f"Página {document.page}")
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=decorate, onLaterPages=decorate)
     return buffer.getvalue()
 
 
 def generate_catalog_pptx(
     rows: list[dict[str, Any]], config: dict[str, Any] | None = None,
-    *, bundle_dir: Path | None = None,
+    *, bundle_dir: Path | None = None, release: dict[str, Any] | None = None,
 ) -> bytes:
     config = config or {}
+    release = release or {}
     columns = max(1, min(3, int(config.get("columns_per_row", 2))))
     title = str(config.get("title") or "Catálogo de productos")
     palette = _theme(config)
     primary_rgb = RGBColor.from_string(palette["primary"].lstrip("#"))
     prs = Presentation()
     cover = prs.slides.add_slide(prs.slide_layouts[0])
+    cover.background.fill.solid(); cover.background.fill.fore_color.rgb = RGBColor.from_string(palette["paper"].lstrip("#"))
     cover.shapes.title.text = title
-    cover.placeholders[1].text = str(config.get("subtitle") or "")
+    cover.shapes.title.text_frame.paragraphs[0].font.color.rgb = primary_rgb
+    proof = " · ".join(value for value in (
+        str(config.get("subtitle") or ""), str(release.get("version") or ""),
+        str(release.get("snapshot_sha256") or "")[:16],
+    ) if value)
+    cover.placeholders[1].text = proof
+    cover.placeholders[1].text_frame.paragraphs[0].font.color.rgb = RGBColor.from_string(palette["ink"].lstrip("#"))
     per_slide = columns * 3
     for section, section_rows in _groups(
         rows, str(config.get("group_by") or "category_path"),
@@ -135,15 +177,17 @@ def generate_catalog_pptx(
     ):
         for start in range(0, len(section_rows), per_slide):
             slide = prs.slides.add_slide(prs.slide_layouts[6])
+            slide.background.fill.solid(); slide.background.fill.fore_color.rgb = RGBColor.from_string(palette["paper"].lstrip("#"))
             heading = slide.shapes.add_textbox(Inches(.4), Inches(.2), Inches(12.5), Inches(.5))
             heading.text_frame.paragraphs[0].text = section
             heading.text_frame.paragraphs[0].font.size = Pt(22)
             heading.text_frame.paragraphs[0].font.bold = True
+            heading.text_frame.paragraphs[0].font.color.rgb = primary_rgb
             for index, row in enumerate(section_rows[start:start+per_slide]):
                 col, line = index % columns, index // columns
                 width = 12.4 / columns
                 box = slide.shapes.add_textbox(Inches(.4+col*width), Inches(.9+line*2.05), Inches(width-.15), Inches(1.85))
-                box.fill.solid(); box.fill.fore_color.rgb = RGBColor(245, 247, 250)
+                box.fill.solid(); box.fill.fore_color.rgb = RGBColor.from_string(palette["card"].lstrip("#"))
                 box.line.color.rgb = primary_rgb
                 frame = box.text_frame; frame.clear()
                 image_path = _safe_bundle_image(row, bundle_dir)

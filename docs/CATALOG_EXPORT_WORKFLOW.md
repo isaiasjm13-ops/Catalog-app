@@ -45,6 +45,9 @@ Por defecto se generan:
 - `*.indesign.zip`, paquete autocontenido con snapshot, imágenes, JSX e instrucciones.
 - `*.manifest.json`, con release, versión, checksum fuente y SHA-256 de cada entregable.
 
+PDF y PPTX comparten el tema seleccionado. El PDF imprime versión, checksum abreviado y numeración;
+PowerPoint conserva esos datos en portada y aplica la paleta a fondos, encabezados y fichas.
+
 Se puede repetir `--format pdf`, `--format pptx` o `--format indesign-json` para limitar
 la salida. El directorio de destino debe estar vacío; el comando no reemplaza archivos.
 

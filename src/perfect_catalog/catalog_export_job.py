@@ -264,11 +264,11 @@ def build_catalog_bundle(
         )
     if "pdf" in requested:
         payloads["pdf"] = (
-            f"{stem}.pdf", generate_catalog_pdf(rows, export_config, bundle_dir=output_dir)
+            f"{stem}.pdf", generate_catalog_pdf(rows, export_config, bundle_dir=output_dir, release=metadata)
         )
     if "pptx" in requested:
         payloads["pptx"] = (
-            f"{stem}.pptx", generate_catalog_pptx(rows, export_config, bundle_dir=output_dir)
+            f"{stem}.pptx", generate_catalog_pptx(rows, export_config, bundle_dir=output_dir, release=metadata)
         )
     if "indesign-json" in requested:
         snapshot = {
