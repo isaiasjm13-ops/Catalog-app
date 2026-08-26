@@ -1,16 +1,40 @@
 BEGIN;
 
-ALTER TABLE perfect_catalog.intake_submission
-    ADD CONSTRAINT uq_intake_submission_asset
-    UNIQUE (intake_submission_id, intake_asset_id);
-ALTER TABLE perfect_catalog.intake_asset
-    ADD CONSTRAINT uq_intake_asset_identity_sha
-    UNIQUE (intake_asset_id, sha256);
-ALTER TABLE perfect_catalog.import_plan
-    ADD CONSTRAINT uq_import_plan_batch
-    UNIQUE (import_plan_id, import_batch_id);
+-- Estas claves pueden existir si una preparación anterior llegó hasta este punto.
+-- La comprobación permite reanudar sin eliminar ni recrear datos o restricciones.
+DO $migration$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'uq_intake_submission_asset'
+          AND conrelid = 'perfect_catalog.intake_submission'::regclass
+    ) THEN
+        ALTER TABLE perfect_catalog.intake_submission
+            ADD CONSTRAINT uq_intake_submission_asset
+            UNIQUE (intake_submission_id, intake_asset_id);
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'uq_intake_asset_identity_sha'
+          AND conrelid = 'perfect_catalog.intake_asset'::regclass
+    ) THEN
+        ALTER TABLE perfect_catalog.intake_asset
+            ADD CONSTRAINT uq_intake_asset_identity_sha
+            UNIQUE (intake_asset_id, sha256);
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'uq_import_plan_batch'
+          AND conrelid = 'perfect_catalog.import_plan'::regclass
+    ) THEN
+        ALTER TABLE perfect_catalog.import_plan
+            ADD CONSTRAINT uq_import_plan_batch
+            UNIQUE (import_plan_id, import_batch_id);
+    END IF;
+END
+$migration$;
 
-CREATE TABLE perfect_catalog.intake_promotion (
+CREATE TABLE IF NOT EXISTS perfect_catalog.intake_promotion (
     intake_promotion_id uuid NOT NULL,
     intake_submission_id uuid NOT NULL,
     intake_asset_id uuid NOT NULL,
@@ -48,12 +72,54 @@ CREATE TABLE perfect_catalog.intake_promotion (
     CONSTRAINT ck_intake_promotion_reason CHECK (char_length(btrim(reason)) BETWEEN 4 AND 500)
 );
 
-CREATE INDEX ix_intake_promotion_promoted
+DO $migration$
+DECLARE
+    missing_constraint text;
+BEGIN
+    SELECT expected.name INTO missing_constraint
+    FROM (VALUES
+        ('pk_intake_promotion'),
+        ('uq_intake_promotion_submission'),
+        ('uq_intake_promotion_plan'),
+        ('fk_intake_promotion_submission_asset'),
+        ('fk_intake_promotion_asset_sha'),
+        ('fk_intake_promotion_plan_batch'),
+        ('ck_intake_promotion_sha256'),
+        ('ck_intake_promotion_path'),
+        ('ck_intake_promotion_profile'),
+        ('ck_intake_promotion_columns'),
+        ('ck_intake_promotion_actor'),
+        ('ck_intake_promotion_reason')
+    ) AS expected(name)
+    WHERE NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = expected.name
+          AND conrelid = 'perfect_catalog.intake_promotion'::regclass
+    )
+    LIMIT 1;
+    IF missing_constraint IS NOT NULL THEN
+        RAISE EXCEPTION 'La tabla intake_promotion está incompleta; falta %', missing_constraint;
+    END IF;
+END
+$migration$;
+
+CREATE INDEX IF NOT EXISTS ix_intake_promotion_promoted
     ON perfect_catalog.intake_promotion (promoted_at DESC, intake_promotion_id DESC);
 
-CREATE TRIGGER trg_intake_promotion_append_only
-BEFORE UPDATE OR DELETE ON perfect_catalog.intake_promotion
-FOR EACH ROW EXECUTE FUNCTION perfect_catalog.guard_append_only_row();
+DO $migration$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'trg_intake_promotion_append_only'
+          AND tgrelid = 'perfect_catalog.intake_promotion'::regclass
+          AND NOT tgisinternal
+    ) THEN
+        CREATE TRIGGER trg_intake_promotion_append_only
+        BEFORE UPDATE OR DELETE ON perfect_catalog.intake_promotion
+        FOR EACH ROW EXECUTE FUNCTION perfect_catalog.guard_append_only_row();
+    END IF;
+END
+$migration$;
 
 REVOKE ALL ON perfect_catalog.intake_promotion
 FROM PUBLIC, perfect_catalog_app, perfect_catalog_readonly;

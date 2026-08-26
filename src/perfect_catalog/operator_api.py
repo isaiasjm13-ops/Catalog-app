@@ -253,7 +253,9 @@ def _set_security_headers(response: Response) -> None:
         "default-src 'none'; style-src 'self'; img-src 'self'; "
         "form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
     )
-    response.headers["Referrer-Policy"] = "no-referrer"
+    # El login local necesita Referer como respaldo cuando una superficie Chromium
+    # omite Origin. same-origin nunca lo divulga a otro origen.
+    response.headers["Referrer-Policy"] = "same-origin"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
 

@@ -310,6 +310,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("muestra &lt;script&gt;", dashboard.text)
         self.assertNotIn("<script>alert(1)</script>", dashboard.text)
         self.assertEqual(dashboard.headers["cache-control"], "no-store")
+        self.assertEqual(dashboard.headers["referrer-policy"], "same-origin")
         self.assertIn("frame-ancestors 'none'", dashboard.headers["content-security-policy"])
         queue = await self.client.get(f"/operator/plans/{PLAN_ID}?state=pending")
         self.assertIn("Empaque &lt;script&gt;incorrecto", queue.text)

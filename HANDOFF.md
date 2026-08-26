@@ -16,14 +16,17 @@
   PPTX, snapshot `perfect-catalog.indesign-snapshot.v1` y manifiesto SHA-256 sin sobrescribir destinos.
 - Primer puente InDesign en `indesign/ImportPerfectCatalog.jsx`: abre el snapshot, valida publicación,
   crea portada y fichas editables, conserva UUID/checksum dentro del INDD y reporta desbordamientos.
-- Suite local: 173 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas por credenciales.
+- `0008` y `0009` aplicadas en `perfect_catalog_dev`. `0008` quedó reanudable y valida una tabla
+  preexistente antes de completar índice, trigger y permisos; su lanzador conserva diagnóstico seguro.
+- Verificación manual completada en Edge/Chrome local: el código temporal redirige a `/operator`.
+  `Referrer-Policy: same-origin` permite el fallback Chromium sin divulgar referentes a otros orígenes.
+- Suite local: 174 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ### Pendiente siguiente
 
-1. Confirmar visualmente el login y ejecutar las 6 integraciones tras restablecer la contraseña local.
-2. Aplicar migraciones `0008` y `0009` en orden sobre `perfect_catalog_dev`.
-3. Probar un release empresarial publicado con `export-catalog` y abrir el JSON generado en InDesign.
-4. Sustituir la maqueta básica JSX por adaptadores de plantilla T4, T2, T1, TABLE y SEPARATOR, con
+1. Ejecutar las 6 integraciones PostgreSQL opt-in ahora que el esquema local está actualizado.
+2. Probar un release empresarial publicado con `export-catalog` y abrir el JSON generado en InDesign.
+3. Sustituir la maqueta básica JSX por adaptadores de plantilla T4, T2, T1, TABLE y SEPARATOR, con
    resolución revisada de imágenes/fuentes y reporte persistente de preflight.
 
 ## Sesión Actual: Índice no destructivo de imágenes (2026-08-26)
