@@ -135,6 +135,9 @@ Las migraciones forward-only posteriores amplían este núcleo con `intake_asset
 `intake_submission` e `intake_promotion`. Estas tablas no sustituyen staging ni auditoría: preservan
 la cadena previa desde cuarentena hasta el plan de dry-run.
 
+`0009` agrega `image_archive_index` e `image_archive_entry`: evidencia del contenido lógico de ZIP
+validados, sin extracción persistente y sin relaciones a `media_asset`, `product_media` o productos.
+
 ## 6. Especificación de tablas
 
 ### 6.1 `source_system`

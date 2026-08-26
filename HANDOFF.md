@@ -1,5 +1,26 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Sesión Actual: Índice no destructivo de imágenes (2026-08-26)
+
+### Resultado de esta sesión
+
+- Añadido `index-images` para submissions `image_archive` aceptados: exige actor, motivo y contraseña,
+  y revalida ruta, tamaño y SHA-256 antes y después de recorrer el ZIP.
+- El índice lee cada imagen por streaming sin extraerla y conserva ruta, MIME, tamaños, CRC32,
+  SHA-256 de contenido y clave normalizada de búsqueda.
+- Colisiones de nombre quedan `ambiguous`; entradas únicas permanecen `unmatched`. No existe matching
+  automático ni escrituras en `media_asset`, `product_media` o productos.
+- Migración forward-only `0009` crea cabecera/entradas append-only, contexto exacto submission/asset/hash
+  y permisos mínimos `SELECT`/`INSERT`; launcher `MIGRAR-INDICE-IMAGENES.cmd` añadido.
+- Suite local: 164 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
+
+### Pendiente siguiente
+
+1. Aplicar `0008` y `0009` en orden y ejecutar integraciones reales con fixtures sintéticos.
+2. Exponer la indexación como POST individual en la consola operador, sin acción masiva.
+3. Diseñar candidatos de asociación imagen-producto separados, siempre pendientes de revisión humana.
+4. Añadir solicitud operador para exportar PDF/PPTX desde releases publicados.
+
 ## Sesión Actual: Promoción individual en consola operador (2026-08-26)
 
 ### Resultado de esta sesión

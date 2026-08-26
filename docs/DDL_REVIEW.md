@@ -202,6 +202,7 @@ el clúster, pero `Spanish_Panama.1252` no será la collation definitiva de la b
 
 - `0007`: `intake_asset` e `intake_submission`, evidencia append-only de cuarentena.
 - `0008`: `intake_promotion`, vínculo append-only y contextual entre ingreso, hash y dry-run.
+- `0009`: `image_archive_index` e `image_archive_entry`, inventario append-only sin asociaciones.
 - [ ] Revisar las 57 FKs y sus acciones restrictivas.
 - [ ] Revisar 171 checks, 21 unique constraints y 80 índices explícitos.
 - [ ] Confirmar que no hay extensiones, credenciales ni datos empresariales.

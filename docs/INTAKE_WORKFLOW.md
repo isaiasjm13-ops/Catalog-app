@@ -70,5 +70,5 @@ La pantalla pagina 50 eventos, filtra por tipo y resultado, escapa todo texto re
 - motivo, tipo detectado, conteos ZIP y causa de rechazo.
 
 Los estados de ingreso no significan que el contenido sea correcto para negocio. El perfilado de
-Odoo, el índice de imágenes, la lectura del manual y el preflight de InDesign siguen siendo etapas
-posteriores y explícitas.
+Odoo y el índice de imágenes son etapas posteriores y explícitas, documentadas por separado. La
+lectura del manual y el preflight de InDesign siguen pendientes.
