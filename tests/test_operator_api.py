@@ -32,6 +32,7 @@ class SyntheticReviewGateway:
         self.decisions: list[dict[str, Any]] = []
         self.intake_records: list[dict[str, Any]] = []
         self.promotions: list[dict[str, Any]] = []
+        self.image_indexes: list[dict[str, Any]] = []
         self.catalog_exports: list[dict[str, Any]] = []
         self.release_changes: list[dict[str, Any]] = []
         self.release_data = [{
@@ -137,6 +138,12 @@ class SyntheticReviewGateway:
             "import_plan_id": None,
             "promoted_at": None,
             "promoted_by": None,
+            "image_archive_index_id": None,
+            "image_index_sha256": None,
+            "image_count": None,
+            "ambiguous_count": None,
+            "indexed_at": None,
+            "indexed_by": None,
         }
         self.intake_records.append(stored)
         return stored
@@ -162,6 +169,21 @@ class SyntheticReviewGateway:
         record["intake_promotion_id"] = str(uuid.uuid4())
         record["import_plan_id"] = str(uuid.uuid4())
         return {"status": "promoted"}
+
+    def index_image_archive(
+        self, submission_id: uuid.UUID, intake_root: Path, actor: str, reason: str,
+    ) -> dict[str, Any]:
+        record = next(item for item in self.intake_records if item["intake_submission_id"] == str(submission_id))
+        if record["intake_kind"] != "image_archive" or record["validation_status"] != "quarantined":
+            raise PermissionError("ingreso no indexable")
+        if record["image_archive_index_id"]:
+            return {"status": "already_indexed"}
+        record.update({
+            "image_archive_index_id": str(uuid.uuid4()), "image_index_sha256": "f" * 64,
+            "image_count": 2, "ambiguous_count": 1, "indexed_by": actor,
+        })
+        self.image_indexes.append({"submission_id": submission_id, "intake_root": intake_root, "actor": actor, "reason": reason})
+        return {"status": "indexed"}
 
     def intake_submissions(
         self,
@@ -568,7 +590,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.2.0")
+        self.assertEqual(OPERATOR_VERSION, "1.5.0")
 
     async def test_promotion_requires_individual_post_origin_csrf_and_confirmation(self) -> None:
         await self.login()
@@ -610,6 +632,32 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         history = await self.client.get("/operator/intake")
         self.assertIn("Dry-run creado", history.text)
         self.assertNotIn("Promover a dry-run", history.text)
+
+    async def test_image_archive_index_is_individual_and_never_extracts_from_route(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/intake")
+        csrf = hidden_value(page.text, "csrf_token")
+        submission_id = str(uuid.uuid4())
+        self.gateway.intake_records.append({
+            "intake_submission_id": submission_id, "intake_asset_id": "asset", "intake_kind": "image_archive",
+            "original_name": "imagenes.zip", "extension": ".zip", "claimed_media_type": "application/zip",
+            "detected_media_type": "application/zip", "size_bytes": 100, "sha256": "a" * 64,
+            "validation_status": "quarantined", "duplicate_content": False, "validation_report": {"image_files": 2},
+            "submitted_by": "web-reviewer", "reason": "Paquete de imágenes", "submitted_at": "2026-08-26",
+            "intake_promotion_id": None, "import_plan_id": None, "promoted_at": None, "promoted_by": None,
+            "image_archive_index_id": None, "image_index_sha256": None, "image_count": None,
+            "ambiguous_count": None, "indexed_at": None, "indexed_by": None,
+        })
+        path = f"/operator/intake/{submission_id}/index-images"
+        form = {"csrf_token": csrf, "reason": "Índice autorizado", "confirm": "yes"}
+        self.assertEqual((await self.client.post(path, data=form)).status_code, 403)
+        accepted = await self.client.post(path, data=form, headers={"Origin": "http://testserver"})
+        self.assertEqual(accepted.status_code, 303)
+        self.assertIn("result=indexed", accepted.headers["location"])
+        self.assertEqual(self.gateway.image_indexes[0]["actor"], "web-reviewer")
+        history = await self.client.get("/operator/intake")
+        self.assertIn("2 imágenes indexadas", history.text)
+        self.assertIn("1 ambiguas", history.text)
 
     async def test_intake_requires_auth_origin_csrf_and_confirmation(self) -> None:
         unauthenticated = await self.client.get("/operator/intake")

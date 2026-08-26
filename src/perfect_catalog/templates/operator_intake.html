@@ -113,6 +113,25 @@
       {% endif %}
     </div>
     {% endif %}
+    {% if submission.intake_kind == 'image_archive' and submission.validation_status == 'quarantined' %}
+    <div class="promotion-action">
+      {% if submission.image_archive_index_id %}
+      <span class="state-pill complete">{{ submission.image_count }} imágenes indexadas</span>
+      {% if submission.ambiguous_count %}<span class="duplicate-chip">{{ submission.ambiguous_count }} ambiguas</span>{% endif %}
+      <code>{{ submission.image_index_sha256[:16] }}…</code>
+      {% else %}
+      <details>
+        <summary>Indexar imágenes sin extraer</summary>
+        <form method="post" action="/operator/intake/{{ submission.intake_submission_id }}/index-images">
+          <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+          <label><span>Motivo de indexación</span><textarea name="reason" minlength="4" maxlength="500" required></textarea></label>
+          <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo el índice individual. No extrae, asocia ni modifica imágenes.</span></label>
+          <button class="primary-button" type="submit">Crear índice verificable</button>
+        </form>
+      </details>
+      {% endif %}
+    </div>
+    {% endif %}
   </article>
   {% endfor %}
 </section>

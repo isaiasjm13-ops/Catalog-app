@@ -586,10 +586,14 @@ def _list_intake_submissions_in_connection(
                s.validation_status, s.duplicate_content,
                s.validation_report, s.submitted_by, s.reason, s.submitted_at,
                p.intake_promotion_id, p.import_plan_id, p.promoted_at, p.promoted_by,
+               x.image_archive_index_id, x.index_sha256 AS image_index_sha256,
+               x.image_count, x.ambiguous_count, x.indexed_at, x.indexed_by,
                count(*) OVER () AS filtered_count
         FROM perfect_catalog.intake_submission AS s
         LEFT JOIN perfect_catalog.intake_promotion AS p
           ON p.intake_submission_id=s.intake_submission_id
+        LEFT JOIN perfect_catalog.image_archive_index AS x
+          ON x.intake_submission_id=s.intake_submission_id
         {where_sql}
         ORDER BY s.submitted_at DESC, s.intake_submission_id DESC
         LIMIT %s OFFSET %s

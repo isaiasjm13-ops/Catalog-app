@@ -45,7 +45,7 @@ from .importer import DEFAULT_MAX_PILOT_ROWS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.2.0"
+OPERATOR_VERSION = "1.5.0"
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
 LOGIN_COOKIE_PATH = "/operator"
@@ -99,6 +99,10 @@ class ReviewGateway(Protocol):
     def promote_intake(
         self, submission_id: uuid.UUID, intake_root: Path, output_dir: Path,
         actor: str, reason: str, max_rows: int,
+    ) -> dict[str, Any]: ...
+
+    def index_image_archive(
+        self, submission_id: uuid.UUID, intake_root: Path, actor: str, reason: str,
     ) -> dict[str, Any]: ...
 
     def catalog_releases(self, *, limit: int = 100) -> list[dict[str, Any]]: ...
@@ -619,6 +623,8 @@ def create_operator_app(
             "rejected": "Archivo rechazado por el validador. No se conservaron sus bytes.",
             "promoted": "Ingreso perfilado; el dry-run quedó pendiente de revisión.",
             "already_promoted": "Este ingreso ya tenía un dry-run enlazado.",
+            "indexed": "ZIP indexado sin extracción. Las asociaciones permanecen pendientes de revisión.",
+            "already_indexed": "Este ZIP ya tenía un índice verificable; no se duplicó.",
         }.get(result)
         query_args = {"kind": kind, "status": status}
         previous_url = (
@@ -1032,6 +1038,35 @@ def create_operator_app(
         return RedirectResponse(
             f"/operator/intake?{urlencode({'result': str(result['status'])})}",
             status_code=303,
+        )
+
+    @app.post("/operator/intake/{submission_id}/index-images")
+    async def index_image_archive_route(request: Request, submission_id: str) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "reason", "confirm"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
+                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            reason = _require_text(form["reason"], "reason")
+            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
+                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
+            if form["confirm"] != "yes":
+                raise ValueError("Debes confirmar la indexación individual sin extracción.")
+            result = await run_in_threadpool(
+                gateway.index_image_archive,
+                _uuid(submission_id, "submission_id"), resolved_intake_root, session.actor, reason,
+            )
+        except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
+            return _error(environment, 409, "Índice no creado", str(exc), session=session)
+        except Exception:
+            return _error(environment, 503, "Indexación no disponible", "No se creó el índice. Revisa la consola del servidor.", session=session)
+        return RedirectResponse(
+            f"/operator/intake?{urlencode({'result': str(result['status'])})}", status_code=303
         )
 
     @app.get("/operator/plans/{plan_id}", response_class=HTMLResponse)

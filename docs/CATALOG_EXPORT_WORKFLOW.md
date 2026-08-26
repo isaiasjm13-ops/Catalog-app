@@ -73,3 +73,7 @@ las coloca como enlaces sin modificar los originales.
 Al guardar el INDD también crea `*.preflight.json` con imágenes ausentes, índices de fichas
 con texto desbordado y fuentes no disponibles. InDesign nunca se conecta directamente a
 PostgreSQL.
+
+Antes de asociar fotografías, los ZIP aceptados pueden indexarse desde `Operador > Ingresos`.
+Esa acción sólo indexa nombres, rutas y hashes, y detecta colisiones; no extrae archivos ni decide
+qué fotografía corresponde a un producto. La asociación humana sigue siendo un bloque posterior.

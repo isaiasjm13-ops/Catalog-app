@@ -25,7 +25,7 @@ class PackagingTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(completed.stdout.strip(), "1.1.0 1.2.0")
+        self.assertEqual(completed.stdout.strip(), "1.1.0 1.5.0")
 
 
 if __name__ == "__main__":

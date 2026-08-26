@@ -30,6 +30,8 @@
 - Cada INDD produce `perfect-catalog.indesign-preflight.v1` con imágenes faltantes, overflows y fuentes.
 - Selección derivada por campo/texto y agrupación primaria/secundaria añadidas a preview, PDF, PPTX
   e InDesign; el manifiesto conserva conteo fuente, conteo seleccionado y criterios exactos.
+- La consola de Ingresos permite indexar un ZIP de imágenes aceptado mediante POST individual con
+  sesión/Origin/CSRF/motivo/confirmación. Muestra conteo, ambigüedades y hash; no extrae ni asocia.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
 

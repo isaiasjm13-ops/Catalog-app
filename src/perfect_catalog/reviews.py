@@ -952,6 +952,16 @@ class DatabaseReviewGateway:
             actor=actor, reason=reason, max_rows=max_rows,
         )
 
+    def index_image_archive(
+        self, submission_id: uuid.UUID, intake_root: Path, actor: str, reason: str,
+    ) -> dict[str, Any]:
+        from .image_archive_index import build_image_archive_index
+
+        return build_image_archive_index(
+            submission_id, intake_root, self._config, self._password,
+            actor=actor, reason=reason,
+        )
+
     def decide(
         self,
         plan_id: uuid.UUID,
