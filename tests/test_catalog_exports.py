@@ -15,6 +15,7 @@ from perfect_catalog.catalog_export_job import (
     build_catalog_bundle,
     build_catalog_preview,
     estimate_indesign_layout,
+    record_indesign_preflight,
     list_operator_catalog_exports,
     resolve_catalog_download,
     verify_catalog_bundle,
@@ -55,6 +56,38 @@ class CatalogExportTests(unittest.TestCase):
         self.assertEqual(estimate_indesign_layout([{"count": 17}], "TABLE")["estimated_page_count"], 4)
         with self.assertRaisesRegex(ValueError, "Perfil InDesign"):
             estimate_indesign_layout([{"count": 1}], "T8")
+
+    def test_indesign_preflight_is_bound_to_verified_export_and_stored_separately(self) -> None:
+        release, items = fixture_release()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            export_id = uuid.uuid4()
+            result = build_catalog_bundle(
+                release, items, root / str(release["catalog_release_id"]) / str(export_id),
+                formats=("indesign-json",), config={"template_profile": "T4", "theme": "forest"},
+            )
+            report = {
+                "schema": "perfect-catalog.indesign-preflight.v1",
+                "release_id": str(release["catalog_release_id"]),
+                "snapshot_sha256": release["snapshot_sha256"], "template_profile": "T4",
+                "theme": "forest", "product_count": 1, "linked_image_count": 0,
+                "missing_images": [{"product_index": 0, "reference": "NK-001", "reason": "ausente"}],
+                "overflow_product_indexes": [], "unavailable_fonts": [],
+                "group_count": 1, "page_count": 3,
+            }
+            receipt = record_indesign_preflight(
+                root, release["catalog_release_id"], export_id,
+                json.dumps(report).encode(), actor="qa", reason="Preflight ejecutado en InDesign",
+            )
+            self.assertEqual(receipt["schema"], "perfect-catalog.indesign-preflight-receipt.v1")
+            self.assertTrue(Path(receipt["path"]).is_file())
+            self.assertNotIn("_indesign_preflight", {path.name for path in (root / str(release["catalog_release_id"]) / str(export_id)).iterdir()})
+            report["theme"] = "classic"
+            with self.assertRaisesRegex(ValueError, "no coincide"):
+                record_indesign_preflight(
+                    root, release["catalog_release_id"], export_id,
+                    json.dumps(report).encode(), actor="qa", reason="Tema incorrecto",
+                )
     def test_cli_exposes_export_catalog_with_repeatable_formats(self) -> None:
         release_id = uuid.uuid4()
         args = build_parser().parse_args([

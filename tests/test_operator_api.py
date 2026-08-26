@@ -559,6 +559,48 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(bad_csrf.status_code, 403)
         self.assertFalse(self.gateway.catalog_exports)
 
+    async def test_indesign_preflight_upload_is_csrf_bound_and_visible(self) -> None:
+        from perfect_catalog.catalog_export_job import build_catalog_bundle
+        from tests.test_catalog_exports import fixture_release
+
+        await self.login()
+        release, items = fixture_release()
+        export_id = uuid.uuid4()
+        output_root = Path(self.temporary.name) / "catalogs"
+        build_catalog_bundle(
+            release, items,
+            output_root / str(release["catalog_release_id"]) / str(export_id),
+            formats=("indesign-json",),
+            config={"template_profile": "T4", "theme": "forest"},
+        )
+        page = await self.client.get("/operator/catalogs")
+        csrf = hidden_value(page.text, "csrf_token")
+        report = {
+            "schema": "perfect-catalog.indesign-preflight.v1",
+            "release_id": str(release["catalog_release_id"]),
+            "snapshot_sha256": release["snapshot_sha256"], "template_profile": "T4",
+            "theme": "forest", "product_count": 1, "linked_image_count": 0,
+            "missing_images": [], "overflow_product_indexes": [], "unavailable_fonts": [],
+            "group_count": 1, "page_count": 3,
+        }
+        url = f"/operator/catalogs/{release['catalog_release_id']}/exports/{export_id}/preflight"
+        rejected = await self.client.post(
+            url, data={"csrf_token": csrf, "reason": "Prueba real", "confirm": "yes"},
+            files={"file": ("catalog.preflight.json", json.dumps(report), "application/json")},
+        )
+        self.assertEqual(rejected.status_code, 403)
+        accepted = await self.client.post(
+            url, data={"csrf_token": csrf, "reason": "Preflight ejecutado en InDesign", "confirm": "yes"},
+            files={"file": ("catalog.preflight.json", json.dumps(report), "application/json")},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(accepted.status_code, 303)
+        self.assertEqual(accepted.headers["location"], "/operator/catalogs?result=preflight_recorded")
+        refreshed = await self.client.get("/operator/catalogs")
+        self.assertIn("Preflight recibido", refreshed.text)
+        self.assertIn("3 páginas", refreshed.text)
+        self.assertIn("0 imágenes faltantes", refreshed.text)
+
     async def test_catalog_release_build_and_publish_are_individual_csrf_posts(self) -> None:
         await self.login()
         page = await self.client.get("/operator/catalogs")

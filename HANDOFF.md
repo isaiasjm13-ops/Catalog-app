@@ -118,7 +118,13 @@
   una portada + un separador por grupo + `ceil(productos/capacidad)` reiniciado en cada grupo.
 - Capacidades auditables: T4=4, T2=2, T1=1 y TABLE=16. Prueba Uvicorn/navegador: 12 productos,
   un grupo y TABLE mostraron correctamente 3 páginas estimadas.
-- Suite local actual: 203 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
+- La biblioteca permite devolver el `*.preflight.json` generado por InDesign mediante carga individual
+  con sesión, Origin, CSRF, confirmación y motivo. Límite 1 MiB y contrato JSON exacto.
+- Antes de registrar, revalida todo el bundle y exige coincidencia de release, checksum, perfil, tema y
+  productos. El recibo append-only queda fuera del bundle e incluye actor, fecha y SHA-256 del reporte.
+- La consola muestra el último resultado: páginas, imágenes faltantes, overflows y fuentes. La prueba
+  HTTP multipart real comprobó rechazo sin Origin y aceptación/redirección/estado con evidencia válida.
+- Suite local actual: 205 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
 

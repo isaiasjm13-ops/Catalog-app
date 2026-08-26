@@ -165,13 +165,27 @@
     <div class="delivery-list">
       {% for export in exports %}
       <article>
-        <div class="delivery-title"><div><strong>{{ export.release.version }}</strong><small>{{ export.selection.selected_item_count }} de {{ export.release.item_count }} productos{% if export.selection.filter_query %} · “{{ export.selection.filter_query }}”{% endif %}{% if export.selection.get('selected_references') %} · {{ export.selection.selected_references|length }} referencias manuales{% endif %}{% if export.layout.get('theme') %} · tema {{ export.layout.theme }}{% endif %}</small></div><span>Verificable</span></div>
+        {% set preflight = preflight_by_export.get(export.export_id) %}
+        <div class="delivery-title"><div><strong>{{ export.release.version }}</strong><small>{{ export.selection.selected_item_count }} de {{ export.release.item_count }} productos{% if export.selection.filter_query %} · “{{ export.selection.filter_query }}”{% endif %}{% if export.selection.get('selected_references') %} · {{ export.selection.selected_references|length }} referencias manuales{% endif %}{% if export.layout.get('theme') %} · tema {{ export.layout.theme }}{% endif %}</small></div><span>{{ 'Preflight recibido' if preflight else 'Verificable' }}</span></div>
         <ul>
           {% for file in export.files %}
           <li><a href="/operator/catalogs/{{ export.release_id }}/exports/{{ export.export_id }}/{{ file.filename }}">{{ file.format }}</a><span>{{ file.bytes }} B</span></li>
           {% endfor %}
           <li><a href="/operator/catalogs/{{ export.release_id }}/exports/{{ export.export_id }}/{{ export.manifest }}">manifiesto</a><span>SHA-256</span></li>
         </ul>
+        {% set indesign_packages = export.files | selectattr('format', 'equalto', 'indesign-package') | list %}
+        {% if indesign_packages %}
+        {% if preflight %}<div class="preflight-status"><strong>{{ preflight.report.page_count }} páginas</strong><span>{{ preflight.report.missing_images|length }} imágenes faltantes · {{ preflight.report.overflow_product_indexes|length }} desbordamientos · {{ preflight.report.unavailable_fonts|length }} fuentes</span></div>{% endif %}
+        <details class="preflight-upload"><summary>{{ 'Registrar otro preflight' if preflight else 'Registrar preflight de InDesign' }}</summary>
+          <form method="post" enctype="multipart/form-data" action="/operator/catalogs/{{ export.release_id }}/exports/{{ export.export_id }}/preflight">
+            <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+            <label><span>Reporte JSON</span><input type="file" name="file" accept=".json,application/json" required></label>
+            <label><span>Motivo auditable</span><input name="reason" minlength="4" maxlength="500" placeholder="Preflight ejecutado en InDesign" required></label>
+            <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo que corresponde a esta exportación exacta.</span></label>
+            <button class="secondary-button" type="submit">Validar y registrar</button>
+          </form>
+        </details>
+        {% endif %}
       </article>
       {% endfor %}
     </div>

@@ -282,6 +282,18 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .delivery-list li { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; }
 .delivery-list a { color: var(--lime); font-weight: 700; text-transform: uppercase; }
 .delivery-list li span { color: #9fb8ae; }
+.preflight-status { display: grid; gap: 3px; margin-top: 12px; padding: 11px; border-radius: 9px; color: var(--forest-dark); background: var(--lime); }
+.preflight-status strong { font-size: 11px; }
+.preflight-status span { font-size: 9px; }
+.preflight-upload { margin-top: 12px; }
+.preflight-upload summary { color: var(--lime); cursor: pointer; font-size: 10px; font-weight: 800; }
+.preflight-upload form { display: grid; gap: 8px; margin-top: 9px; padding: 11px; border: 1px solid rgba(255,255,255,.12); border-radius: 10px; background: rgba(255,255,255,.06); }
+.preflight-upload label { display: grid; gap: 4px; }
+.preflight-upload label > span { color: #d7e4de; font-size: 9px; }
+.preflight-upload input { min-height: 40px; font-size: 11px; }
+.preflight-upload input[type="file"] { padding: 8px; color: #d7e4de; }
+.preflight-upload .confirm-field { grid-template-columns: auto 1fr; align-items: start; }
+.preflight-upload .confirm-field input { width: 15px; min-height: 15px; }
 .delivery-empty { margin-top: 20px; padding: 20px; border: 1px dashed rgba(255,255,255,.2); border-radius: 13px; color: #b9cec5; font-size: 12px; text-align: center; }
 .preview-hero { display: grid; grid-template-columns: 1fr minmax(280px, .45fr); gap: 30px; align-items: end; padding: 40px 0 24px; }
 .preview-hero h1 { font-size: clamp(42px, 7vw, 80px); }

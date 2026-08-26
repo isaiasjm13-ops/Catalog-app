@@ -8,6 +8,7 @@ import shutil
 import uuid
 import io
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -24,6 +25,9 @@ INDESIGN_PRODUCTS_PER_PAGE = {"T4": 4, "T2": 2, "T1": 1, "TABLE": 16}
 CATALOG_GROUP_FIELDS = ("category_path", "brand", "internal_reference_original")
 CATALOG_FILTER_FIELDS = ("all", "category_path", "brand", "internal_reference_original", "name_original")
 MAX_SELECTED_REFERENCES = 5000
+MAX_INDESIGN_PREFLIGHT_BYTES = 1024 * 1024
+INDESIGN_PREFLIGHT_SCHEMA = "perfect-catalog.indesign-preflight.v1"
+INDESIGN_PREFLIGHT_RECEIPT_SCHEMA = "perfect-catalog.indesign-preflight-receipt.v1"
 
 
 def estimate_indesign_layout(groups: Iterable[dict[str, Any]], template_profile: str) -> dict[str, Any]:
@@ -50,6 +54,120 @@ def estimate_indesign_layout(groups: Iterable[dict[str, Any]], template_profile:
         "product_pages": product_pages,
         "estimated_page_count": 1 + separator_pages + product_pages,
     }
+
+
+def record_indesign_preflight(
+    output_root: Path, release_id: uuid.UUID, export_id: uuid.UUID,
+    content: bytes, *, actor: str, reason: str,
+) -> dict[str, Any]:
+    if not content or len(content) > MAX_INDESIGN_PREFLIGHT_BYTES:
+        raise ValueError("El preflight debe contener entre 1 byte y 1 MiB.")
+    actor = str(actor).strip()
+    reason = str(reason).strip()
+    if not 1 <= len(actor) <= 200 or not 4 <= len(reason) <= 500:
+        raise ValueError("Actor o motivo de preflight no válido.")
+    try:
+        report = json.loads(content.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("El preflight no es JSON UTF-8 válido.") from exc
+    expected_fields = {
+        "schema", "release_id", "snapshot_sha256", "template_profile", "theme",
+        "product_count", "linked_image_count", "missing_images",
+        "overflow_product_indexes", "unavailable_fonts", "group_count", "page_count",
+    }
+    if not isinstance(report, dict) or set(report) != expected_fields:
+        raise ValueError("El preflight no cumple el contrato exacto de InDesign.")
+    if report["schema"] != INDESIGN_PREFLIGHT_SCHEMA or report["release_id"] != str(release_id):
+        raise ValueError("El preflight no corresponde al release solicitado.")
+    root = output_root.resolve()
+    bundle = root / str(release_id) / str(export_id)
+    manifests = list(bundle.glob("*.manifest.json")) if bundle.is_dir() else []
+    if len(manifests) != 1:
+        raise FileNotFoundError("La exportación no tiene un manifiesto único.")
+    verify_catalog_bundle(manifests[0])
+    manifest = json.loads(manifests[0].read_text(encoding="utf-8"))
+    release = manifest["release"]
+    layout = manifest.get("layout") or {}
+    selection = manifest.get("selection") or {}
+    expected_product_count = selection.get("selected_item_count", release.get("item_count"))
+    if (
+        report["snapshot_sha256"] != release.get("snapshot_sha256")
+        or report["template_profile"] != layout.get("template_profile")
+        or report["theme"] != layout.get("theme")
+        or report["product_count"] != expected_product_count
+    ):
+        raise ValueError("El preflight no coincide con la exportación exacta.")
+    product_count = report["product_count"]
+    integer_fields = ("product_count", "linked_image_count", "group_count", "page_count")
+    if any(not isinstance(report[field], int) or isinstance(report[field], bool) for field in integer_fields):
+        raise ValueError("El preflight contiene conteos no válidos.")
+    if product_count < 1 or not 0 <= report["linked_image_count"] <= product_count:
+        raise ValueError("El preflight contiene conteos fuera de rango.")
+    if report["group_count"] < 1 or report["page_count"] < 1 + report["group_count"]:
+        raise ValueError("El preflight contiene una paginación imposible.")
+    if not all(isinstance(report[field], list) for field in ("missing_images", "overflow_product_indexes", "unavailable_fonts")):
+        raise ValueError("El preflight contiene listas no válidas.")
+    indexes = report["overflow_product_indexes"]
+    if any(not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < product_count for index in indexes):
+        raise ValueError("El preflight contiene índices de overflow no válidos.")
+    if len(indexes) != len(set(indexes)):
+        raise ValueError("El preflight contiene índices de overflow duplicados.")
+    if any(not isinstance(name, str) or not name or len(name) > 300 for name in report["unavailable_fonts"]):
+        raise ValueError("El preflight contiene nombres de fuente no válidos.")
+    missing_indexes: list[int] = []
+    for item in report["missing_images"]:
+        if not isinstance(item, dict) or set(item) != {"product_index", "reference", "reason"}:
+            raise ValueError("El preflight contiene incidencias de imagen no válidas.")
+        index = item["product_index"]
+        if not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < product_count:
+            raise ValueError("El preflight contiene índices de imagen no válidos.")
+        if any(not isinstance(item[field], str) or not item[field] or len(item[field]) > 500 for field in ("reference", "reason")):
+            raise ValueError("El preflight contiene detalles de imagen no válidos.")
+        missing_indexes.append(index)
+    if len(missing_indexes) != len(set(missing_indexes)):
+        raise ValueError("El preflight contiene incidencias de imagen duplicadas.")
+    receipt_id = uuid.uuid4()
+    receipt = {
+        "schema": INDESIGN_PREFLIGHT_RECEIPT_SCHEMA,
+        "receipt_id": str(receipt_id), "release_id": str(release_id),
+        "export_id": str(export_id), "actor": actor, "reason": reason,
+        "received_at": datetime.now(timezone.utc).isoformat(),
+        "source_bytes": len(content), "source_sha256": _sha256(content), "report": report,
+    }
+    destination = root / "_indesign_preflight" / str(release_id) / str(export_id) / f"{receipt_id}.json"
+    if not destination.resolve().is_relative_to(root):
+        raise ValueError("Ruta de preflight no segura.")
+    _write_new(destination, _json_bytes(receipt))
+    return {**receipt, "path": str(destination)}
+
+
+def list_indesign_preflight_receipts(output_root: Path, *, limit: int = 500) -> list[dict[str, Any]]:
+    if not 1 <= limit <= 2000:
+        raise ValueError("limit debe estar entre 1 y 2000.")
+    root = output_root.resolve()
+    receipt_root = root / "_indesign_preflight"
+    if not receipt_root.is_dir():
+        return []
+    results: list[dict[str, Any]] = []
+    for path in sorted(receipt_root.glob("*/*/*.json"), reverse=True):
+        try:
+            release_id = uuid.UUID(path.parent.parent.name)
+            export_id = uuid.UUID(path.parent.name)
+            receipt_id = uuid.UUID(path.stem)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if (
+                payload.get("schema") != INDESIGN_PREFLIGHT_RECEIPT_SCHEMA
+                or payload.get("release_id") != str(release_id)
+                or payload.get("export_id") != str(export_id)
+                or payload.get("receipt_id") != str(receipt_id)
+            ):
+                continue
+            results.append(payload)
+        except (ValueError, OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if len(results) >= limit:
+            break
+    return results
 
 
 def _safe_stem(value: object) -> str:

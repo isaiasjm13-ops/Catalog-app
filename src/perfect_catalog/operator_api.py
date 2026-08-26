@@ -34,6 +34,9 @@ from .catalog_export_job import (
     INDESIGN_TEMPLATE_PROFILES,
     SUPPORTED_FORMATS,
     estimate_indesign_layout,
+    list_indesign_preflight_receipts,
+    record_indesign_preflight,
+    MAX_INDESIGN_PREFLIGHT_BYTES,
     list_operator_catalog_exports,
     resolve_catalog_download,
 )
@@ -692,6 +695,9 @@ def create_operator_app(
             exports = await run_in_threadpool(
                 list_operator_catalog_exports, resolved_catalog_output, limit=100
             )
+            preflight_receipts = await run_in_threadpool(
+                list_indesign_preflight_receipts, resolved_catalog_output, limit=500
+            )
         except Exception:
             return _error(
                 environment, 503, "Catálogos no disponibles",
@@ -704,13 +710,21 @@ def create_operator_app(
             "already_built": "El borrador exacto ya existía; no se duplicó.",
             "published": "Release publicado. Ya está habilitado para exportación.",
             "already_published": "El release exacto ya estaba publicado.",
+            "preflight_recorded": "Preflight InDesign validado y asociado a la exportación exacta.",
         }.get(request.query_params.get("result"))
+        preflight_by_export: dict[str, dict[str, Any]] = {}
+        for receipt in preflight_receipts:
+            export_key = str(receipt["export_id"])
+            current = preflight_by_export.get(export_key)
+            if current is None or str(receipt["received_at"]) > str(current["received_at"]):
+                preflight_by_export[export_key] = receipt
         return _render(
             environment,
             "operator_catalogs.html",
             releases=releases,
             plans=plans,
             exports=exports,
+            preflight_by_export=preflight_by_export,
             formats=SUPPORTED_FORMATS,
             indesign_templates=INDESIGN_TEMPLATE_PROFILES,
             message=message,
@@ -936,6 +950,54 @@ def create_operator_app(
                 "No se generaron entregables. Revisa la consola del servidor operador.", session=session,
             )
         return RedirectResponse("/operator/catalogs?result=created", status_code=303)
+
+    @app.post("/operator/catalogs/{release_id}/exports/{export_id}/preflight")
+    async def upload_indesign_preflight(
+        request: Request, release_id: str, export_id: str,
+    ) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        if not _same_origin(request):
+            return _error(environment, 403, "Solicitud rechazada", "El origen de la carga no coincide.", session=session)
+        content_type = request.headers.get("content-type", "")
+        if not content_type.lower().startswith("multipart/form-data;"):
+            return _error(environment, 415, "Formulario inválido", "El preflight debe cargarse como multipart/form-data.", session=session)
+        try:
+            content_length = int(request.headers.get("content-length", ""))
+        except ValueError:
+            content_length = 0
+        if content_length <= 0 or content_length > MAX_INDESIGN_PREFLIGHT_BYTES + 64 * 1024:
+            return _error(environment, 413, "Preflight demasiado grande", "La carga supera el límite permitido de 1 MiB.", session=session)
+        try:
+            async with request.form(max_files=1, max_fields=4, max_part_size=MAX_INDESIGN_PREFLIGHT_BYTES + 1) as form:
+                expected = {"csrf_token", "reason", "confirm", "file"}
+                if set(form.keys()) != expected or any(len(form.getlist(field)) != 1 for field in expected):
+                    raise ValueError("El formulario contiene campos ausentes, desconocidos o duplicados.")
+                upload = form.getlist("file")[0]
+                if not isinstance(upload, UploadFile) or not str(upload.filename or "").lower().endswith(".json"):
+                    raise ValueError("Selecciona exactamente un archivo preflight.json.")
+                if not hmac.compare_digest(str(form.get("csrf_token") or ""), session.csrf_token):
+                    return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+                if form.get("confirm") != "yes":
+                    raise ValueError("Debes confirmar la asociación al release y exportación exactos.")
+                reason = _require_text(str(form.get("reason") or ""), "reason")
+                if not 4 <= len(reason) <= MAX_REASON_LENGTH:
+                    raise ValueError("reason debe contener entre 4 y 500 caracteres.")
+                content = await upload.read(MAX_INDESIGN_PREFLIGHT_BYTES + 1)
+                await run_in_threadpool(
+                    record_indesign_preflight, resolved_catalog_output,
+                    _uuid(release_id, "release_id"), _uuid(export_id, "export_id"), content,
+                    actor=session.actor, reason=reason,
+                )
+        except StarletteHTTPException:
+            return _error(environment, 400, "Formulario inválido", "La estructura multipart no es válida.", session=session)
+        except (ValueError, RuntimeError, PermissionError, FileNotFoundError) as exc:
+            return _error(environment, 422, "Preflight rechazado", str(exc), session=session)
+        except Exception:
+            return _error(environment, 503, "Preflight no disponible", "El reporte no quedó registrado.", session=session)
+        return RedirectResponse("/operator/catalogs?result=preflight_recorded", status_code=303)
 
     @app.get("/operator/catalogs/{release_id}/exports/{export_id}/{filename}")
     async def download_catalog_export(

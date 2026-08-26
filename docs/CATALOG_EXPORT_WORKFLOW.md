@@ -28,6 +28,17 @@ La estimación InDesign replica la paginación del JSX: portada inicial, una pá
 y páginas de producto reiniciadas por grupo. Las capacidades son T4=4, T2=2, T1=1 y TABLE=16. El valor
 es una estimación determinista previa; el `page_count` definitivo queda en el preflight generado por InDesign.
 
+## Retorno del preflight InDesign
+
+Después de guardar el INDD, vuelve a `Catálogos > Exportaciones recientes`, abre `Registrar preflight
+de InDesign` y selecciona el `*.preflight.json` creado por el JSX. La carga requiere sesión local,
+Origin, CSRF, confirmación y motivo; acepta como máximo 1 MiB.
+
+El servidor verifica de nuevo el bundle y compara el reporte con la exportación exacta: UUID del release,
+checksum, perfil, tema y cantidad de productos. También valida conteos, índices, paginación y listas de
+incidencias. El recibo se conserva append-only bajo `_indesign_preflight`, separado del bundle para no
+alterar sus hashes. La biblioteca presenta páginas, imágenes faltantes, textos desbordados y fuentes.
+
 La vista previa vuelve a verificar el release completo, calcula el total de todos los grupos y
 renderiza como máximo 24 fichas para mantener una respuesta ágil con catálogos grandes. No crea
 archivos ni altera datos.
