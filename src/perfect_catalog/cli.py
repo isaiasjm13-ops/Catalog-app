@@ -11,6 +11,7 @@ from .application import apply_approved_plan, approve_plan
 from .importer import DEFAULT_MAX_PILOT_ROWS, inspect_plan, run_dry_run
 from .intake_promotion import promote_intake_to_dry_run
 from .image_archive_index import build_image_archive_index
+from .catalog_export_job import SUPPORTED_FORMATS, export_catalog_release
 from .publication import (
     archive_release,
     build_release,
@@ -141,6 +142,22 @@ def build_parser() -> argparse.ArgumentParser:
     archive_release_parser.add_argument("--snapshot-sha256", required=True)
     _human_evidence_arguments(archive_release_parser)
     _database_arguments(archive_release_parser)
+
+    export_parser = subparsers.add_parser(
+        "export-catalog",
+        help="Exporta PDF, PPTX y snapshot InDesign desde un release publicado.",
+    )
+    export_parser.add_argument("release_id", type=uuid.UUID)
+    export_parser.add_argument("--output-dir", type=Path, required=True)
+    export_parser.add_argument(
+        "--format", dest="formats", action="append", choices=SUPPORTED_FORMATS,
+        help="Puede repetirse; por defecto genera los tres formatos.",
+    )
+    export_parser.add_argument("--title", default="Catálogo de productos")
+    export_parser.add_argument("--subtitle", default="")
+    export_parser.add_argument("--group-by", default="category_path")
+    export_parser.add_argument("--columns", type=int, choices=(1, 2, 3), default=2)
+    _database_arguments(export_parser)
     return parser
 
 
@@ -223,7 +240,7 @@ def main(argv: list[str] | None = None) -> int:
                 config,
                 password,
             )
-        else:
+        elif args.command == "archive-release":
             result = archive_release(
                 args.release_id,
                 args.snapshot_sha256,
@@ -231,6 +248,20 @@ def main(argv: list[str] | None = None) -> int:
                 args.reason,
                 config,
                 password,
+            )
+        else:
+            result = export_catalog_release(
+                args.release_id,
+                config,
+                password,
+                args.output_dir,
+                formats=args.formats or SUPPORTED_FORMATS,
+                config={
+                    "title": args.title,
+                    "subtitle": args.subtitle,
+                    "group_by": args.group_by,
+                    "columns_per_row": args.columns,
+                },
             )
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         return 0

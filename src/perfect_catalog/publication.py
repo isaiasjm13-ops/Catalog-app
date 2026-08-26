@@ -613,6 +613,18 @@ def inspect_release(
         }
 
 
+def load_published_release(
+    release_id: uuid.UUID, config: DatabaseConfig, password: str
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Carga un release publicado y vuelve a verificar su contenido antes de exportarlo."""
+    with psycopg.connect(**config.connection_kwargs(password)) as connection:
+        release, items = _load_release(connection, release_id, lock=False)
+        _verify_release(release, items)
+    if release["status"] != "published":
+        raise PermissionError("Solo se puede exportar un release publicado.")
+    return release, items
+
+
 def _verify_source_plan_for_release(
     connection: Connection[Any], release: dict[str, Any]
 ) -> dict[str, Any]:
