@@ -585,8 +585,11 @@ def _list_intake_submissions_in_connection(
                s.detected_media_type, s.size_bytes, s.sha256,
                s.validation_status, s.duplicate_content,
                s.validation_report, s.submitted_by, s.reason, s.submitted_at,
+               p.intake_promotion_id, p.import_plan_id, p.promoted_at, p.promoted_by,
                count(*) OVER () AS filtered_count
         FROM perfect_catalog.intake_submission AS s
+        LEFT JOIN perfect_catalog.intake_promotion AS p
+          ON p.intake_submission_id=s.intake_submission_id
         {where_sql}
         ORDER BY s.submitted_at DESC, s.intake_submission_id DESC
         LIMIT %s OFFSET %s

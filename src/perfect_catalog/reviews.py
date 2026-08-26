@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import psycopg
@@ -14,6 +15,7 @@ from .application import _load_plan_items
 from .canonical import canonical_sha256, json_compatible
 from .config import DatabaseConfig
 from .intake import list_intake_submissions, record_intake
+from .intake_promotion import promote_intake_to_dry_run
 from .publication import _load_applied_plan
 
 
@@ -887,6 +889,20 @@ class DatabaseReviewGateway:
 
     def record_intake(self, record: dict[str, Any]) -> dict[str, Any]:
         return record_intake(self._config, self._password, record)
+
+    def promote_intake(
+        self,
+        submission_id: uuid.UUID,
+        intake_root: Path,
+        output_dir: Path,
+        actor: str,
+        reason: str,
+        max_rows: int,
+    ) -> dict[str, Any]:
+        return promote_intake_to_dry_run(
+            submission_id, intake_root, self._config, self._password, output_dir,
+            actor=actor, reason=reason, max_rows=max_rows,
+        )
 
     def decide(
         self,
