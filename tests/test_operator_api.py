@@ -532,6 +532,8 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
     async def test_catalog_export_requires_origin_csrf_and_exact_fields(self) -> None:
         await self.login()
         page = await self.client.get("/operator/catalogs")
+        self.assertIn("Estado del estudio editorial", page.text)
+        self.assertIn("Entregables con integridad comprobada", page.text)
         fields = {
             "csrf_token": hidden_value(page.text, "csrf_token"),
             "title": "Catálogo web", "subtitle": "", "group_by": "category_path",

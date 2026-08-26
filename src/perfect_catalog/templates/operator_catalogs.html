@@ -12,6 +12,22 @@
 
 {% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
 
+{% set published_releases = releases | selectattr('status', 'equalto', 'published') | list %}
+<section class="studio-overview" aria-label="Estado del estudio editorial">
+  <article>
+    <span class="studio-step">01</span>
+    <div><small>Fuente maestra</small><strong>{{ releases|length }} versiones</strong><p>Snapshots inmutables listos para componer.</p></div>
+  </article>
+  <article>
+    <span class="studio-step">02</span>
+    <div><small>En producción</small><strong>{{ published_releases|length }} publicadas</strong><p>Diseña HTML, PDF, presentaciones e InDesign.</p></div>
+  </article>
+  <article>
+    <span class="studio-step">03</span>
+    <div><small>Biblioteca</small><strong>{{ exports|length }} ediciones</strong><p>Entregables con integridad comprobada al descargar.</p></div>
+  </article>
+</section>
+
 <details class="release-builder">
   <summary><span><strong>Construir nueva versión</strong><small>Desde un plan aplicado con todas sus identidades resueltas</small></span><b>＋</b></summary>
   <div class="builder-content">
@@ -46,6 +62,7 @@
     <div class="release-list">
       {% for release in releases %}
       <article class="release-card status-{{ release.status }}">
+        <div class="release-card-label">Edición maestra</div>
         <div class="release-summary">
           <div>
             <span class="release-version">{{ release.version }}</span>
@@ -133,7 +150,7 @@
     <div class="delivery-list">
       {% for export in exports %}
       <article>
-        <div><strong>{{ export.release.version }}</strong><small>{{ export.selection.selected_item_count }} de {{ export.release.item_count }} productos{% if export.selection.filter_query %} · “{{ export.selection.filter_query }}”{% endif %}{% if export.selection.get('selected_references') %} · {{ export.selection.selected_references|length }} referencias manuales{% endif %}{% if export.layout.get('theme') %} · tema {{ export.layout.theme }}{% endif %}</small></div>
+        <div class="delivery-title"><div><strong>{{ export.release.version }}</strong><small>{{ export.selection.selected_item_count }} de {{ export.release.item_count }} productos{% if export.selection.filter_query %} · “{{ export.selection.filter_query }}”{% endif %}{% if export.selection.get('selected_references') %} · {{ export.selection.selected_references|length }} referencias manuales{% endif %}{% if export.layout.get('theme') %} · tema {{ export.layout.theme }}{% endif %}</small></div><span>Verificable</span></div>
         <ul>
           {% for file in export.files %}
           <li><a href="/operator/catalogs/{{ export.release_id }}/exports/{{ export.export_id }}/{{ file.filename }}">{{ file.format }}</a><span>{{ file.bytes }} B</span></li>
