@@ -4,6 +4,7 @@ import io
 import uuid
 from collections import defaultdict
 from html import escape
+from pathlib import Path
 from typing import Any, Iterable
 
 from pptx import Presentation
@@ -13,7 +14,8 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
-from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.lib.utils import ImageReader
+from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from .releases import release_snapshot_sha256, validate_release_definition, validate_release_items
 
@@ -49,7 +51,34 @@ def _detail(row: dict[str, Any]) -> str:
     return "<br/>".join(parts)
 
 
-def generate_catalog_pdf(rows: list[dict[str, Any]], config: dict[str, Any] | None = None) -> bytes:
+def _safe_bundle_image(row: dict[str, Any], bundle_dir: Path | None) -> Path | None:
+    if bundle_dir is None or not row.get("image_path"):
+        return None
+    root = bundle_dir.resolve()
+    candidate = (root / str(row["image_path"])).resolve()
+    if not candidate.is_relative_to(root) or not candidate.is_file():
+        return None
+    return candidate
+
+
+def _pdf_cell(row: dict[str, Any], styles: Any, bundle_dir: Path | None) -> list[Any]:
+    contents: list[Any] = []
+    image_path = _safe_bundle_image(row, bundle_dir)
+    if image_path:
+        try:
+            width, height = ImageReader(str(image_path)).getSize()
+            scale = min(4.2 * cm / width, 2.8 * cm / height)
+            contents.extend([Image(str(image_path), width=width * scale, height=height * scale), Spacer(1, .12 * cm)])
+        except Exception:
+            pass
+    contents.append(Paragraph(_detail(row), styles["BodyText"]))
+    return contents
+
+
+def generate_catalog_pdf(
+    rows: list[dict[str, Any]], config: dict[str, Any] | None = None,
+    *, bundle_dir: Path | None = None,
+) -> bytes:
     config = config or {}
     columns = max(1, min(3, int(config.get("columns_per_row", 2))))
     title = str(config.get("title") or "Catálogo de productos")
@@ -62,7 +91,7 @@ def generate_catalog_pdf(rows: list[dict[str, Any]], config: dict[str, Any] | No
         str(config["group_by_secondary"]) if config.get("group_by_secondary") else None,
     ):
         story.extend([Paragraph(escape(section), styles["Heading1"]), Spacer(1, .25*cm)])
-        cells = [Paragraph(_detail(row), styles["BodyText"]) for row in section_rows]
+        cells = [_pdf_cell(row, styles, bundle_dir) for row in section_rows]
         grid = [cells[index:index+columns] for index in range(0, len(cells), columns)]
         if grid and len(grid[-1]) < columns:
             grid[-1].extend([""] * (columns-len(grid[-1])))
@@ -73,7 +102,10 @@ def generate_catalog_pdf(rows: list[dict[str, Any]], config: dict[str, Any] | No
     return buffer.getvalue()
 
 
-def generate_catalog_pptx(rows: list[dict[str, Any]], config: dict[str, Any] | None = None) -> bytes:
+def generate_catalog_pptx(
+    rows: list[dict[str, Any]], config: dict[str, Any] | None = None,
+    *, bundle_dir: Path | None = None,
+) -> bytes:
     config = config or {}
     columns = max(1, min(3, int(config.get("columns_per_row", 2))))
     title = str(config.get("title") or "Catálogo de productos")
@@ -99,6 +131,16 @@ def generate_catalog_pptx(rows: list[dict[str, Any]], config: dict[str, Any] | N
                 box.fill.solid(); box.fill.fore_color.rgb = RGBColor(245, 247, 250)
                 box.line.color.rgb = RGBColor(27, 58, 107)
                 frame = box.text_frame; frame.clear()
+                image_path = _safe_bundle_image(row, bundle_dir)
+                if image_path:
+                    try:
+                        slide.shapes.add_picture(
+                            str(image_path), Inches(.55 + col * width), Inches(1.05 + line * 2.05),
+                            height=Inches(.8),
+                        )
+                        frame.margin_left = Inches(1.15)
+                    except Exception:
+                        pass
                 p = frame.paragraphs[0]; p.text = str(row.get("internal_reference_original") or ""); p.font.bold = True; p.font.size = Pt(12)
                 p = frame.add_paragraph(); p.text = str(row.get("name_original") or ""); p.font.size = Pt(11)
                 if row.get("applications"):

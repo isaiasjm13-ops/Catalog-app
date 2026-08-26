@@ -158,9 +158,13 @@ def build_catalog_bundle(
     stem = _safe_stem(f"catalogo-{release['version']}-{str(release['catalog_release_id'])[:8]}")
     payloads: dict[str, tuple[str, bytes]] = {}
     if "pdf" in requested:
-        payloads["pdf"] = (f"{stem}.pdf", generate_catalog_pdf(rows, export_config))
+        payloads["pdf"] = (
+            f"{stem}.pdf", generate_catalog_pdf(rows, export_config, bundle_dir=output_dir)
+        )
     if "pptx" in requested:
-        payloads["pptx"] = (f"{stem}.pptx", generate_catalog_pptx(rows, export_config))
+        payloads["pptx"] = (
+            f"{stem}.pptx", generate_catalog_pptx(rows, export_config, bundle_dir=output_dir)
+        )
     if "indesign-json" in requested:
         snapshot = {
             "schema": INDESIGN_SNAPSHOT_SCHEMA,

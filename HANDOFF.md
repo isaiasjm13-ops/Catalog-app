@@ -45,7 +45,9 @@
 - Los releases nuevos capturan la imagen aprobada sin mutar releases anteriores. Cada exportación
   verifica de nuevo el SHA-256, empaqueta una copia autocontenida, la incluye en el manifiesto y
   entrega una ruta relativa segura al adaptador InDesign.
-- Suite local actual: 194 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
+- PDF y PPTX colocan la copia empaquetada dentro de la ficha de producto. Una imagen que no pueda
+  decodificarse degrada a ficha textual y no impide producir los demás entregables.
+- Suite local actual: 195 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
 

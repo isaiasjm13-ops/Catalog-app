@@ -1,6 +1,7 @@
 import io
 import json
 import hashlib
+import base64
 import tempfile
 import unittest
 import uuid
@@ -137,6 +138,23 @@ class CatalogExportTests(unittest.TestCase):
                     release, items, root / "tampered", formats=("indesign-json",),
                     image_root=root / "images",
                 )
+
+    def test_pdf_and_pptx_render_a_packaged_product_image(self) -> None:
+        image = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        )
+        rows = [{
+            "internal_reference_original": "IMG-001", "name_original": "Producto visual",
+            "category_path": "Visual", "image_path": "approved.png",
+        }]
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = Path(temporary)
+            (bundle / "approved.png").write_bytes(image)
+            pdf = generate_catalog_pdf(rows, bundle_dir=bundle)
+            self.assertTrue(pdf.startswith(b"%PDF-"))
+            pptx = generate_catalog_pptx(rows, bundle_dir=bundle)
+            with zipfile.ZipFile(io.BytesIO(pptx)) as archive:
+                self.assertTrue(any(name.startswith("ppt/media/image") for name in archive.namelist()))
 
     def test_bundle_refuses_drafts_and_nonempty_destinations(self) -> None:
         release, items = fixture_release()
