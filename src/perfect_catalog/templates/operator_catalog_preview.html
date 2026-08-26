@@ -11,6 +11,7 @@
   <dl>
     <div><dt>Versión</dt><dd>{{ preview.release.version }}</dd></div>
     <div><dt>Productos</dt><dd>{{ preview.total_count }}</dd></div>
+    {% if preview_target == 'indesign' %}<div><dt>Páginas estimadas</dt><dd>{{ layout_estimate.estimated_page_count }}</dd></div>{% endif %}
     <div><dt>Checksum</dt><dd><code>{{ preview.release.snapshot_sha256[:16] }}…</code></dd></div>
   </dl>
 </section>
@@ -31,11 +32,11 @@
 </div>
 
 <section class="catalog-preview-sheet theme-{{ theme }} target-{{ preview_target }} profile-{{ template_profile }}">
-  <header><span>Perfect Trading</span><strong>Catálogo {{ preview.release.version }}</strong><small>{{ preview.total_count }} referencias verificadas</small></header>
+  <header class="preview-cover"><span>Perfect Trading</span><strong>Catálogo {{ preview.release.version }}</strong><small>{{ preview.total_count }} referencias verificadas</small>{% if preview_target == 'indesign' %}<em>Portada · página 1</em>{% endif %}</header>
   {% for group in preview.groups %}
     {% if group.products %}
     <section class="preview-section">
-      <div class="preview-section-title"><span>{{ loop.index|string|upper }}</span><h2>{{ group.label }}</h2><small>{{ group.count }} productos</small></div>
+      <div class="preview-section-title preview-separator"><span>{{ loop.index|string|upper }}</span><h2>{{ group.label }}</h2><small>{{ group.count }} productos{% if preview_target == 'indesign' %} · separador{% endif %}</small></div>
       <div class="preview-products columns-{{ columns }}">
         {% for product in group.products %}
         <article>

@@ -622,6 +622,9 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(indesign.status_code, 200)
         self.assertIn("target-indesign profile-TABLE", indesign.text)
         self.assertIn("Vista InDesign TABLE", indesign.text)
+        self.assertIn("Páginas estimadas", indesign.text)
+        self.assertIn("Portada · página 1", indesign.text)
+        self.assertIn("12 productos · separador", indesign.text)
         invalid_profile = await self.client.get(
             f"/operator/catalogs/{RELEASE_ID}/preview?preview_target=indesign&template_profile=T8"
         )

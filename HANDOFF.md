@@ -114,7 +114,11 @@
   referencia, nombre, categoría, marca, OEM y aplicaciones; los datos ausentes degradan sin inventarse.
 - La vista previa alterna entre destino digital e InDesign y representa T4, T2, T1 y TABLE con
   densidades diferenciadas. Destino/perfil usan listas cerradas y los valores desconocidos devuelven 400.
-- Suite local actual: 202 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
+- El preview InDesign representa portada y separadores y calcula páginas con la misma regla del JSX:
+  una portada + un separador por grupo + `ceil(productos/capacidad)` reiniciado en cada grupo.
+- Capacidades auditables: T4=4, T2=2, T1=1 y TABLE=16. Prueba Uvicorn/navegador: 12 productos,
+  un grupo y TABLE mostraron correctamente 3 páginas estimadas.
+- Suite local actual: 203 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
 

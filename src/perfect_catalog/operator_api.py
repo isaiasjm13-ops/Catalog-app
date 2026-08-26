@@ -33,6 +33,7 @@ from .catalog_export_job import (
     CATALOG_THEMES,
     INDESIGN_TEMPLATE_PROFILES,
     SUPPORTED_FORMATS,
+    estimate_indesign_layout,
     list_operator_catalog_exports,
     resolve_catalog_download,
 )
@@ -784,6 +785,7 @@ def create_operator_app(
                 group_by_secondary=group_by_secondary, filter_field=filter_field,
                 filter_query=filter_query, sample_limit=24,
             )
+            layout_estimate = estimate_indesign_layout(preview["groups"], template_profile)
         except (ValueError, RuntimeError, PermissionError) as exc:
             return _error(environment, 400, "Vista previa no disponible", str(exc), session=session_or_redirect)
         except Exception:
@@ -792,6 +794,7 @@ def create_operator_app(
             environment, "operator_catalog_preview.html",
             preview=preview, columns=columns, theme=theme, themes=CATALOG_THEMES,
             preview_target=preview_target, template_profile=template_profile,
+            layout_estimate=layout_estimate,
             session=session_or_redirect,
             version=OPERATOR_VERSION,
         )

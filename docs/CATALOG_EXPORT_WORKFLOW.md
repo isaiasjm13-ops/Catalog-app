@@ -24,6 +24,10 @@ En la vista previa, `Destino` alterna entre la cuadrícula digital configurable 
 InDesign. Esta última representa T4 en dos columnas, T2/T1 en fichas progresivamente amplias y TABLE
 como filas compactas sin imagen. Es una prueba de composición; el JSX sigue siendo quien crea el INDD.
 
+La estimación InDesign replica la paginación del JSX: portada inicial, una página SEPARATOR por grupo
+y páginas de producto reiniciadas por grupo. Las capacidades son T4=4, T2=2, T1=1 y TABLE=16. El valor
+es una estimación determinista previa; el `page_count` definitivo queda en el preflight generado por InDesign.
+
 La vista previa vuelve a verificar el release completo, calcula el total de todos los grupos y
 renderiza como máximo 24 fichas para mantener una respuesta ágil con catálogos grandes. No crea
 archivos ni altera datos.

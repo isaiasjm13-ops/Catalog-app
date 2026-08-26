@@ -20,9 +20,36 @@ EXPORT_MANIFEST_SCHEMA = "perfect-catalog.export-manifest.v1"
 EXPORT_VERIFICATION_SCHEMA = "perfect-catalog.export-verification.v1"
 SUPPORTED_FORMATS = ("html", "pdf", "pptx", "indesign-json")
 INDESIGN_TEMPLATE_PROFILES = ("T4", "T2", "T1", "TABLE")
+INDESIGN_PRODUCTS_PER_PAGE = {"T4": 4, "T2": 2, "T1": 1, "TABLE": 16}
 CATALOG_GROUP_FIELDS = ("category_path", "brand", "internal_reference_original")
 CATALOG_FILTER_FIELDS = ("all", "category_path", "brand", "internal_reference_original", "name_original")
 MAX_SELECTED_REFERENCES = 5000
+
+
+def estimate_indesign_layout(groups: Iterable[dict[str, Any]], template_profile: str) -> dict[str, Any]:
+    profile = str(template_profile).upper()
+    if profile not in INDESIGN_PRODUCTS_PER_PAGE:
+        raise ValueError("Perfil InDesign no soportado.")
+    counts: list[int] = []
+    for group in groups:
+        count = group.get("count") if isinstance(group, dict) else None
+        if not isinstance(count, int) or isinstance(count, bool) or count < 1:
+            raise ValueError("La agrupación no permite estimar páginas InDesign.")
+        counts.append(count)
+    if not counts:
+        raise ValueError("No hay grupos para estimar la composición InDesign.")
+    per_page = INDESIGN_PRODUCTS_PER_PAGE[profile]
+    product_pages = sum((count + per_page - 1) // per_page for count in counts)
+    separator_pages = len(counts)
+    return {
+        "schema": "perfect-catalog.indesign-layout-estimate.v1",
+        "template_profile": profile,
+        "products_per_page": per_page,
+        "cover_pages": 1,
+        "separator_pages": separator_pages,
+        "product_pages": product_pages,
+        "estimated_page_count": 1 + separator_pages + product_pages,
+    }
 
 
 def _safe_stem(value: object) -> str:

@@ -14,6 +14,7 @@ from perfect_catalog.catalog_exports import export_rows_from_release, generate_c
 from perfect_catalog.catalog_export_job import (
     build_catalog_bundle,
     build_catalog_preview,
+    estimate_indesign_layout,
     list_operator_catalog_exports,
     resolve_catalog_download,
     verify_catalog_bundle,
@@ -43,6 +44,17 @@ def fixture_release():
 
 
 class CatalogExportTests(unittest.TestCase):
+    def test_indesign_layout_estimate_matches_cover_separators_and_profile_capacity(self) -> None:
+        estimate = estimate_indesign_layout(
+            [{"count": 5}, {"count": 17}], "T4"
+        )
+        self.assertEqual(estimate["cover_pages"], 1)
+        self.assertEqual(estimate["separator_pages"], 2)
+        self.assertEqual(estimate["product_pages"], 7)
+        self.assertEqual(estimate["estimated_page_count"], 10)
+        self.assertEqual(estimate_indesign_layout([{"count": 17}], "TABLE")["estimated_page_count"], 4)
+        with self.assertRaisesRegex(ValueError, "Perfil InDesign"):
+            estimate_indesign_layout([{"count": 1}], "T8")
     def test_cli_exposes_export_catalog_with_repeatable_formats(self) -> None:
         release_id = uuid.uuid4()
         args = build_parser().parse_args([
