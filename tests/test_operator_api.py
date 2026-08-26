@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 from perfect_catalog.operator_api import (
+    LOGIN_COOKIE_PATH,
     MAX_UPLOAD_REQUEST_BYTES,
     OPERATOR_VERSION,
     OperatorAuthenticator,
@@ -210,6 +211,12 @@ class OperatorAuthenticatorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "actor"):
             OperatorAuthenticator("", "temporary-123", pbkdf2_iterations=1)
 
+    def test_authentication_distinguishes_bad_code_from_rate_limit(self) -> None:
+        auth = OperatorAuthenticator("qa", "temporary-123", pbkdf2_iterations=1)
+        for _ in range(5):
+            self.assertEqual(auth.authenticate_result("wrong-password"), "invalid_code")
+        self.assertEqual(auth.authenticate_result("temporary-123"), "rate_limited")
+
 
 class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
@@ -258,6 +265,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
             headers={"Origin": "http://testserver"},
         )
         self.assertEqual(rejected.status_code, 401)
+        self.assertIn("código temporal no coincide", rejected.text)
         self.assertNotIn("pc_operator_session", rejected.headers.get("set-cookie", ""))
 
         malformed_origin = await self.client.post(
@@ -266,6 +274,34 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
             headers={"Origin": "http://testserver:invalid"},
         )
         self.assertEqual(malformed_origin.status_code, 401)
+        self.assertIn("Origen local no verificado", malformed_origin.text)
+
+    async def test_login_challenge_cookie_scope_and_missing_cookie_diagnostic(self) -> None:
+        login_page = await self.client.get("/operator/login")
+        csrf = hidden_value(login_page.text, "csrf_token")
+        self.assertIn(f"Path={LOGIN_COOKIE_PATH}", login_page.headers.get("set-cookie", ""))
+        self.assertIn("HttpOnly", login_page.headers.get("set-cookie", ""))
+        self.client.cookies.delete("pc_operator_login")
+        response = await self.client.post(
+            "/operator/login",
+            data={"csrf_token": csrf, "access_code": "temporary-123"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("cookie de challenge no disponible", response.text)
+
+    async def test_same_origin_referer_fallback_requires_fetch_metadata(self) -> None:
+        page = await self.client.get("/operator/login")
+        csrf = hidden_value(page.text, "csrf_token")
+        response = await self.client.post(
+            "/operator/login",
+            data={"csrf_token": csrf, "access_code": "temporary-123"},
+            headers={
+                "Referer": "http://testserver/operator/login",
+                "Sec-Fetch-Site": "same-origin",
+            },
+        )
+        self.assertEqual(response.status_code, 303)
 
     async def test_operator_pages_escape_source_text_and_set_security_headers(self) -> None:
         await self.login()

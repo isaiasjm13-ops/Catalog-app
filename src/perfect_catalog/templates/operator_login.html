@@ -21,7 +21,7 @@
     <form method="post" action="/operator/login" class="stack-form">
       <input type="hidden" name="csrf_token" value="{{ login_csrf }}">
       <label for="access_code">Código temporal</label>
-      <input id="access_code" name="access_code" type="password" minlength="12" required autofocus autocomplete="current-password">
+      <input id="access_code" name="access_code" type="password" minlength="12" required autofocus autocomplete="one-time-code" spellcheck="false" autocapitalize="none">
       <button class="primary-button" type="submit">Entrar a revisión</button>
     </form>
     <small>Disponible únicamente en este equipo y durante la sesión actual.</small>

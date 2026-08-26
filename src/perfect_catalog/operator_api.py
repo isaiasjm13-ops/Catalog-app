@@ -42,6 +42,7 @@ from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 OPERATOR_VERSION = "1.2.0"
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
+LOGIN_COOKIE_PATH = "/operator"
 MAX_FORM_BYTES = 16_384
 MAX_REASON_LENGTH = 500
 SESSION_TTL_SECONDS = 60 * 60
@@ -180,21 +181,24 @@ class OperatorAuthenticator:
         except ValueError:
             return False
 
-    def authenticate(self, access_code: str) -> bool:
+    def authenticate_result(self, access_code: str) -> str:
         now = self._now()
         with self._lock:
             self._failed_logins = [
                 attempt for attempt in self._failed_logins if now - attempt < 300
             ]
             if len(self._failed_logins) >= 5:
-                return False
+                return "rate_limited"
         valid = hmac.compare_digest(self._derive(access_code), self._access_digest)
         with self._lock:
             if valid:
                 self._failed_logins.clear()
             else:
                 self._failed_logins.append(now)
-        return valid
+        return "accepted" if valid else "invalid_code"
+
+    def authenticate(self, access_code: str) -> bool:
+        return self.authenticate_result(access_code) == "accepted"
 
     def create_session(self) -> tuple[OperatorSession, str]:
         session_id = secrets.token_urlsafe(32)
@@ -254,22 +258,32 @@ def _set_security_headers(response: Response) -> None:
     response.headers["X-Frame-Options"] = "DENY"
 
 
-def _same_origin(request: Request) -> bool:
-    origin = request.headers.get("origin")
-    if not origin:
-        return False
+def _origin_tuple(value: str) -> tuple[str, str, int] | None:
     try:
-        parsed = urlsplit(origin)
-        request_port = request.url.port or (
-            443 if request.url.scheme == "https" else 80
-        )
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            return None
         origin_port = parsed.port or (443 if parsed.scheme == "https" else 80)
     except ValueError:
+        return None
+    return parsed.scheme, parsed.hostname.lower(), origin_port
+
+
+def _same_origin(request: Request) -> bool:
+    expected = _origin_tuple(str(request.base_url))
+    if expected is None or expected[1] not in {"127.0.0.1", "localhost", "testserver"}:
         return False
-    return (
-        parsed.scheme == request.url.scheme
-        and parsed.hostname == request.url.hostname
-        and origin_port == request_port
+    origin = request.headers.get("origin")
+    if origin:
+        return _origin_tuple(origin) == expected
+    # Chromium may omit Origin in constrained/local browser surfaces. A same-origin
+    # Referer plus Fetch Metadata retains an explicit, browser-enforced CSRF boundary.
+    referer = request.headers.get("referer")
+    fetch_site = request.headers.get("sec-fetch-site", "").lower()
+    return bool(
+        referer
+        and _origin_tuple(referer) == expected
+        and fetch_site == "same-origin"
     )
 
 
@@ -403,32 +417,48 @@ def create_operator_app(
             samesite="strict",
             secure=False,
             max_age=LOGIN_CHALLENGE_TTL_SECONDS,
-            path="/operator/login",
+            path=LOGIN_COOKIE_PATH,
         )
+        response.delete_cookie(LOGIN_COOKIE, path="/operator/login")
         return response
 
     @app.post("/operator/login", response_class=HTMLResponse)
     async def login(request: Request) -> Response:
         try:
             form = await _parse_form(request)
+            if set(form) != {"csrf_token", "access_code"}:
+                raise ValueError("El formulario de login contiene campos ausentes o desconocidos.")
         except (ValueError, UnicodeDecodeError) as exc:
             return _error(environment, 400, "Formulario inválido", str(exc))
         valid_origin = _same_origin(request)
         valid_challenge = authenticator.validate_login_challenge(
             request.cookies.get(LOGIN_COOKIE), form.get("csrf_token", "")
         )
-        valid_code = False
+        authentication_result = "not_checked"
         if valid_origin and valid_challenge:
-            valid_code = await run_in_threadpool(
-                authenticator.authenticate, form.get("access_code", "")
+            authentication_result = await run_in_threadpool(
+                authenticator.authenticate_result, form.get("access_code", "")
             )
-        if not (valid_origin and valid_challenge and valid_code):
+        if not valid_origin:
+            rejection = (
+                "Origen local no verificado. Abre esta misma dirección de login y reintenta."
+            )
+        elif not valid_challenge:
+            rejection = (
+                "Sesión de login vencida o cookie de challenge no disponible. "
+                "Recarga esta página antes de reintentar."
+            )
+        elif authentication_result == "rate_limited":
+            rejection = "Demasiados intentos fallidos. Espera cinco minutos antes de reintentar."
+        else:
+            rejection = "El código temporal no coincide con el definido al iniciar el servidor."
+        if not (valid_origin and valid_challenge and authentication_result == "accepted"):
             challenge, signed_challenge = authenticator.issue_login_challenge()
             response = _render(
                 environment,
                 "operator_login.html",
                 login_csrf=challenge,
-                error="Acceso rechazado. Verifica el código y vuelve a intentarlo.",
+                error=rejection,
                 version=OPERATOR_VERSION,
             )
             response.status_code = 401
@@ -439,11 +469,13 @@ def create_operator_app(
                 samesite="strict",
                 secure=False,
                 max_age=LOGIN_CHALLENGE_TTL_SECONDS,
-                path="/operator/login",
+                path=LOGIN_COOKIE_PATH,
             )
+            response.delete_cookie(LOGIN_COOKIE, path="/operator/login")
             return response
         _, signed_session = authenticator.create_session()
         response = RedirectResponse("/operator", status_code=303)
+        response.delete_cookie(LOGIN_COOKIE, path=LOGIN_COOKIE_PATH)
         response.delete_cookie(LOGIN_COOKIE, path="/operator/login")
         response.set_cookie(
             SESSION_COOKIE,
