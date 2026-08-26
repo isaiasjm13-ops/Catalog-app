@@ -89,6 +89,7 @@
             </div>
             <label><span>Texto de filtro opcional</span><input name="filter_query" maxlength="120" placeholder="Ej. Toyota, motor o NK-001"></label>
             <label><span>Selección manual de referencias (opcional)</span><textarea name="selected_references" maxlength="20000" placeholder="Una referencia por línea, o separadas por coma"></textarea><small>Si se completa, sólo se exportan coincidencias exactas del release. Los errores de escritura detienen la exportación.</small></label>
+            <label><span>Tema editorial</span><select name="theme"><option value="forest">Bosque · corporativo</option><option value="industrial">Industrial · repuestos</option><option value="midnight">Medianoche · tecnológico</option><option value="classic">Clásico · premium</option></select></label>
             <div class="format-grid">
               <label><span>Catálogo web HTML</span><select name="format_html"><option value="yes">Generar</option><option value="no">Omitir</option></select></label>
               <label><span>PDF digital</span><select name="format_pdf"><option value="yes">Generar</option><option value="no">Omitir</option></select></label>
@@ -132,7 +133,7 @@
     <div class="delivery-list">
       {% for export in exports %}
       <article>
-        <div><strong>{{ export.release.version }}</strong><small>{{ export.selection.selected_item_count }} de {{ export.release.item_count }} productos{% if export.selection.filter_query %} · “{{ export.selection.filter_query }}”{% endif %}{% if export.selection.get('selected_references') %} · {{ export.selection.selected_references|length }} referencias manuales{% endif %}</small></div>
+        <div><strong>{{ export.release.version }}</strong><small>{{ export.selection.selected_item_count }} de {{ export.release.item_count }} productos{% if export.selection.filter_query %} · “{{ export.selection.filter_query }}”{% endif %}{% if export.selection.get('selected_references') %} · {{ export.selection.selected_references|length }} referencias manuales{% endif %}{% if export.layout.get('theme') %} · tema {{ export.layout.theme }}{% endif %}</small></div>
         <ul>
           {% for file in export.files %}
           <li><a href="/operator/catalogs/{{ export.release_id }}/exports/{{ export.export_id }}/{{ file.filename }}">{{ file.format }}</a><span>{{ file.bytes }} B</span></li>

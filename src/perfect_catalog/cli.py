@@ -12,6 +12,7 @@ from .importer import DEFAULT_MAX_PILOT_ROWS, inspect_plan, run_dry_run
 from .intake_promotion import promote_intake_to_dry_run
 from .image_archive_index import build_image_archive_index
 from .catalog_export_job import (
+    CATALOG_THEMES,
     CATALOG_FILTER_FIELDS,
     CATALOG_GROUP_FIELDS,
     INDESIGN_TEMPLATE_PROFILES,
@@ -171,6 +172,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Referencia exacta a incluir; puede repetirse.",
     )
     export_parser.add_argument("--columns", type=int, choices=(1, 2, 3), default=2)
+    export_parser.add_argument("--theme", choices=CATALOG_THEMES, default="forest")
     export_parser.add_argument(
         "--indesign-template", choices=INDESIGN_TEMPLATE_PROFILES, default="T4"
     )
@@ -282,6 +284,7 @@ def main(argv: list[str] | None = None) -> int:
                     "filter_query": args.filter_query,
                     "selected_references": args.selected_references,
                     "columns_per_row": args.columns,
+                    "theme": args.theme,
                     "template_profile": args.indesign_template,
                 },
                 image_root=args.image_root,

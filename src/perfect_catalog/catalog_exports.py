@@ -19,6 +19,18 @@ from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, S
 
 from .releases import release_snapshot_sha256, validate_release_definition, validate_release_items
 
+THEME_PALETTES = {
+    "forest": {"primary": "#086650", "ink": "#17231F", "paper": "#F4F1E8", "card": "#FFFFFF"},
+    "industrial": {"primary": "#C34A21", "ink": "#22272B", "paper": "#ECEBE7", "card": "#FFFFFF"},
+    "midnight": {"primary": "#2E63C7", "ink": "#111827", "paper": "#E9EEF7", "card": "#FFFFFF"},
+    "classic": {"primary": "#8A6A2F", "ink": "#211D17", "paper": "#F5F0E5", "card": "#FFFDF8"},
+}
+CATALOG_THEMES = tuple(THEME_PALETTES)
+
+
+def _theme(config: dict[str, Any]) -> dict[str, str]:
+    return THEME_PALETTES.get(str(config.get("theme") or "forest"), THEME_PALETTES["forest"])
+
 
 def export_rows_from_release(release: dict[str, Any], items: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     """Adapta exclusivamente un release completo cuya integridad criptográfica fue revalidada."""
@@ -82,6 +94,7 @@ def generate_catalog_pdf(
     config = config or {}
     columns = max(1, min(3, int(config.get("columns_per_row", 2))))
     title = str(config.get("title") or "Catálogo de productos")
+    palette = _theme(config)
     styles = getSampleStyleSheet()
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, title=title, leftMargin=1.2*cm, rightMargin=1.2*cm)
@@ -96,7 +109,7 @@ def generate_catalog_pdf(
         if grid and len(grid[-1]) < columns:
             grid[-1].extend([""] * (columns-len(grid[-1])))
         table = Table(grid, colWidths=[(A4[0]-2.4*cm)/columns]*columns, repeatRows=0)
-        table.setStyle(TableStyle([("BOX", (0,0), (-1,-1), .5, colors.HexColor(config.get("primary_color", "#1B3A6B"))), ("INNERGRID", (0,0), (-1,-1), .25, colors.lightgrey), ("VALIGN", (0,0), (-1,-1), "TOP"), ("PADDING", (0,0), (-1,-1), 8)]))
+        table.setStyle(TableStyle([("BOX", (0,0), (-1,-1), .5, colors.HexColor(palette["primary"])), ("INNERGRID", (0,0), (-1,-1), .25, colors.lightgrey), ("VALIGN", (0,0), (-1,-1), "TOP"), ("PADDING", (0,0), (-1,-1), 8)]))
         story.extend([table, Spacer(1, .4*cm)])
     doc.build(story)
     return buffer.getvalue()
@@ -109,6 +122,8 @@ def generate_catalog_pptx(
     config = config or {}
     columns = max(1, min(3, int(config.get("columns_per_row", 2))))
     title = str(config.get("title") or "Catálogo de productos")
+    palette = _theme(config)
+    primary_rgb = RGBColor.from_string(palette["primary"].lstrip("#"))
     prs = Presentation()
     cover = prs.slides.add_slide(prs.slide_layouts[0])
     cover.shapes.title.text = title
@@ -129,7 +144,7 @@ def generate_catalog_pptx(
                 width = 12.4 / columns
                 box = slide.shapes.add_textbox(Inches(.4+col*width), Inches(.9+line*2.05), Inches(width-.15), Inches(1.85))
                 box.fill.solid(); box.fill.fore_color.rgb = RGBColor(245, 247, 250)
-                box.line.color.rgb = RGBColor(27, 58, 107)
+                box.line.color.rgb = primary_rgb
                 frame = box.text_frame; frame.clear()
                 image_path = _safe_bundle_image(row, bundle_dir)
                 if image_path:
@@ -157,6 +172,7 @@ def generate_catalog_html(
     config = config or {}
     release = release or {}
     columns = max(1, min(3, int(config.get("columns_per_row", 2))))
+    palette = _theme(config)
     title = escape(str(config.get("title") or "Catálogo de productos"))
     subtitle = escape(str(config.get("subtitle") or ""))
     sections: list[str] = []
@@ -189,6 +205,6 @@ def generate_catalog_html(
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="generator" content="Perfect Catalog"><meta name="release-sha256" content="{checksum}">
 <title>{title}</title><style>
-:root{{--ink:#17231f;--forest:#086650;--paper:#f4f1e8;--line:#d9d5c9}}*{{box-sizing:border-box}}body{{margin:0;color:var(--ink);background:var(--paper);font:15px/1.5 Arial,sans-serif}}main{{max-width:1280px;margin:auto;padding:clamp(24px,5vw,72px)}}.hero{{min-height:45vh;display:grid;align-content:end;padding:8vw 0 4vw;border-bottom:4px solid var(--ink)}}.hero small{{color:var(--forest);font-weight:800;letter-spacing:.16em;text-transform:uppercase}}h1{{max-width:900px;margin:.2em 0;font:500 clamp(44px,8vw,104px)/.9 Georgia,serif}}.hero p{{max-width:700px;font-size:18px}}section{{padding:45px 0}}section>header{{display:flex;justify-content:space-between;gap:20px;align-items:end;border-bottom:1px solid var(--line)}}h2{{font:500 clamp(27px,4vw,48px) Georgia,serif}}section>header span{{padding-bottom:1.2em;color:#65716b}}.products{{display:grid;grid-template-columns:repeat({columns},minmax(0,1fr));gap:18px;padding-top:22px}}.product{{min-width:0;padding:18px;background:#fff;border:1px solid var(--line)}}.photo{{height:190px;margin:-18px -18px 18px;background:#f8f8f5;display:grid;place-items:center;overflow:hidden}}.photo img{{width:100%;height:100%;object-fit:contain}}code{{color:var(--forest);font-weight:800}}h3{{margin:.5em 0;font:500 22px/1.15 Georgia,serif}}.proof{{padding:24px 0;border-top:1px solid var(--line);overflow-wrap:anywhere;color:#65716b;font-size:12px}}@media(max-width:760px){{.products{{grid-template-columns:1fr}}.hero{{min-height:35vh}}}}
+:root{{--ink:{palette['ink']};--forest:{palette['primary']};--paper:{palette['paper']};--card:{palette['card']};--line:#d9d5c9}}*{{box-sizing:border-box}}body{{margin:0;color:var(--ink);background:var(--paper);font:15px/1.5 Arial,sans-serif}}main{{max-width:1280px;margin:auto;padding:clamp(24px,5vw,72px)}}.hero{{min-height:45vh;display:grid;align-content:end;padding:8vw 0 4vw;border-bottom:4px solid var(--ink)}}.hero small{{color:var(--forest);font-weight:800;letter-spacing:.16em;text-transform:uppercase}}h1{{max-width:900px;margin:.2em 0;font:500 clamp(44px,8vw,104px)/.9 Georgia,serif}}.hero p{{max-width:700px;font-size:18px}}section{{padding:45px 0}}section>header{{display:flex;justify-content:space-between;gap:20px;align-items:end;border-bottom:1px solid var(--line)}}h2{{font:500 clamp(27px,4vw,48px) Georgia,serif}}section>header span{{padding-bottom:1.2em;color:#65716b}}.products{{display:grid;grid-template-columns:repeat({columns},minmax(0,1fr));gap:18px;padding-top:22px}}.product{{min-width:0;padding:18px;background:var(--card);border:1px solid var(--line)}}.photo{{height:190px;margin:-18px -18px 18px;background:#f8f8f5;display:grid;place-items:center;overflow:hidden}}.photo img{{width:100%;height:100%;object-fit:contain}}code{{color:var(--forest);font-weight:800}}h3{{margin:.5em 0;font:500 22px/1.15 Georgia,serif}}.proof{{padding:24px 0;border-top:1px solid var(--line);overflow-wrap:anywhere;color:#65716b;font-size:12px}}@media(max-width:760px){{.products{{grid-template-columns:1fr}}.hero{{min-height:35vh}}}}
 </style></head><body><main><header class="hero"><small>Perfect Trading · edición {version}</small><h1>{title}</h1><p>{subtitle}</p></header>{''.join(sections)}<footer class="proof">Release SHA-256: {checksum}</footer></main></body></html>"""
     return html.encode("utf-8")

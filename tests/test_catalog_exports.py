@@ -53,8 +53,10 @@ class CatalogExportTests(unittest.TestCase):
         args = build_parser().parse_args([
             "export-catalog", str(uuid.uuid4()), "--output-dir", "out",
             "--reference", "NK-001", "--reference", "NK-002", "--prompt-password",
+            "--theme", "classic",
         ])
         self.assertEqual(args.selected_references, ["NK-001", "NK-002"])
+        self.assertEqual(args.theme, "classic")
 
     def test_adapter_revalidates_release_and_rejects_tampering(self) -> None:
         release, items = fixture_release()
@@ -88,12 +90,13 @@ class CatalogExportTests(unittest.TestCase):
         rows[0]["name_original"] = '<script>alert("x")</script>'
         rows[0]["image_path"] = "image-safe.png"
         content = generate_catalog_html(
-            rows, {"title": "Edición digital", "columns_per_row": 3}, release=release
+            rows, {"title": "Edición digital", "columns_per_row": 3, "theme": "industrial"}, release=release
         ).decode("utf-8")
         self.assertTrue(content.startswith("<!doctype html>"))
         self.assertIn("@media(max-width:760px)", content)
         self.assertIn(str(release["snapshot_sha256"]), content)
         self.assertIn('src="image-safe.png"', content)
+        self.assertIn("--forest:#C34A21", content)
         self.assertNotIn("<script>", content)
 
     def test_bundle_writes_digital_exports_indesign_snapshot_and_manifest(self) -> None:
@@ -112,6 +115,7 @@ class CatalogExportTests(unittest.TestCase):
             self.assertTrue((output / result["manifest"]).is_file())
             manifest = json.loads((output / result["manifest"]).read_text(encoding="utf-8"))
             self.assertEqual(manifest["release"]["snapshot_sha256"], release["snapshot_sha256"])
+            self.assertEqual(manifest["layout"]["theme"], "forest")
             snapshot_entry = next(item for item in result["files"] if item["format"] == "indesign-json")
             snapshot = json.loads((output / snapshot_entry["filename"]).read_text(encoding="utf-8"))
             self.assertEqual(snapshot["schema"], "perfect-catalog.indesign-snapshot.v1")
@@ -125,6 +129,11 @@ class CatalogExportTests(unittest.TestCase):
                 build_catalog_bundle(
                     release, items, Path(temporary) / "bundle",
                     formats=("indesign-json",), config={"template_profile": "UNKNOWN"},
+                )
+            with self.assertRaisesRegex(ValueError, "Tema editorial"):
+                build_catalog_bundle(
+                    release, items, Path(temporary) / "theme",
+                    formats=("html",), config={"theme": "unknown"},
                 )
 
     def test_bundle_packages_only_sha_verified_approved_images(self) -> None:

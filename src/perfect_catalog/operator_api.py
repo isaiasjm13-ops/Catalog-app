@@ -30,6 +30,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import DatabaseConfig, prompt_password
 from .catalog_export_job import (
+    CATALOG_THEMES,
     INDESIGN_TEMPLATE_PROFILES,
     SUPPORTED_FORMATS,
     list_operator_catalog_exports,
@@ -845,7 +846,7 @@ def create_operator_app(
             allowed_fields = {
                 "csrf_token", "title", "subtitle", "group_by", "group_by_secondary",
                 "filter_field", "filter_query", "columns", "template_profile",
-                "selected_references",
+                "selected_references", "theme",
                 "format_html", "format_pdf", "format_pptx", "format_indesign_json", "confirm",
             }
             if set(form) != allowed_fields:
@@ -881,6 +882,9 @@ def create_operator_app(
             template_profile = form["template_profile"].upper()
             if template_profile not in INDESIGN_TEMPLATE_PROFILES:
                 raise ValueError("Perfil InDesign no soportado.")
+            theme = form["theme"].lower()
+            if theme not in CATALOG_THEMES:
+                raise ValueError("Tema editorial no soportado.")
             selected_formats = tuple(
                 output_format for field, output_format in (
                     ("format_html", "html"),
@@ -908,6 +912,7 @@ def create_operator_app(
                     "selected_references": selected_references,
                     "columns_per_row": columns,
                     "template_profile": template_profile,
+                    "theme": theme,
                 },
             )
         except (ValueError, RuntimeError, PermissionError, FileExistsError) as exc:

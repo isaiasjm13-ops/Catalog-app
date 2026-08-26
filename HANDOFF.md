@@ -62,6 +62,10 @@
 - Cada edición HTML produce además un `.digital.zip` determinista con `index.html` y todas sus
   imágenes verificadas. El ZIP figura como entregable separado con bytes y SHA-256, permitiendo
   trasladar o publicar el catálogo completo sin descargar assets uno por uno.
+- Cuatro temas editoriales controlados (`forest`, `industrial`, `midnight`, `classic`) aplican una
+  paleta consistente a HTML, PDF y PPTX; el valor también viaja en el layout InDesign.
+- El manifiesto conserva ahora el layout completo (tema, títulos, agrupación, columnas y plantilla),
+  además de selección y checksums; historiales anteriores sin layout siguen siendo compatibles.
 - Suite local actual: 198 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)

@@ -11,7 +11,7 @@ import zipfile
 from pathlib import Path
 from typing import Any, Iterable
 
-from .catalog_exports import export_rows_from_release, generate_catalog_html, generate_catalog_pdf, generate_catalog_pptx
+from .catalog_exports import CATALOG_THEMES, export_rows_from_release, generate_catalog_html, generate_catalog_pdf, generate_catalog_pptx
 from .config import DatabaseConfig
 from .publication import load_published_release
 
@@ -209,6 +209,10 @@ def build_catalog_bundle(
     if template_profile not in INDESIGN_TEMPLATE_PROFILES:
         raise ValueError("Perfil InDesign no soportado.")
     export_config["template_profile"] = template_profile
+    theme = str(export_config.get("theme") or "forest").lower()
+    if theme not in CATALOG_THEMES:
+        raise ValueError("Tema editorial no soportado.")
+    export_config["theme"] = theme
     rows, selection = _selection(source_rows, export_config)
     metadata = _release_metadata(release, len(source_rows))
     output_dir = output_dir.resolve()
@@ -254,6 +258,7 @@ def build_catalog_bundle(
         "schema": EXPORT_MANIFEST_SCHEMA,
         "release": metadata,
         "selection": selection,
+        "layout": export_config,
         "files": files,
     }
     manifest_name = f"{stem}.manifest.json"
@@ -362,6 +367,7 @@ def list_operator_catalog_exports(output_root: Path, *, limit: int = 100) -> lis
                     "selected_item_count": (manifest.get("release") or {}).get("item_count", 0),
                     "filter_query": "",
                 },
+                "layout": manifest.get("layout") or {},
                 "files": files,
             })
         except (ValueError, OSError, json.JSONDecodeError):
