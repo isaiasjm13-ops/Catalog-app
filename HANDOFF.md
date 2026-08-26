@@ -127,6 +127,9 @@
 - Preview acepta título, subtítulo y hasta 5.000 referencias manuales exactas bajo el mismo contrato de
   exportación: normaliza duplicados, combina por intersección con filtros, conserva SHA-256 y rechaza
   cualquier referencia inexistente. La portada refleja esos valores antes de producir archivos.
+- El compositor ofrece preview digital/InDesign de la configuración actual mediante JS externo self-only.
+  Copia una allowlist de campos editoriales; nunca incluye CSRF, confirmación ni opciones mutantes. Sin JS,
+  el launcher GET básico y el POST de exportación continúan operativos.
 - Suite local actual: 206 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)

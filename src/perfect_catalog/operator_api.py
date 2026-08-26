@@ -308,7 +308,7 @@ def _render(environment: Environment, name: str, **context: Any) -> HTMLResponse
 def _set_security_headers(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; style-src 'self'; img-src 'self'; "
+        "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; "
         "form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
     )
     # El login local necesita Referer como respaldo cuando una superficie Chromium

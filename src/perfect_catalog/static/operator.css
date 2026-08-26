@@ -261,6 +261,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .format-grid { grid-template-columns: repeat(3, 1fr); }
 .export-composer .confirm-field { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 9px; color: var(--muted); font-size: 11px; }
 .export-composer .confirm-field input { width: 16px; min-height: 16px; }
+.js-preview-actions { display: none; grid-template-columns: 1fr 1fr; gap: 9px; }
+.composer-js .js-preview-actions { display: grid; }
 .draft-note { margin: 0; padding: 12px; border-radius: 10px; background: #fff3d8; color: #6f541b; font-size: 11px; }
 .publish-composer { margin-top: 12px; }
 .publish-composer summary { color: var(--forest); cursor: pointer; font-size: 11px; font-weight: 800; }
@@ -404,6 +406,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .upload-form label:nth-of-type(3), .upload-form .confirm-field, .upload-form button { grid-column: auto; }
   .intake-row { grid-template-columns: 48px 1fr; }
   .composer-row, .format-grid { grid-template-columns: 1fr; }
+  .js-preview-actions { grid-template-columns: 1fr; }
   .profile-choices, .theme-choices { grid-template-columns: repeat(2, 1fr); }
   .density-choices { grid-template-columns: 1fr; }
   .preview-launcher, .preview-toolbar form { grid-template-columns: 1fr; }

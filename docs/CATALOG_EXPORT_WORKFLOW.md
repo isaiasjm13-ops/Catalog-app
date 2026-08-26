@@ -44,6 +44,11 @@ exportación. Las referencias se separan por línea/coma/punto y coma, se dedupl
 mayúsculas y se cruzan con el filtro opcional. Una referencia inexistente detiene el preview; la selección
 canónica y su SHA-256 proceden del mismo motor que después escribe el manifiesto.
 
+Dentro de `Configurar exportación`, los botones `Previsualizar edición digital` y `Previsualizar en
+InDesign` trasladan la configuración vigente mediante un script estático permitido por CSP `self`.
+Sólo copia título, subtítulo, agrupaciones, filtro, referencias, tema, columnas y perfil. Nunca añade
+CSRF, confirmación o formatos de salida a la URL. Es mejora progresiva: el formulario POST no depende de JS.
+
 La vista previa vuelve a verificar el release completo, calcula el total de todos los grupos y
 renderiza como máximo 24 fichas para mantener una respuesta ágil con catálogos grandes. No crea
 archivos ni altera datos.

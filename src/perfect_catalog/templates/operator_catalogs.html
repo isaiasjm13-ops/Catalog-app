@@ -130,6 +130,10 @@
             <div class="choice-field"><span>Plantilla de producto InDesign</span><div class="profile-choices">{% for profile in indesign_templates %}<label><input type="radio" name="template_profile" value="{{ profile }}"{% if profile == 'T4' %} checked{% endif %}><b>{{ profile }}</b><small>{% if profile == 'T4' %}4 fichas{% elif profile == 'T2' %}2 fichas{% elif profile == 'T1' %}1 ficha{% else %}Tabla{% endif %}</small></label>{% endfor %}</div></div>
             </fieldset>
             <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo la exportación de esta versión publicada exacta.</span></label>
+            <div class="js-preview-actions" data-preview-url="/operator/catalogs/{{ release.catalog_release_id }}/preview">
+              <button type="button" class="secondary-button" data-preview-target="digital">Previsualizar edición digital</button>
+              <button type="button" class="secondary-button" data-preview-target="indesign">Previsualizar en InDesign</button>
+            </div>
             <button type="submit" class="primary-button">Generar entregables</button>
           </form>
         </details>
@@ -195,3 +199,4 @@
   </aside>
 </section>
 {% endblock %}
+{% block scripts %}<script src="/operator/static/catalog-composer.js" defer></script>{% endblock %}

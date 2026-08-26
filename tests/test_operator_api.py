@@ -541,6 +541,14 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('name="theme" value="industrial" aria-label="Industrial · repuestos"', page.text)
         self.assertIn('type="radio" name="template_profile" value="TABLE"', page.text)
         self.assertIn('<label><span>Tema</span><select name="theme">', page.text)
+        self.assertIn("Previsualizar edición digital", page.text)
+        self.assertIn("Previsualizar en InDesign", page.text)
+        self.assertIn('/operator/static/catalog-composer.js', page.text)
+        self.assertIn("script-src 'self'", page.headers["content-security-policy"])
+        script = await self.client.get("/operator/static/catalog-composer.js")
+        self.assertEqual(script.status_code, 200)
+        self.assertNotIn("csrf_token", script.text)
+        self.assertNotIn("confirm", script.text)
         fields = {
             "csrf_token": hidden_value(page.text, "csrf_token"),
             "title": "Catálogo web", "subtitle": "", "group_by": "category_path",
