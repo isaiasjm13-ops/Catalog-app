@@ -233,7 +233,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .release-proof div { display: grid; grid-template-columns: 105px 1fr; gap: 12px; }
 .release-proof dd { overflow-wrap: anywhere; }
 .export-composer { border-top: 1px solid var(--line); padding-top: 16px; }
-.preview-launcher { display: grid; grid-template-columns: 1fr 110px auto; gap: 9px; align-items: end; margin-bottom: 15px; padding: 12px; border-radius: 12px; background: #eef3ed; }
+.preview-launcher { display: grid; grid-template-columns: minmax(150px,1fr) 90px 130px auto; gap: 9px; align-items: end; margin-bottom: 15px; padding: 12px; border-radius: 12px; background: #eef3ed; }
 .preview-launcher label { display: grid; gap: 5px; }
 .export-composer summary { color: var(--forest); cursor: pointer; font-size: 12px; font-weight: 800; }
 .export-composer form { display: grid; gap: 13px; margin-top: 16px; padding: 18px; border-radius: 14px; background: #f3f6f1; }

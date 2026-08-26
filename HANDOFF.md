@@ -108,6 +108,8 @@
   biblioteca— con métricas de versiones, publicaciones y ediciones, más estados visuales de integridad.
 - El compositor se divide en estructura, dirección visual y entregables. Temas, densidad y perfiles
   InDesign usan tarjetas radio nativas, accesibles y compatibles con CSP estricta sin JavaScript.
+- El lanzador de vista previa rápida permite escoger categoría, densidad y tema; la página de control
+  conserva después filtros y subagrupación, evitando previsualizar Bosque por error antes de exportar.
 - Suite local actual: 202 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
