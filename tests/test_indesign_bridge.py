@@ -15,7 +15,7 @@ class InDesignBridgeTests(unittest.TestCase):
         self.assertIn("SaveOptions.NO", script)
         for profile in ("T4", "T2", "T1", "TABLE"):
             self.assertIn(f'profile === "{profile}"' if profile != "T4" else 'return {perPage: 4', script)
-        self.assertIn("separatorPage(document, group)", script)
+        self.assertIn("separatorPage(document, group, theme)", script)
         self.assertIn("perfect-catalog.indesign-preflight.v1", script)
         self.assertIn("missing_images", script)
         self.assertIn("overflow_product_indexes", script)
@@ -23,6 +23,14 @@ class InDesignBridgeTests(unittest.TestCase):
         self.assertIn("imageBox.place(image)", script)
         self.assertIn('scriptFile.parent.fsName + "/catalog.indesign.json"', script)
         self.assertIn("adjacent.exists ? adjacent : File.openDialog", script)
+        for theme in ("forest", "industrial", "midnight", "classic"):
+            self.assertIn(f"{theme}:", script)
+        self.assertIn('insertLabel("perfect_catalog_theme"', script)
+        self.assertIn("themeDefinition(document, themeName)", script)
+        self.assertIn("fillColor: theme.paper", script)
+        self.assertIn("strokeColor = theme.primary", script)
+        self.assertIn("group_count", script)
+        self.assertIn("page_count", script)
 
 
 if __name__ == "__main__":

@@ -69,11 +69,13 @@ TABLE y páginas SEPARATOR sin consultar la base de datos directamente desde InD
 
 El script v1 crea portada, separadores automáticos por grupo y páginas de producto según
 el perfil seleccionado: T4, T2, T1 o TABLE. Guarda en las etiquetas del documento el UUID,
-checksum y perfil del release. Si el snapshot contiene rutas relativas seguras de imágenes,
+checksum, perfil y tema editorial del release. Los temas `forest`, `industrial`, `midnight` y
+`classic` crean muestras RGB controladas y se aplican a portada, separadores, imágenes, fichas y
+filas TABLE; cualquier tema desconocido detiene la importación. Si el snapshot contiene rutas relativas seguras de imágenes,
 las coloca como enlaces sin modificar los originales.
 
-Al guardar el INDD también crea `*.preflight.json` con imágenes ausentes, índices de fichas
-con texto desbordado y fuentes no disponibles. InDesign nunca se conecta directamente a
+Al guardar el INDD también crea `*.preflight.json` con tema, conteos de grupos/páginas, imágenes
+ausentes, índices de fichas con texto desbordado y fuentes no disponibles. InDesign nunca se conecta directamente a
 PostgreSQL.
 
 Antes de asociar fotografías, los ZIP aceptados pueden indexarse desde `Operador > Ingresos`.

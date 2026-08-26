@@ -85,6 +85,10 @@
   `catalog.indesign.json`, imágenes verificadas, `ImportPerfectCatalog.jsx` e instrucciones.
 - El JSX detecta automáticamente el snapshot adyacente al ejecutarse desde el paquete; si está
   instalado en el panel de Scripts conserva el selector de archivo. InDesign sigue sin acceder a BD.
+- InDesign aplica ahora los cuatro temas editoriales permitidos mediante muestras RGB internas a
+  portada, separadores, marcos de imagen, fichas y TABLE. Tema desconocido se rechaza.
+- El INDD conserva `perfect_catalog_theme`; el preflight añade tema y conteos de grupos/páginas,
+  además de imágenes faltantes, desbordamientos y fuentes no disponibles.
 - Suite local actual: 198 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
