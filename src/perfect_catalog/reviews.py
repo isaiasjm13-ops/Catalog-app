@@ -962,6 +962,32 @@ class DatabaseReviewGateway:
             actor=actor, reason=reason,
         )
 
+    def generate_image_candidates(
+        self, image_archive_index_id: uuid.UUID, actor: str, reason: str,
+    ) -> dict[str, Any]:
+        from .image_match_review import generate_image_candidates
+
+        return generate_image_candidates(
+            image_archive_index_id, self._config, self._password,
+            actor=actor, reason=reason,
+        )
+
+    def image_candidates(self, *, limit: int = 100, offset: int = 0) -> dict[str, Any]:
+        from .image_match_review import list_image_candidates
+
+        return list_image_candidates(self._config, self._password, limit=limit, offset=offset)
+
+    def decide_image_candidate(
+        self, candidate_id: uuid.UUID, evidence_sha256: str, decision: str,
+        actor: str, reason: str,
+    ) -> dict[str, Any]:
+        from .image_match_review import decide_image_candidate
+
+        return decide_image_candidate(
+            candidate_id, evidence_sha256, decision, actor, reason,
+            self._config, self._password,
+        )
+
     def decide(
         self,
         plan_id: uuid.UUID,

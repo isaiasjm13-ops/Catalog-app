@@ -1,0 +1,45 @@
+{% extends "operator_base.html" %}
+{% block title %}Revisión de imágenes{% endblock %}
+{% block content %}
+<section class="page-heading image-heading">
+  <div><span class="kicker">Evidencia visual</span><h1>Asociaciones propuestas</h1><p>Compara el archivo indexado con la referencia aprobada. Una decisión aquí no extrae ni publica la fotografía.</p></div>
+  <div class="safety-chip"><span>●</span> Revisión humana obligatoria</div>
+</section>
+{% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+{% if candidates["items"] %}
+<div class="image-candidate-list">
+  {% for candidate in candidates["items"] %}
+  <article class="image-candidate-card">
+    <div class="candidate-file">
+      <div class="candidate-placeholder">IMG</div>
+      <span class="row-label">Archivo indexado</span>
+      <h2>{{ candidate.original_filename }}</h2>
+      <code>{{ candidate.content_sha256[:16] }}…</code>
+      <small>{{ candidate.member_path }}</small>
+    </div>
+    <div class="candidate-match"><span>Coincidencia exacta</span><strong>↔</strong><code>{{ candidate.lookup_key }}</code></div>
+    <div class="candidate-product">
+      <span class="row-label">Producto propuesto</span>
+      <div class="reference">{{ candidate.reference }}</div>
+      <h2>{{ candidate.product_name }}</h2>
+      <details><summary>Evidencia SHA-256</summary><code class="hash-code">{{ candidate.evidence_sha256 }}</code></details>
+    </div>
+    {% if candidate.decision %}
+    <div class="resolved-note"><strong>{{ candidate.decision }}</strong><br>Decidido por {{ candidate.decided_by }}</div>
+    {% else %}
+    <form class="decision-form" method="post" action="/operator/images/candidates/{{ candidate.image_product_candidate_id }}/decision">
+      <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+      <input type="hidden" name="evidence_sha256" value="{{ candidate.evidence_sha256 }}">
+      <label><span>Motivo</span><textarea name="reason" minlength="4" maxlength="500" required></textarea></label>
+      <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo esta decisión individual sobre la evidencia mostrada.</span></label>
+      <div class="decision-actions"><button class="reject-button" name="decision" value="rejected">Rechazar</button><button class="approve-button" name="decision" value="approved">Aprobar</button></div>
+    </form>
+    {% endif %}
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<section class="empty-state"><span class="empty-symbol">◇</span><h2>No hay candidatos</h2><p>Indexa un ZIP desde Ingresos y genera propuestas exactas. Las coincidencias difusas no se crean automáticamente.</p><a class="secondary-button" href="/operator/intake?kind=image_archive">Abrir ingresos de imágenes</a></section>
+{% endif %}
+<nav class="pagination">{% if previous_url %}<a class="secondary-button" href="{{ previous_url }}">← Anterior</a>{% else %}<span></span>{% endif %}{% if next_url %}<a class="secondary-button" href="{{ next_url }}">Siguiente →</a>{% endif %}</nav>
+{% endblock %}

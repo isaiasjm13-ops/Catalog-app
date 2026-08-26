@@ -105,6 +105,17 @@ class ReviewGateway(Protocol):
         self, submission_id: uuid.UUID, intake_root: Path, actor: str, reason: str,
     ) -> dict[str, Any]: ...
 
+    def generate_image_candidates(
+        self, image_archive_index_id: uuid.UUID, actor: str, reason: str,
+    ) -> dict[str, Any]: ...
+
+    def image_candidates(self, *, limit: int = 100, offset: int = 0) -> dict[str, Any]: ...
+
+    def decide_image_candidate(
+        self, candidate_id: uuid.UUID, evidence_sha256: str, decision: str,
+        actor: str, reason: str,
+    ) -> dict[str, Any]: ...
+
     def catalog_releases(self, *, limit: int = 100) -> list[dict[str, Any]]: ...
 
     def export_catalog(
@@ -1067,6 +1078,97 @@ def create_operator_app(
             return _error(environment, 503, "Indexación no disponible", "No se creó el índice. Revisa la consola del servidor.", session=session)
         return RedirectResponse(
             f"/operator/intake?{urlencode({'result': str(result['status'])})}", status_code=303
+        )
+
+    @app.get("/operator/images", response_class=HTMLResponse)
+    async def image_candidates_page(request: Request, page: int = 1) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            if page < 1 or page > 100_000:
+                raise ValueError("Página fuera del rango permitido.")
+            limit = 50
+            candidates = await run_in_threadpool(
+                gateway.image_candidates, limit=limit, offset=(page - 1) * limit
+            )
+        except ValueError as exc:
+            return _error(environment, 400, "Página inválida", str(exc), session=session_or_redirect)
+        except Exception:
+            return _error(
+                environment, 503, "Revisión de imágenes no disponible",
+                "Verifica que la migración 0010 esté aplicada y revisa la consola del servidor.",
+                session=session_or_redirect,
+            )
+        result_message = {
+            "generated": "Candidatos exactos generados. Ninguno fue aprobado automáticamente.",
+            "approved": "Candidato de imagen aprobado con su evidencia exacta.",
+            "rejected": "Candidato de imagen rechazado; la evidencia permanece conservada.",
+            "already_approved": "La aprobación exacta ya existía.",
+            "already_rejected": "El rechazo exacto ya existía.",
+        }.get(request.query_params.get("result"))
+        previous_url = f"/operator/images?page={page - 1}" if page > 1 else None
+        next_url = f"/operator/images?page={page + 1}" if page * limit < candidates["filtered_count"] else None
+        return _render(
+            environment, "operator_images.html", candidates=candidates,
+            message=result_message, page=page, previous_url=previous_url, next_url=next_url,
+            session=session_or_redirect, version=OPERATOR_VERSION,
+        )
+
+    @app.post("/operator/images/index/{index_id}/candidates")
+    async def generate_image_candidates_route(request: Request, index_id: str) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "reason", "confirm"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
+                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            reason = _require_text(form["reason"], "reason")
+            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
+                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
+            if form["confirm"] != "yes":
+                raise ValueError("Debes confirmar la generación exacta de candidatos.")
+            await run_in_threadpool(
+                gateway.generate_image_candidates, _uuid(index_id, "image_archive_index_id"),
+                session.actor, reason,
+            )
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            return _error(environment, 409, "Candidatos no generados", str(exc), session=session)
+        except Exception:
+            return _error(environment, 503, "Generación no disponible", "No se generaron candidatos. Revisa la consola.", session=session)
+        return RedirectResponse("/operator/images?result=generated", status_code=303)
+
+    @app.post("/operator/images/candidates/{candidate_id}/decision")
+    async def decide_image_candidate_route(request: Request, candidate_id: str) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "evidence_sha256", "decision", "reason", "confirm"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
+                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            reason = _require_text(form["reason"], "reason")
+            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
+                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
+            if form["confirm"] != "yes":
+                raise ValueError("Debes confirmar la decisión individual.")
+            result = await run_in_threadpool(
+                gateway.decide_image_candidate, _uuid(candidate_id, "candidate_id"),
+                form["evidence_sha256"], form["decision"], session.actor, reason,
+            )
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            return _error(environment, 409, "Decisión no aplicada", str(exc), session=session)
+        except Exception:
+            return _error(environment, 503, "Decisión no disponible", "No se guardó la decisión. Revisa la consola.", session=session)
+        return RedirectResponse(
+            f"/operator/images?{urlencode({'result': str(result['status'])})}", status_code=303
         )
 
     @app.get("/operator/plans/{plan_id}", response_class=HTMLResponse)

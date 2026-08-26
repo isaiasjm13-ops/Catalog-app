@@ -34,8 +34,10 @@
   sesión/Origin/CSRF/motivo/confirmación. Muestra conteo, ambigüedades y hash; no extrae ni asocia.
 - Preparada migración `0010` y núcleo `exact-approved-reference-v1`: candidatos deterministas por
   referencia primaria aprobada y decisiones humanas append-only con evidencia SHA-256 separada.
-- Launcher `MIGRAR-REVISION-IMAGENES.cmd` añadido. Hasta aplicar `0010`, no debe exponerse la cola
-  visual de candidatos ni materializarse ninguna asociación en `product_media`.
+- Migración `0010` aplicada correctamente en `perfect_catalog_dev`; launcher
+  `MIGRAR-REVISION-IMAGENES.cmd` conservado para otras instalaciones.
+- Nueva cola `Imágenes`: generación exacta desde un índice concreto y aprobación/rechazo individual
+  con sesión, Origin, CSRF, confirmación, motivo y hash de evidencia. Aún no materializa `product_media`.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
 

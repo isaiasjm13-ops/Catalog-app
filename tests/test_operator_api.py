@@ -33,6 +33,7 @@ class SyntheticReviewGateway:
         self.intake_records: list[dict[str, Any]] = []
         self.promotions: list[dict[str, Any]] = []
         self.image_indexes: list[dict[str, Any]] = []
+        self.image_candidate_data: list[dict[str, Any]] = []
         self.catalog_exports: list[dict[str, Any]] = []
         self.release_changes: list[dict[str, Any]] = []
         self.release_data = [{
@@ -184,6 +185,33 @@ class SyntheticReviewGateway:
         })
         self.image_indexes.append({"submission_id": submission_id, "intake_root": intake_root, "actor": actor, "reason": reason})
         return {"status": "indexed"}
+
+    def generate_image_candidates(
+        self, image_archive_index_id: uuid.UUID, actor: str, reason: str,
+    ) -> dict[str, Any]:
+        if not self.image_candidate_data:
+            self.image_candidate_data.append({
+                "image_product_candidate_id": str(uuid.uuid4()), "evidence_sha256": "9" * 64,
+                "confidence": 1, "original_filename": "NK-001.jpg", "member_path": "fotos/NK-001.jpg",
+                "lookup_key": "NK-001", "content_sha256": "8" * 64, "reference": "NK-001",
+                "product_name": "Empaque <seguro>", "product_template_id": str(uuid.uuid4()),
+                "product_variant_id": None, "decision": None, "decided_by": None, "decided_at": None,
+            })
+        return {"status": "generated", "candidate_count": 1, "inserted_count": 1}
+
+    def image_candidates(self, *, limit: int = 100, offset: int = 0) -> dict[str, Any]:
+        return {"items": self.image_candidate_data[offset:offset + limit],
+                "filtered_count": len(self.image_candidate_data), "limit": limit, "offset": offset}
+
+    def decide_image_candidate(
+        self, candidate_id: uuid.UUID, evidence_sha256: str, decision: str,
+        actor: str, reason: str,
+    ) -> dict[str, Any]:
+        candidate = next(item for item in self.image_candidate_data if item["image_product_candidate_id"] == str(candidate_id))
+        if candidate["evidence_sha256"] != evidence_sha256:
+            raise PermissionError("evidencia incorrecta")
+        candidate.update({"decision": decision, "decided_by": actor, "decided_at": "2026-08-26"})
+        return {"status": decision}
 
     def intake_submissions(
         self,
@@ -658,6 +686,31 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         history = await self.client.get("/operator/intake")
         self.assertIn("2 imágenes indexadas", history.text)
         self.assertIn("1 ambiguas", history.text)
+
+    async def test_image_candidate_generation_and_decision_are_separate_posts(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/images")
+        self.assertEqual(page.status_code, 200)
+        csrf = hidden_value(page.text, "csrf_token") if 'name="csrf_token"' in page.text else hidden_value((await self.client.get("/operator/intake")).text, "csrf_token")
+        generated = await self.client.post(
+            f"/operator/images/index/{uuid.uuid4()}/candidates",
+            data={"csrf_token": csrf, "reason": "Cruce exacto revisable", "confirm": "yes"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(generated.status_code, 303)
+        queue = await self.client.get("/operator/images")
+        self.assertIn("NK-001.jpg", queue.text)
+        self.assertIn("Empaque &lt;seguro&gt;", queue.text)
+        candidate = self.gateway.image_candidate_data[0]
+        decided = await self.client.post(
+            f"/operator/images/candidates/{candidate['image_product_candidate_id']}/decision",
+            data={"csrf_token": csrf, "evidence_sha256": candidate["evidence_sha256"],
+                  "decision": "approved", "reason": "Fotografía confirmada", "confirm": "yes"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(decided.status_code, 303)
+        self.assertIn("result=approved", decided.headers["location"])
+        self.assertEqual(candidate["decision"], "approved")
 
     async def test_intake_requires_auth_origin_csrf_and_confirmation(self) -> None:
         unauthenticated = await self.client.get("/operator/intake")

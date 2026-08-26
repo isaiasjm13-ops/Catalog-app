@@ -17,3 +17,7 @@ cada decisión humana queda vinculada a ese hash exacto.
 
 La materialización de una asociación aprobada será un bloque posterior y separado: deberá volver
 a verificar ZIP, entrada, CRC/SHA-256 y decisión antes de extraer una copia content-addressed.
+
+Tras aplicar `0010`, la cola está disponible en `http://127.0.0.1:8081/operator/images`.
+Los candidatos se generan desde el índice mostrado en `Ingresos`; aprobar o rechazar sólo añade
+una decisión append-only y no tiene efectos sobre los archivos ni el catálogo publicado.

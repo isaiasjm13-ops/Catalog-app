@@ -119,6 +119,15 @@
       <span class="state-pill complete">{{ submission.image_count }} imágenes indexadas</span>
       {% if submission.ambiguous_count %}<span class="duplicate-chip">{{ submission.ambiguous_count }} ambiguas</span>{% endif %}
       <code>{{ submission.image_index_sha256[:16] }}…</code>
+      <details>
+        <summary>Generar candidatos exactos</summary>
+        <form method="post" action="/operator/images/index/{{ submission.image_archive_index_id }}/candidates">
+          <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+          <label><span>Motivo</span><textarea name="reason" minlength="4" maxlength="500" required></textarea></label>
+          <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo que sólo se crearán propuestas pendientes de revisión.</span></label>
+          <button class="secondary-button" type="submit">Buscar referencias exactas</button>
+        </form>
+      </details>
       {% else %}
       <details>
         <summary>Indexar imágenes sin extraer</summary>
