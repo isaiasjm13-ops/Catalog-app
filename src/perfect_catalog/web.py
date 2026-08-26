@@ -7,7 +7,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Protocol
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlencode, urlparse
 
 import psycopg
 
@@ -38,19 +38,22 @@ header {{ display:flex; justify-content:space-between; gap:20px; align-items:end
 .eyebrow {{ color:var(--accent); font:700 12px/1.2 Arial,sans-serif; letter-spacing:2px; text-transform:uppercase; }}
 h1 {{ font-size:clamp(36px,6vw,70px); line-height:.95; margin:10px 0 0; font-weight:500; }}
 .header-note {{ max-width:250px; color:var(--muted); font:14px/1.5 Arial,sans-serif; text-align:right; }}
-.search {{ display:grid; grid-template-columns:1fr 220px auto; gap:10px; margin:28px 0 18px; }}
+.search {{ display:grid; grid-template-columns:1fr 260px auto; gap:10px; margin:28px 0 14px; }}
 input, button {{ min-height:48px; border:1px solid var(--line); border-radius:4px; padding:0 14px; font:15px Arial,sans-serif; }}
 input {{ background:var(--card); color:var(--ink); }} button {{ background:var(--accent); color:#fff; border-color:var(--accent); cursor:pointer; font-weight:700; }} button:hover {{ background:var(--accent-dark); }}
 .stats {{ display:flex; flex-wrap:wrap; gap:10px; margin:0 0 22px; font:13px Arial,sans-serif; color:var(--muted); }} .stat {{ background:#e7efed; padding:8px 11px; border-radius:3px; }} .stat strong {{ color:var(--ink); }}
-.results {{ display:grid; gap:10px; }} .result {{ background:var(--card); border:1px solid var(--line); border-left:4px solid var(--warm); padding:17px 18px; display:grid; grid-template-columns:minmax(160px, .8fr) 1fr auto; gap:18px; align-items:start; }}
-.ref {{ font:700 19px Arial,sans-serif; color:var(--accent-dark); }} .name {{ font-size:20px; margin-bottom:7px; }} .meta {{ color:var(--muted); font:13px/1.5 Arial,sans-serif; }} .qty {{ text-align:right; font:700 18px Arial,sans-serif; }} .qty small {{ display:block; color:var(--muted); font-size:11px; font-weight:400; }}
+.category-strip {{ display:flex; gap:8px; overflow:auto; padding:3px 0 22px; scrollbar-width:thin; }} .category-strip a {{ flex:none; padding:9px 12px; border:1px solid var(--line); border-radius:999px; color:var(--muted); background:#fff; font:12px Arial,sans-serif; text-decoration:none; }} .category-strip a.active {{ color:#fff; border-color:var(--accent); background:var(--accent); }}
+.results {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }} .result {{ min-width:0; background:var(--card); border:1px solid var(--line); display:flex; flex-direction:column; overflow:hidden; }}
+.result-visual {{ min-height:150px; display:grid; place-items:center; position:relative; color:var(--accent-dark); background:linear-gradient(145deg,#edf4f2,#faf8ef); text-decoration:none; overflow:hidden; }} .result-visual span {{ width:54px; height:54px; display:grid; place-items:center; border:1px solid currentColor; border-radius:50%; font:700 17px Arial,sans-serif; }} .result-visual img {{ width:100%; height:190px; object-fit:contain; background:#fff; }} .result-visual.present::after {{ content:'imagen asociada'; position:absolute; right:10px; bottom:9px; padding:3px 5px; color:#fff; background:var(--accent); font:700 9px Arial,sans-serif; letter-spacing:.08em; text-transform:uppercase; }} .result-body {{ display:flex; flex:1; flex-direction:column; padding:18px; }}
+.ref {{ font:700 15px Arial,sans-serif; color:var(--accent-dark); }} .ref a {{ color:inherit; text-decoration:none; }} .name {{ min-height:2.4em; font-size:21px; line-height:1.2; margin:9px 0; }} .meta {{ color:var(--muted); font:12px/1.5 Arial,sans-serif; }} .result-footer {{ display:flex; justify-content:space-between; gap:12px; align-items:end; margin-top:auto; padding-top:18px; }} .qty {{ text-align:right; font:700 18px Arial,sans-serif; }} .qty small {{ display:block; color:var(--muted); font-size:10px; font-weight:400; }} .brand-chip {{ padding:5px 7px; color:var(--accent-dark); background:#e7efed; font:700 10px Arial,sans-serif; text-transform:uppercase; }}
 .empty {{ padding:42px 20px; color:var(--muted); text-align:center; border:1px dashed var(--line); font:15px Arial,sans-serif; }}
-@media(max-width:720px) {{ header {{ display:block; }} .header-note {{ text-align:left; margin-top:16px; }} .search {{ grid-template-columns:1fr; }} .result {{ grid-template-columns:1fr; gap:9px; }} .qty {{ text-align:left; }} }}
+@media(max-width:900px) {{ .results {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} }} @media(max-width:620px) {{ header {{ display:block; }} .header-note {{ text-align:left; margin-top:16px; }} .search,.results {{ grid-template-columns:1fr; }} }}
 </style>
 </head>
 <body><main class="shell">
 <header><div><div class="eyebrow">Perfect Trading / Natsuki</div><h1>Catálogo de empaques</h1></div><div class="header-note">Consulta local de la muestra importada desde Odoo. Datos en revisión, sin cambios empresariales.</div></header>
 <form class="search" method="get"><input name="q" value="{query}" placeholder="Referencia o nombre" autofocus><input name="category" value="{category}" placeholder="Categoría contiene"><button type="submit">Buscar</button></form>
+<nav class="category-strip" aria-label="Categorías del catálogo">{categories}</nav>
 <div class="stats"><span class="stat">Plan <strong>{plan_status}</strong></span><span class="stat">Referencias <strong>{total}</strong></span><span class="stat">Resultados <strong>{shown}</strong></span><span class="stat">Fuente <strong>Odoo</strong></span></div>
 <section class="results">{results}</section>
 </main></body></html>"""
@@ -471,16 +474,46 @@ def render_results(items: list[dict[str, Any]]) -> str:
     rendered = []
     for item in items:
         data = item["data"]
+        raw_reference = str(data.get("internal_reference_original") or "Sin referencia")
+        reference = html.escape(raw_reference)
+        initials = html.escape(raw_reference[:2])
+        image_status = "present" if data.get("image_status") == "present" else "absent"
+        product_url = f'/producto/{html.escape(str(item["id"]), quote=True)}'
+        visual = (
+            f'<img src="/media/{html.escape(str(item["id"]), quote=True)}" alt="{reference}" loading="lazy">'
+            if data.get("image_storage_relpath") and data.get("image_sha256") else f'<span>{initials}</span>'
+        )
+        quantity_value = data.get("quantity_available")
+        quantity = 0 if quantity_value is None else quantity_value
         rendered.append(
             '<article class="result">'
-            f'<div><div class="ref"><a href="/producto/{html.escape(str(item["id"]), quote=True)}">{html.escape(str(data.get("internal_reference_original") or ""))}</a></div>'
-            f'<div class="meta">{_identity_label(item)}</div></div>'
-            f'<div><div class="name">{html.escape(str(data.get("name_original") or ""))}</div>'
-            f'<div class="meta">{html.escape(str(data.get("category_path") or "Sin categoría"))}</div></div>'
-            f'<div class="qty"><small>Disponible</small>{html.escape(str(data.get("quantity_available") or 0))}</div>'
+            f'<a class="result-visual {image_status}" href="{product_url}">{visual}</a>'
+            f'<div class="result-body"><div class="ref"><a href="{product_url}">{reference}</a></div>'
+            f'<div class="name">{html.escape(str(data.get("name_original") or ""))}</div>'
+            f'<div class="meta">{html.escape(str(data.get("category_path") or "Sin categoría"))}</div>'
+            f'<div class="result-footer"><span class="brand-chip">{html.escape(str(data.get("brand") or "Perfect"))}</span>'
+            f'<div class="qty"><small>Disponible</small>{html.escape(str(quantity))}</div></div></div>'
             '</article>'
         )
     return "".join(rendered)
+
+
+def render_category_filters(
+    categories: list[dict[str, Any]], selected: str, query: str = ""
+) -> str:
+    all_query = urlencode({"q": query}) if query else ""
+    links = [f'<a class="{"active" if not selected else ""}" href="/?{all_query}">Todas</a>']
+    for item in categories[:30]:
+        value = item.get("value")
+        if value is None or not str(value).strip():
+            continue
+        value = str(value)
+        target = urlencode({"q": query, "category": value})
+        active = "active" if value == selected else ""
+        links.append(
+            f'<a class="{active}" href="/?{target}">{html.escape(value)} · {int(item.get("count") or 0)}</a>'
+        )
+    return "".join(links)
 
 
 def render_product(product: dict[str, Any], printable: bool = False) -> str:
@@ -491,6 +524,22 @@ def render_product(product: dict[str, Any], printable: bool = False) -> str:
     quantity = html.escape(str(data.get("quantity_available") or 0))
     currency = html.escape(str(data.get("currency") or ""))
     image_status = html.escape(str(data.get("image_status") or "absent"))
+    media_url = f'/media/{html.escape(str(product["id"]), quote=True)}'
+    image_panel = (
+        f'<div class="image has-media"><img src="{media_url}" alt="{reference}"></div>'
+        if data.get("image_storage_relpath") and data.get("image_sha256")
+        else f'<div class="image">Imagen: {image_status}<br><small>Sin imagen aprobada en este release.</small></div>'
+    )
+    applications = [html.escape(str(value)) for value in data.get("applications") or []]
+    oem_references = [html.escape(str(value)) for value in data.get("oem_references") or []]
+    applications_fact = (
+        f'<div class="fact stacked"><span class="label">Aplicaciones</span><strong>{"; ".join(applications)}</strong></div>'
+        if applications else ""
+    )
+    oem_fact = (
+        f'<div class="fact stacked"><span class="label">Referencias OEM</span><strong>{", ".join(oem_references)}</strong></div>'
+        if oem_references else ""
+    )
     back = '<a class="back" href="/">Volver al catálogo</a>' if not printable else ''
     print_link = f'<a class="print-link" href="/producto/{html.escape(str(product["id"]), quote=True)}/ficha">Ficha imprimible / PDF</a>' if not printable else ''
     return f"""<!doctype html>
@@ -502,12 +551,12 @@ def render_product(product: dict[str, Any], printable: bool = False) -> str:
 .top {{ display:flex; justify-content:space-between; gap:20px; border-bottom:1px solid var(--line); padding-bottom:18px; }}
 .eyebrow {{ color:var(--accent); font:700 12px Arial,sans-serif; letter-spacing:2px; text-transform:uppercase; }} h1 {{ font-size:clamp(30px,5vw,58px); line-height:1; margin:12px 0 8px; font-weight:500; }}
 .ref {{ color:var(--accent); font:700 22px Arial,sans-serif; }} .actions {{ display:flex; gap:14px; align-items:start; }}
-.hero {{ display:grid; grid-template-columns:1fr 1fr; gap:26px; padding:30px 0; }} .image {{ min-height:300px; border:1px dashed var(--line); display:grid; place-items:center; color:var(--muted); font:14px Arial,sans-serif; text-align:center; padding:30px; }}
-.facts {{ background:#fff; border:1px solid var(--line); padding:22px; }} .fact {{ display:flex; justify-content:space-between; gap:18px; padding:12px 0; border-bottom:1px solid var(--line); font:14px Arial,sans-serif; }} .fact:last-child {{ border-bottom:0; }} .label {{ color:var(--muted); }}
+.hero {{ display:grid; grid-template-columns:1fr 1fr; gap:26px; padding:30px 0; }} .image {{ min-height:300px; border:1px dashed var(--line); display:grid; place-items:center; color:var(--muted); font:14px Arial,sans-serif; text-align:center; padding:30px; }} .image.has-media {{ padding:0; border-style:solid; background:#fff; }} .image img {{ width:100%; height:100%; max-height:480px; object-fit:contain; }}
+.facts {{ background:#fff; border:1px solid var(--line); padding:22px; }} .fact {{ display:flex; justify-content:space-between; gap:18px; padding:12px 0; border-bottom:1px solid var(--line); font:14px Arial,sans-serif; }} .fact.stacked {{ display:grid; }} .fact:last-child {{ border-bottom:0; }} .label {{ color:var(--muted); }}
 .notice {{ border-left:4px solid var(--warm); padding:14px 16px; background:#fff8e8; font:14px/1.5 Arial,sans-serif; }}
 @media print {{ body {{ background:#fff; }} .actions,.back {{ display:none; }} .sheet {{ padding:0; }} }} @media(max-width:700px) {{ .hero {{ grid-template-columns:1fr; }} .top {{ display:block; }} .actions {{ margin-top:18px; }} }}
 </style></head><body><main class="sheet">{back}<div class="top"><div><div class="eyebrow">Perfect Trading / Natsuki</div><h1>{title}</h1><div class="ref">{reference}</div></div><div class="actions">{print_link}</div></div>
-<section class="hero"><div class="image">Imagen: {image_status}<br><small>La muestra no incluye una ruta de archivo utilizable.</small></div><div class="facts"><div class="fact"><span class="label">Categoría</span><strong>{category}</strong></div><div class="fact"><span class="label">Disponible</span><strong>{quantity} {currency}</strong></div><div class="fact"><span class="label">Identidad</span><strong>{_identity_label(product)}</strong></div></div></section>
+<section class="hero">{image_panel}<div class="facts"><div class="fact"><span class="label">Categoría</span><strong>{category}</strong></div><div class="fact"><span class="label">Disponible</span><strong>{quantity} {currency}</strong></div>{applications_fact}{oem_fact}<div class="fact"><span class="label">Identidad</span><strong>{_identity_label(product)}</strong></div></div></section>
 <div class="notice">Ficha basada en la exportación preliminar de Odoo. Los campos no presentes en la muestra, como aplicaciones, OEM, FMSI y especificaciones técnicas, permanecen pendientes de futuras fuentes.</div>
 </main></body></html>"""
 
@@ -522,12 +571,14 @@ def make_handler(repository: CatalogReader) -> type[BaseHTTPRequestHandler]:
                 category = params.get("category", [""])[0].strip()
                 status, total, _ = repository.plan()
                 items = repository.search(query, category) if query or category else repository.search("", "")
+                categories = repository.categories()
                 body = PAGE.format(
                     query=html.escape(query, quote=True),
                     category=html.escape(category, quote=True),
                     plan_status=html.escape(status),
                     total=total,
                     shown=len(items),
+                    categories=render_category_filters(categories, category, query),
                     results=render_results(items),
                 ).encode("utf-8")
             elif parsed.path.startswith("/producto/"):

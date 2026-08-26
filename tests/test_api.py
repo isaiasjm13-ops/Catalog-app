@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import unittest
 import uuid
+import hashlib
+import tempfile
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -129,8 +132,53 @@ class CatalogApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["items"][-1], {"value": None, "count": 1})
 
+    async def test_public_image_requires_release_evidence_path_confinement_and_sha(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            content = b"approved-public-image"
+            digest = hashlib.sha256(content).hexdigest()
+            target = root / "objects" / digest[:2] / f"{digest}.jpg"
+            target.parent.mkdir(parents=True)
+            target.write_bytes(content)
+            self.repository.rows[0]["data"].update({
+                "image_status": "present",
+                "image_storage_relpath": f"objects/{digest[:2]}/{digest}.jpg",
+                "image_sha256": digest,
+                "image_media_type": "image/jpeg",
+                "applications": ["Toyota <Corolla>"],
+                "oem_references": ["OEM&123"],
+            })
+            client = httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=create_app(self.repository, image_root=root)),
+                base_url="http://testserver",
+            )
+            try:
+                page = await client.get("/")
+                self.assertIn('src="/media/source-row:2"', page.text)
+                detail = await client.get("/producto/2")
+                self.assertIn('class="image has-media"', detail.text)
+                self.assertIn("Toyota &lt;Corolla&gt;", detail.text)
+                self.assertIn("OEM&amp;123", detail.text)
+                image = await client.get("/media/source-row:2")
+                self.assertEqual(image.status_code, 200)
+                self.assertEqual(image.content, content)
+                self.assertEqual(image.headers["cache-control"], "no-store")
+                target.write_bytes(b"tampered")
+                self.assertEqual((await client.get("/media/source-row:2")).status_code, 404)
+                self.repository.rows[0]["data"]["image_storage_relpath"] = "../outside.jpg"
+                self.assertEqual((await client.get("/media/source-row:2")).status_code, 404)
+            finally:
+                await client.aclose()
+
     async def test_existing_html_catalog_and_print_routes_remain_available(self) -> None:
-        self.assertIn("001-A-00", (await self.client.get("/", params={"q": "001"})).text)
+        catalog = (await self.client.get(
+            "/", params={"q": "001", "category": "Todos / Empaques"}
+        )).text
+        self.assertIn("001-A-00", catalog)
+        self.assertIn('class="result-visual absent"', catalog)
+        self.assertIn("category-strip", catalog)
+        self.assertIn("Todos+%2F+Empaques", catalog)
+        self.assertIn('class="active"', catalog)
         self.assertIn("EMPAQUE SINTÉTICO ÁRBOL", (await self.client.get("/producto/2")).text)
         self.assertNotIn("Volver al catálogo", (await self.client.get("/producto/2/ficha")).text)
 

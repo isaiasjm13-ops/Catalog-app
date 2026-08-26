@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import re
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -8,7 +10,7 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .web import (
@@ -18,6 +20,7 @@ from .web import (
     ExcelCatalogRepository,
     ReleaseCatalogRepository,
     render_product,
+    render_category_filters,
     render_results,
 )
 from .config import DatabaseConfig, prompt_password
@@ -87,7 +90,7 @@ def _product_resource(item: dict[str, Any]) -> ProductResource:
     )
 
 
-def create_app(repository: CatalogReader) -> FastAPI:
+def create_app(repository: CatalogReader, *, image_root: Path = Path("data/images")) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         yield
@@ -146,12 +149,38 @@ def create_app(repository: CatalogReader) -> FastAPI:
         items = [CategoryResource(**item) for item in repository.categories()]
         return CategoryListResponse(count=len(items), items=items)
 
+    @app.get("/media/{product_id}", include_in_schema=False)
+    def product_image(product_id: str) -> FileResponse:
+        item = repository.product(product_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Imagen no encontrada")
+        data = item["data"]
+        relative = data.get("image_storage_relpath")
+        digest = str(data.get("image_sha256") or "")
+        if not relative or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise HTTPException(status_code=404, detail="Imagen no encontrada")
+        root = image_root.resolve()
+        target = (root / str(relative)).resolve()
+        if not target.is_relative_to(root) or not target.is_file():
+            raise HTTPException(status_code=404, detail="Imagen no encontrada")
+        calculated = hashlib.sha256()
+        with target.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                calculated.update(chunk)
+        if calculated.hexdigest() != digest:
+            raise HTTPException(status_code=404, detail="Imagen no encontrada")
+        return FileResponse(
+            target, media_type=str(data.get("image_media_type") or "application/octet-stream"),
+            headers={"Cache-Control": "no-store"},
+        )
+
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def catalog_page(q: str = "", category: str = "") -> str:
         query = q.strip()
         selected_category = category.strip()
         plan_status, total, _ = repository.plan()
         items = repository.search(query, selected_category)
+        category_items = repository.categories()
         import html
 
         return PAGE.format(
@@ -160,6 +189,7 @@ def create_app(repository: CatalogReader) -> FastAPI:
             plan_status=html.escape(plan_status),
             total=total,
             shown=len(items),
+            categories=render_category_filters(category_items, selected_category, query),
             results=render_results(items),
         )
 
@@ -188,6 +218,7 @@ def build_parser() -> argparse.ArgumentParser:
     source.add_argument("--source", type=Path, default=None)
     source.add_argument("--source-dir", type=Path, default=None)
     parser.add_argument("--brand", default="NATSUKI")
+    parser.add_argument("--image-root", type=Path, default=Path("data/images"))
     parser.add_argument("--database", default=None)
     parser.add_argument("--user", default=None)
     parser.add_argument("--db-host", dest="host_db", default=None)
@@ -217,7 +248,7 @@ def main(argv: list[str] | None = None) -> int:
     except (FileNotFoundError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    uvicorn.run(create_app(repository), host=args.host, port=args.port)
+    uvicorn.run(create_app(repository, image_root=args.image_root), host=args.host, port=args.port)
     return 0
 
 

@@ -59,6 +59,10 @@ Al hacer doble clic en `INICIAR-SERVER.cmd`, la web queda visible en
 .\.venv\Scripts\perfect-catalog-api.exe --source "data\imports\NATSUKI_EMPAQUES_MAESTRO.xlsx"
 ```
 
+Para consultar el último release publicado e inmutable desde PostgreSQL, usa
+`INICIAR-CATALOGO-PUBLICADO.cmd`. Solicita la contraseña de forma oculta y conserva el servidor en
+modo de sólo lectura; no utiliza el XLSX piloto ni muestra credenciales en argumentos.
+
 La misma aplicación expone:
 
 - `GET /api/v1/products?q=&category=&limit=&offset=`

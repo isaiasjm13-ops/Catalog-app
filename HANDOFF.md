@@ -68,6 +68,17 @@
   además de selección y checksums; historiales anteriores sin layout siguen siendo compatibles.
 - La vista previa editorial permite alternar los cuatro temas antes de exportar. Sólo acepta clases
   predefinidas servidas por el CSS local, por lo que no introduce estilos arbitrarios ni relaja CSP.
+- Catálogo público renovado con tarjetas responsive de tres/dos/una columna, navegación por hasta 30
+  categorías reales, búsqueda conservada al filtrar, marca, existencias e indicador visual de imagen.
+- Las imágenes aprobadas del release se sirven en `/media/{product_id}` sólo después de revalidar
+  pertenencia del producto, confinamiento bajo `data/images` y SHA-256. La ficha muestra además
+  aplicaciones y referencias OEM con escape HTML.
+- Nuevo `INICIAR-CATALOGO-PUBLICADO.cmd`: solicita la contraseña oculta y abre exclusivamente el
+  último release publicado de NATSUKI; `INICIAR-SERVER.cmd` permanece como visor explícito del piloto.
+- Verificación visual real completada en navegador integrado sobre los 893 productos del piloto XLSX:
+  cuadrícula de escritorio, filtro `EMPAQUES / CARTER` con 15 resultados y breakpoint móvil de 390 px
+  sin desbordamiento horizontal. El servidor temporal de prueba fue detenido al finalizar.
+- Suite local actual: 200 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 - Suite local actual: 198 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
