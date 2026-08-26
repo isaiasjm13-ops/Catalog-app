@@ -166,6 +166,10 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser.add_argument("--group-by-secondary", choices=("", *CATALOG_GROUP_FIELDS), default="")
     export_parser.add_argument("--filter-field", choices=CATALOG_FILTER_FIELDS, default="all")
     export_parser.add_argument("--filter-query", default="")
+    export_parser.add_argument(
+        "--reference", dest="selected_references", action="append", default=[],
+        help="Referencia exacta a incluir; puede repetirse.",
+    )
     export_parser.add_argument("--columns", type=int, choices=(1, 2, 3), default=2)
     export_parser.add_argument(
         "--indesign-template", choices=INDESIGN_TEMPLATE_PROFILES, default="T4"
@@ -276,6 +280,7 @@ def main(argv: list[str] | None = None) -> int:
                     "group_by_secondary": args.group_by_secondary,
                     "filter_field": args.filter_field,
                     "filter_query": args.filter_query,
+                    "selected_references": args.selected_references,
                     "columns_per_row": args.columns,
                     "template_profile": args.indesign_template,
                 },

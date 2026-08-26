@@ -49,6 +49,13 @@ class CatalogExportTests(unittest.TestCase):
         self.assertEqual(args.release_id, release_id)
         self.assertEqual(args.formats, ["pdf", "indesign-json"])
 
+    def test_cli_accepts_repeatable_exact_reference_selection(self) -> None:
+        args = build_parser().parse_args([
+            "export-catalog", str(uuid.uuid4()), "--output-dir", "out",
+            "--reference", "NK-001", "--reference", "NK-002", "--prompt-password",
+        ])
+        self.assertEqual(args.selected_references, ["NK-001", "NK-002"])
+
     def test_adapter_revalidates_release_and_rejects_tampering(self) -> None:
         release, items = fixture_release()
         rows = export_rows_from_release(release, items)
@@ -218,4 +225,21 @@ class CatalogExportTests(unittest.TestCase):
                 build_catalog_bundle(
                     release, items, Path(temporary) / "empty", formats=("pdf",),
                     config={"filter_field": "name_original", "filter_query": "inexistente"},
+                )
+
+    def test_manual_reference_selection_is_exact_manifested_and_rejects_typos(self) -> None:
+        release, items = fixture_release()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            result = build_catalog_bundle(
+                release, items, root / "selected", formats=("indesign-json",),
+                config={"selected_references": " nk-001\nNK-001, "},
+            )
+            self.assertEqual(result["selection"]["selected_item_count"], 1)
+            self.assertEqual(result["selection"]["selected_references"], ["nk-001"])
+            self.assertRegex(result["selection"]["selected_references_sha256"], r"^[0-9a-f]{64}$")
+            with self.assertRaisesRegex(ValueError, "no encontradas"):
+                build_catalog_bundle(
+                    release, items, root / "typo", formats=("pdf",),
+                    config={"selected_references": "NK-DOES-NOT-EXIST"},
                 )

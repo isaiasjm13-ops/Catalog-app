@@ -19,6 +19,7 @@ SUPPORTED_FORMATS = ("pdf", "pptx", "indesign-json")
 INDESIGN_TEMPLATE_PROFILES = ("T4", "T2", "T1", "TABLE")
 CATALOG_GROUP_FIELDS = ("category_path", "brand", "internal_reference_original")
 CATALOG_FILTER_FIELDS = ("all", "category_path", "brand", "internal_reference_original", "name_original")
+MAX_SELECTED_REFERENCES = 5000
 
 
 def _safe_stem(value: object) -> str:
@@ -111,18 +112,57 @@ def _selection(rows: list[dict[str, Any]], config: dict[str, Any]) -> tuple[list
         raise ValueError("Campo de filtro no permitido.")
     if len(query) > 120:
         raise ValueError("El filtro no puede superar 120 caracteres.")
+    raw_references = config.get("selected_references") or []
+    if isinstance(raw_references, str):
+        raw_references = re.split(r"[\r\n,;]+", raw_references)
+    if not isinstance(raw_references, (list, tuple)):
+        raise ValueError("La selección manual de referencias no es válida.")
+    references: list[str] = []
+    reference_keys: set[str] = set()
+    for raw_reference in raw_references:
+        reference = str(raw_reference).strip()
+        if not reference:
+            continue
+        if len(reference) > 120:
+            raise ValueError("Una referencia seleccionada supera 120 caracteres.")
+        key = reference.casefold()
+        if key not in reference_keys:
+            reference_keys.add(key)
+            references.append(reference)
+    if len(references) > MAX_SELECTED_REFERENCES:
+        raise ValueError(f"La selección manual supera {MAX_SELECTED_REFERENCES} referencias.")
     selected = rows
     if query:
         needle = query.casefold()
         keys = ("category_path", "brand", "internal_reference_original", "name_original") if filter_field == "all" else (filter_field,)
         selected = [row for row in rows if any(needle in str(row.get(key) or "").casefold() for key in keys)]
+    if reference_keys:
+        available = {
+            str(row.get("internal_reference_original") or "").strip().casefold()
+            for row in rows
+        }
+        missing = [reference for reference in references if reference.casefold() not in available]
+        if missing:
+            sample = ", ".join(missing[:5])
+            suffix = "…" if len(missing) > 5 else ""
+            raise ValueError(f"Referencias no encontradas en el release: {sample}{suffix}")
+        selected = [
+            row for row in selected
+            if str(row.get("internal_reference_original") or "").strip().casefold() in reference_keys
+        ]
     if not selected:
         raise ValueError("El filtro no selecciona ningún producto.")
-    config.update({"group_by": group_by, "group_by_secondary": secondary, "filter_field": filter_field, "filter_query": query})
+    config.update({
+        "group_by": group_by, "group_by_secondary": secondary,
+        "filter_field": filter_field, "filter_query": query,
+        "selected_references": references,
+    })
     return selected, {
         "source_item_count": len(rows), "selected_item_count": len(selected),
         "filter_field": filter_field, "filter_query": query,
         "group_by": group_by, "group_by_secondary": secondary or None,
+        "selected_references": references,
+        "selected_references_sha256": _sha256(_json_bytes(references)) if references else None,
     }
 
 

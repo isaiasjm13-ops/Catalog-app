@@ -49,7 +49,12 @@
   decodificarse degrada a ficha textual y no impide producir los demás entregables.
 - La vista previa editorial muestra imágenes aprobadas mediante una ruta autenticada que vuelve a
   validar release, pertenencia, confinamiento de ruta y SHA-256 antes de servir cada archivo.
-- Suite local actual: 195 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
+- La exportación permite seleccionar manualmente hasta 5.000 referencias exactas desde la consola
+  o mediante `--reference` repetible en CLI. Se combina por intersección con el filtro opcional,
+  rechaza referencias inexistentes y evita que un error tipográfico produzca un catálogo incompleto.
+- El manifiesto y el snapshot InDesign conservan la lista canónica seleccionada; el manifiesto añade
+  además su SHA-256 y el conteo exacto, de modo que la edición puede auditarse y reproducirse.
+- Suite local actual: 197 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
 

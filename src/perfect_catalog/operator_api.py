@@ -845,6 +845,7 @@ def create_operator_app(
             allowed_fields = {
                 "csrf_token", "title", "subtitle", "group_by", "group_by_secondary",
                 "filter_field", "filter_query", "columns", "template_profile",
+                "selected_references",
                 "format_pdf", "format_pptx", "format_indesign_json", "confirm",
             }
             if set(form) != allowed_fields:
@@ -871,6 +872,9 @@ def create_operator_app(
             filter_query = form["filter_query"].strip()
             if len(filter_query) > 120:
                 raise ValueError("El filtro no puede superar 120 caracteres.")
+            selected_references = form["selected_references"].strip()
+            if len(selected_references) > 20000:
+                raise ValueError("La lista manual de referencias es demasiado larga.")
             columns = int(form["columns"])
             if columns not in {1, 2, 3}:
                 raise ValueError("La cantidad de columnas no es válida.")
@@ -900,6 +904,7 @@ def create_operator_app(
                     "group_by_secondary": group_by_secondary,
                     "filter_field": filter_field,
                     "filter_query": filter_query,
+                    "selected_references": selected_references,
                     "columns_per_row": columns,
                     "template_profile": template_profile,
                 },

@@ -476,6 +476,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(page.status_code, 200)
         self.assertIn("2026.08", page.text)
         self.assertIn("12 productos", page.text)
+        self.assertIn('name="selected_references"', page.text)
         response = await self.client.post(
             f"/operator/catalogs/{RELEASE_ID}/exports",
             data={
@@ -486,6 +487,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
                 "group_by_secondary": "brand",
                 "filter_field": "all",
                 "filter_query": "",
+                "selected_references": "NK-001\nNK-002",
                 "columns": "2",
                 "format_pdf": "yes",
                 "format_pptx": "no",
@@ -498,6 +500,10 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], "/operator/catalogs?result=created")
         self.assertEqual(self.gateway.catalog_exports[0]["formats"], ("pdf", "indesign-json"))
+        self.assertEqual(
+            self.gateway.catalog_exports[0]["config"]["selected_references"],
+            "NK-001\nNK-002",
+        )
         export_id = self.gateway.catalog_exports[0]["export_id"]
         download = await self.client.get(
             f"/operator/catalogs/{RELEASE_ID}/exports/{export_id}/catalog.pdf"
@@ -516,6 +522,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
             "csrf_token": hidden_value(page.text, "csrf_token"),
             "title": "Catálogo web", "subtitle": "", "group_by": "category_path",
             "group_by_secondary": "", "filter_field": "all", "filter_query": "",
+            "selected_references": "",
             "columns": "2", "format_pdf": "yes", "format_pptx": "yes",
             "format_indesign_json": "yes", "confirm": "yes",
             "template_profile": "TABLE",

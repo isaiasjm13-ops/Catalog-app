@@ -88,6 +88,7 @@
               <label><span>Filtrar campo</span><select name="filter_field"><option value="all">Todos</option><option value="category_path">Categoría</option><option value="brand">Marca</option><option value="internal_reference_original">Referencia</option><option value="name_original">Nombre</option></select></label>
             </div>
             <label><span>Texto de filtro opcional</span><input name="filter_query" maxlength="120" placeholder="Ej. Toyota, motor o NK-001"></label>
+            <label><span>Selección manual de referencias (opcional)</span><textarea name="selected_references" maxlength="20000" placeholder="Una referencia por línea, o separadas por coma"></textarea><small>Si se completa, sólo se exportan coincidencias exactas del release. Los errores de escritura detienen la exportación.</small></label>
             <div class="format-grid">
               <label><span>PDF digital</span><select name="format_pdf"><option value="yes">Generar</option><option value="no">Omitir</option></select></label>
               <label><span>PowerPoint</span><select name="format_pptx"><option value="yes">Generar</option><option value="no">Omitir</option></select></label>
@@ -130,7 +131,7 @@
     <div class="delivery-list">
       {% for export in exports %}
       <article>
-        <div><strong>{{ export.release.version }}</strong><small>{{ export.selection.selected_item_count }} de {{ export.release.item_count }} productos{% if export.selection.filter_query %} · “{{ export.selection.filter_query }}”{% endif %}</small></div>
+        <div><strong>{{ export.release.version }}</strong><small>{{ export.selection.selected_item_count }} de {{ export.release.item_count }} productos{% if export.selection.filter_query %} · “{{ export.selection.filter_query }}”{% endif %}{% if export.selection.get('selected_references') %} · {{ export.selection.selected_references|length }} referencias manuales{% endif %}</small></div>
         <ul>
           {% for file in export.files %}
           <li><a href="/operator/catalogs/{{ export.release_id }}/exports/{{ export.export_id }}/{{ file.filename }}">{{ file.format }}</a><span>{{ file.bytes }} B</span></li>
