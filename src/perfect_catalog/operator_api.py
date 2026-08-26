@@ -754,7 +754,7 @@ def create_operator_app(
     async def preview_catalog_release_route(
         request: Request, release_id: str, group_by: str = "category_path",
         group_by_secondary: str = "", filter_field: str = "all",
-        filter_query: str = "", columns: int = 2,
+        filter_query: str = "", columns: int = 2, theme: str = "forest",
     ) -> Response:
         session_or_redirect = require_session(request)
         if isinstance(session_or_redirect, RedirectResponse):
@@ -762,6 +762,8 @@ def create_operator_app(
         try:
             if columns not in {1, 2, 3}:
                 raise ValueError("La cantidad de columnas no es válida.")
+            if theme not in CATALOG_THEMES:
+                raise ValueError("Tema editorial no soportado.")
             if group_by not in {"category_path", "brand", "internal_reference_original"}:
                 raise ValueError("Agrupación no permitida.")
             if group_by_secondary not in {"", "category_path", "brand", "internal_reference_original"}:
@@ -782,7 +784,8 @@ def create_operator_app(
             return _error(environment, 503, "Vista previa no disponible", "No se pudo leer el release publicado.", session=session_or_redirect)
         return _render(
             environment, "operator_catalog_preview.html",
-            preview=preview, columns=columns, session=session_or_redirect,
+            preview=preview, columns=columns, theme=theme, themes=CATALOG_THEMES,
+            session=session_or_redirect,
             version=OPERATOR_VERSION,
         )
 

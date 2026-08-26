@@ -66,6 +66,8 @@
   paleta consistente a HTML, PDF y PPTX; el valor también viaja en el layout InDesign.
 - El manifiesto conserva ahora el layout completo (tema, títulos, agrupación, columnas y plantilla),
   además de selección y checksums; historiales anteriores sin layout siguen siendo compatibles.
+- La vista previa editorial permite alternar los cuatro temas antes de exportar. Sólo acepta clases
+  predefinidas servidas por el CSS local, por lo que no introduce estilos arbitrarios ni relaja CSP.
 - Suite local actual: 198 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)

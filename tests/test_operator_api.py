@@ -570,11 +570,12 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
     async def test_catalog_preview_is_read_only_limited_and_escaped(self) -> None:
         await self.login()
         response = await self.client.get(
-            f"/operator/catalogs/{RELEASE_ID}/preview?group_by=category_path&columns=3"
+            f"/operator/catalogs/{RELEASE_ID}/preview?group_by=category_path&columns=3&theme=industrial"
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("Muestra 1 de 12 productos seleccionados", response.text)
         self.assertIn("columns-3", response.text)
+        self.assertIn("theme-industrial", response.text)
         self.assertIn("Motor &lt;seguro&gt;", response.text)
         self.assertNotIn("<script>", response.text)
         image = await self.client.get(
@@ -589,6 +590,10 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
             f"/operator/catalogs/{RELEASE_ID}/preview?group_by=unknown&columns=2"
         )
         self.assertEqual(invalid.status_code, 400)
+        invalid_theme = await self.client.get(
+            f"/operator/catalogs/{RELEASE_ID}/preview?theme=custom"
+        )
+        self.assertEqual(invalid_theme.status_code, 400)
 
     async def test_decision_requires_same_origin_and_exact_csrf(self) -> None:
         await self.login()
