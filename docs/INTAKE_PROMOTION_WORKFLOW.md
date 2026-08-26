@@ -31,3 +31,10 @@ La promoción repetida devuelve `already_promoted`; un bloqueo PostgreSQL por su
 ejecuciones concurrentes. Ningún paso aprueba, aplica, activa o publica productos. Ante un fallo
 antes de completar el dry-run se elimina la copia de procesamiento; si el plan ya quedó persistido,
 la copia se conserva para no romper la ruta auditada en `import_file`. El original permanece intacto.
+
+## Consola del operador
+
+Después de aplicar `0008`, `INICIAR-REVISOR.cmd` muestra **Promover a dry-run** únicamente en ingresos
+Odoo aceptados que aún no tengan promoción. La acción requiere un POST individual, sesión vigente,
+Origin local, CSRF exacto, motivo y confirmación. No existe promoción por GET ni selección masiva.
+Al completar, el historial muestra el plan enlazado; éste continúa en `awaiting_review`.

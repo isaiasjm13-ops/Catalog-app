@@ -1,5 +1,24 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Sesión Actual: Promoción individual en consola operador (2026-08-26)
+
+### Resultado de esta sesión
+
+- Consola operador v1.2 muestra promociones existentes y ofrece `Promover a dry-run` sólo para
+  submissions Odoo aceptados que todavía no tengan un plan enlazado.
+- Nueva ruta exclusivamente POST individual con sesión, Origin, CSRF, campos exactos, motivo de
+  4-500 caracteres y confirmación. No existe GET mutante ni acción masiva.
+- El gateway conserva la contraseña sólo en memoria y ejecuta perfilado/dry-run fuera del event loop;
+  el actor procede de la sesión firmada, no del formulario.
+- El historial enlaza el plan creado y comunica que permanece pendiente de revisión.
+- Suite local: 157 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
+
+### Pendiente siguiente
+
+1. Aplicar `0008` con `MIGRAR-PROMOCIONES.cmd` y probar la ruta con PostgreSQL real.
+2. Construir el índice no destructivo de imágenes sobre ZIP validado en cuarentena.
+3. Añadir una solicitud operador separada para exportar PDF/PPTX desde releases publicados.
+
 ## Sesión Actual: Promoción explícita de cuarentena (2026-08-26)
 
 ### Resultado de esta sesión

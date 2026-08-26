@@ -67,3 +67,9 @@ otros sitios aun cuando el servidor escuche solo en loopback.
 La portada debe indicar que no hay planes aplicados. El dry-run crea evidencia y planes pendientes,
 pero no productos revisables. No se debe ejecutar `approve-plan` ni `apply-plan` sobre el archivo
 empresarial solo para poblar esta pantalla; hace falta autorización explícita para ese fingerprint.
+# Promoción individual de ingresos
+
+La versión 1.2 añade en `/operator/intake` una acción individual para datos Odoo en cuarentena. Sólo
+aparece tras aplicar la migración `0008` y nunca se ejecuta durante la recepción. Requiere los mismos
+controles de sesión, Origin y CSRF de las decisiones, además de motivo y confirmación explícita.
+El resultado es perfilado + dry-run en `awaiting_review`, no una aprobación ni un apply.
