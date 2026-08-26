@@ -44,7 +44,9 @@
           {% endif %}
           <code>{{ product.internal_reference_original or 'Sin referencia' }}</code>
           <h3>{{ product.name_original or 'Sin nombre' }}</h3>
-          <p>{{ product.applications|join('; ') if product.applications else 'Aplicaciones no indicadas' }}</p>
+          {% if product.get('category_path') or product.get('brand') %}<p class="preview-meta">{{ product.get('category_path') or 'Sin categoría' }}{% if product.get('brand') %} · {{ product.get('brand') }}{% endif %}</p>{% endif %}
+          {% if product.get('oem_references') %}<p><b>OEM:</b> {{ product.get('oem_references')|join(', ') }}</p>{% endif %}
+          <p><b>Aplicaciones:</b> {{ product.get('applications')|join('; ') if product.get('applications') else 'No indicadas' }}</p>
         </article>
         {% endfor %}
       </div>

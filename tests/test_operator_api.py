@@ -291,7 +291,8 @@ class SyntheticReviewGateway:
             "source_count": 12, "total_count": 12, "sample_count": 1,
             "groups": [{"label": "Motor <seguro>", "count": 12, "products": [{
                 "internal_reference_original": "NK-001", "name_original": "Empaque <script>",
-                "applications": ["Toyota Corolla"],
+                "category_path": "Motor", "brand": "Natsuki",
+                "oem_references": ["OEM-123"], "applications": ["Toyota Corolla"],
             }]}],
         }
 
@@ -596,6 +597,9 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("theme-industrial", response.text)
         self.assertIn("Motor &lt;seguro&gt;", response.text)
         self.assertNotIn("<script>", response.text)
+        self.assertIn("Motor · Natsuki", response.text)
+        self.assertIn("<b>OEM:</b> OEM-123", response.text)
+        self.assertIn("<b>Aplicaciones:</b> Toyota Corolla", response.text)
         image = await self.client.get(
             f"/operator/catalogs/{RELEASE_ID}/preview/images/1"
         )

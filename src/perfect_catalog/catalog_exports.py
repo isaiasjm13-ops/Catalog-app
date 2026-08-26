@@ -59,6 +59,10 @@ def _groups(
 
 def _detail(row: dict[str, Any]) -> str:
     parts = [escape(str(row.get("name_original") or "")), f"Ref. {escape(str(row.get('internal_reference_original') or ''))}"]
+    if row.get("category_path"):
+        parts.append("Categoría: " + escape(str(row["category_path"])))
+    if row.get("brand"):
+        parts.append("Marca: " + escape(str(row["brand"])))
     if row.get("oem_references"):
         parts.append("OEM: " + escape(", ".join(map(str, row["oem_references"]))))
     if row.get("applications"):
@@ -203,6 +207,11 @@ def generate_catalog_pptx(
                         pass
                 p = frame.paragraphs[0]; p.text = str(row.get("internal_reference_original") or ""); p.font.bold = True; p.font.size = Pt(12)
                 p = frame.add_paragraph(); p.text = str(row.get("name_original") or ""); p.font.size = Pt(11)
+                if row.get("category_path") or row.get("brand"):
+                    metadata = " · ".join(str(value) for value in (row.get("category_path"), row.get("brand")) if value)
+                    p = frame.add_paragraph(); p.text = metadata; p.font.size = Pt(8)
+                if row.get("oem_references"):
+                    p = frame.add_paragraph(); p.text = "OEM: " + ", ".join(map(str, row["oem_references"])); p.font.size = Pt(8)
                 if row.get("applications"):
                     p = frame.add_paragraph(); p.text = "Aplicaciones: " + "; ".join(map(str, row["applications"])); p.font.size = Pt(8)
     output = io.BytesIO(); prs.save(output)
@@ -234,11 +243,16 @@ def generate_catalog_html(
                     f'alt="{escape(str(row.get("internal_reference_original") or row.get("name_original") or "Producto"), quote=True)}"></div>'
                 )
             applications = escape("; ".join(map(str, row.get("applications") or [])))
+            category = escape(str(row.get("category_path") or ""))
+            brand = escape(str(row.get("brand") or ""))
+            oem = escape(", ".join(map(str, row.get("oem_references") or [])))
             cards.append(
                 '<article class="product">' + image
                 + f'<code>{escape(str(row.get("internal_reference_original") or "Sin referencia"))}</code>'
                 + f'<h3>{escape(str(row.get("name_original") or "Sin nombre"))}</h3>'
-                + (f'<p>{applications}</p>' if applications else "") + "</article>"
+                + (f'<p class="meta">{category}{" · " if category and brand else ""}{brand}</p>' if category or brand else "")
+                + (f'<p><b>OEM:</b> {oem}</p>' if oem else "")
+                + (f'<p><b>Aplicaciones:</b> {applications}</p>' if applications else "") + "</article>"
             )
         sections.append(
             f'<section><header><h2>{escape(section)}</h2><span>{len(section_rows)} productos</span></header>'

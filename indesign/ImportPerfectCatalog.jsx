@@ -98,7 +98,9 @@
             } catch (imageError) { report.missing_images.push({product_index: index, reference: reference, reason: imageError.message}); }
         } else { report.missing_images.push({product_index: index, reference: reference, reason: "Ruta ausente o no segura"}); }
         var contents = reference + "\r" + value(product, "name_original", "Sin nombre") + "\r" +
-            value(product, "category_path", "Sin categoría") + "\r" + "Aplicaciones: " + value(product, "applications", "No indicadas");
+            value(product, "category_path", "Sin categoría") + " · " + value(product, "brand", "Sin marca") + "\r" +
+            "OEM: " + value(product, "oem_references", "No indicadas") + "\r" +
+            "Aplicaciones: " + value(product, "applications", "No indicadas");
         var card = frame(page, [top + definition.imageHeight + 6, left, bottom, right], contents, 9, false,
             {fill: theme.card, stroke: theme.primary, text: theme.ink, strokeWeight: 0.75});
         try { card.paragraphs[0].fontStyle = "Bold"; } catch (ignored) {}

@@ -16,6 +16,10 @@ El compositor presenta estas decisiones en tres etapas: estructura del contenido
 y entregables. Los presets de tema, densidad y perfil InDesign son controles HTML nativos y funcionan
 sin JavaScript; el servidor sigue validando cada valor contra listas cerradas.
 
+La ficha base mantiene paridad semántica entre vista previa, HTML, PDF, PowerPoint e InDesign:
+referencia, nombre, categoría, marca, referencias OEM y aplicaciones. Cada campo opcional sólo aparece
+cuando pertenece al snapshot publicado; no se completan datos comerciales por inferencia.
+
 La vista previa vuelve a verificar el release completo, calcula el total de todos los grupos y
 renderiza como máximo 24 fichas para mantener una respuesta ágil con catálogos grandes. No crea
 archivos ni altera datos.

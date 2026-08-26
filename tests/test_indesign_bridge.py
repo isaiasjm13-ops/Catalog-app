@@ -31,6 +31,8 @@ class InDesignBridgeTests(unittest.TestCase):
         self.assertIn("strokeColor = theme.primary", script)
         self.assertIn("group_count", script)
         self.assertIn("page_count", script)
+        self.assertIn('value(product, "brand", "Sin marca")', script)
+        self.assertIn('value(product, "oem_references", "No indicadas")', script)
 
 
 if __name__ == "__main__":

@@ -117,6 +117,8 @@ class CatalogExportTests(unittest.TestCase):
         rows = export_rows_from_release(release, items)
         rows[0]["name_original"] = '<script>alert("x")</script>'
         rows[0]["image_path"] = "image-safe.png"
+        rows[0]["oem_references"] = ["OEM-123"]
+        rows[0]["applications"] = ["Toyota Hilux"]
         content = generate_catalog_html(
             rows, {"title": "Edición digital", "columns_per_row": 3, "theme": "industrial"}, release=release
         ).decode("utf-8")
@@ -126,6 +128,9 @@ class CatalogExportTests(unittest.TestCase):
         self.assertIn('src="image-safe.png"', content)
         self.assertIn("--forest:#C34A21", content)
         self.assertNotIn("<script>", content)
+        self.assertIn("Motor / Empaques · Natsuki", content)
+        self.assertIn("<b>OEM:</b> OEM-123", content)
+        self.assertIn("<b>Aplicaciones:</b> Toyota Hilux", content)
 
     def test_bundle_writes_digital_exports_indesign_snapshot_and_manifest(self) -> None:
         release, items = fixture_release()
