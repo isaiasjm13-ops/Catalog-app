@@ -9,13 +9,13 @@ import uuid
 from pathlib import Path
 from typing import Any, Iterable
 
-from .catalog_exports import export_rows_from_release, generate_catalog_pdf, generate_catalog_pptx
+from .catalog_exports import export_rows_from_release, generate_catalog_html, generate_catalog_pdf, generate_catalog_pptx
 from .config import DatabaseConfig
 from .publication import load_published_release
 
 INDESIGN_SNAPSHOT_SCHEMA = "perfect-catalog.indesign-snapshot.v1"
 EXPORT_MANIFEST_SCHEMA = "perfect-catalog.export-manifest.v1"
-SUPPORTED_FORMATS = ("pdf", "pptx", "indesign-json")
+SUPPORTED_FORMATS = ("html", "pdf", "pptx", "indesign-json")
 INDESIGN_TEMPLATE_PROFILES = ("T4", "T2", "T1", "TABLE")
 CATALOG_GROUP_FIELDS = ("category_path", "brand", "internal_reference_original")
 CATALOG_FILTER_FIELDS = ("all", "category_path", "brand", "internal_reference_original", "name_original")
@@ -197,6 +197,10 @@ def build_catalog_bundle(
     image_files = _package_images(rows, output_dir, image_root)
     stem = _safe_stem(f"catalogo-{release['version']}-{str(release['catalog_release_id'])[:8]}")
     payloads: dict[str, tuple[str, bytes]] = {}
+    if "html" in requested:
+        payloads["html"] = (
+            f"{stem}.html", generate_catalog_html(rows, export_config, release=metadata)
+        )
     if "pdf" in requested:
         payloads["pdf"] = (
             f"{stem}.pdf", generate_catalog_pdf(rows, export_config, bundle_dir=output_dir)

@@ -846,7 +846,7 @@ def create_operator_app(
                 "csrf_token", "title", "subtitle", "group_by", "group_by_secondary",
                 "filter_field", "filter_query", "columns", "template_profile",
                 "selected_references",
-                "format_pdf", "format_pptx", "format_indesign_json", "confirm",
+                "format_html", "format_pdf", "format_pptx", "format_indesign_json", "confirm",
             }
             if set(form) != allowed_fields:
                 raise ValueError("El formulario contiene campos ausentes o desconocidos.")
@@ -883,6 +883,7 @@ def create_operator_app(
                 raise ValueError("Perfil InDesign no soportado.")
             selected_formats = tuple(
                 output_format for field, output_format in (
+                    ("format_html", "html"),
                     ("format_pdf", "pdf"),
                     ("format_pptx", "pptx"),
                     ("format_indesign_json", "indesign-json"),

@@ -54,7 +54,12 @@
   rechaza referencias inexistentes y evita que un error tipográfico produzca un catálogo incompleto.
 - El manifiesto y el snapshot InDesign conservan la lista canónica seleccionada; el manifiesto añade
   además su SHA-256 y el conteo exacto, de modo que la edición puede auditarse y reproducirse.
-- Suite local actual: 197 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
+- Nuevo entregable `html`: catálogo digital responsive, portable y sin JavaScript, generado desde las
+  mismas filas verificadas. Incluye portada, agrupaciones, 1-3 columnas, imágenes empaquetadas,
+  versión y checksum del release, con escape estricto del texto procedente del snapshot.
+- El HTML se selecciona desde la consola o con `--format html`, figura en el manifiesto SHA-256 y se
+  descarga únicamente mediante la ruta autenticada ya limitada a archivos del manifiesto.
+- Suite local actual: 198 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
 

@@ -489,6 +489,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
                 "filter_query": "",
                 "selected_references": "NK-001\nNK-002",
                 "columns": "2",
+                "format_html": "yes",
                 "format_pdf": "yes",
                 "format_pptx": "no",
                 "format_indesign_json": "yes",
@@ -499,7 +500,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], "/operator/catalogs?result=created")
-        self.assertEqual(self.gateway.catalog_exports[0]["formats"], ("pdf", "indesign-json"))
+        self.assertEqual(self.gateway.catalog_exports[0]["formats"], ("html", "pdf", "indesign-json"))
         self.assertEqual(
             self.gateway.catalog_exports[0]["config"]["selected_references"],
             "NK-001\nNK-002",
@@ -524,6 +525,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
             "group_by_secondary": "", "filter_field": "all", "filter_query": "",
             "selected_references": "",
             "columns": "2", "format_pdf": "yes", "format_pptx": "yes",
+            "format_html": "yes",
             "format_indesign_json": "yes", "confirm": "yes",
             "template_profile": "TABLE",
         }

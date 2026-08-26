@@ -8,7 +8,7 @@ import uuid
 import zipfile
 from pathlib import Path
 
-from perfect_catalog.catalog_exports import export_rows_from_release, generate_catalog_pdf, generate_catalog_pptx
+from perfect_catalog.catalog_exports import export_rows_from_release, generate_catalog_html, generate_catalog_pdf, generate_catalog_pptx
 from perfect_catalog.catalog_export_job import (
     build_catalog_bundle,
     build_catalog_preview,
@@ -82,6 +82,20 @@ class CatalogExportTests(unittest.TestCase):
         rows[0]["name_original"] = "Empaque <desconocido> & seguro"
         self.assertTrue(generate_catalog_pdf(rows).startswith(b"%PDF-"))
 
+    def test_digital_html_is_responsive_traceable_and_escapes_snapshot_text(self) -> None:
+        release, items = fixture_release()
+        rows = export_rows_from_release(release, items)
+        rows[0]["name_original"] = '<script>alert("x")</script>'
+        rows[0]["image_path"] = "image-safe.png"
+        content = generate_catalog_html(
+            rows, {"title": "Edición digital", "columns_per_row": 3}, release=release
+        ).decode("utf-8")
+        self.assertTrue(content.startswith("<!doctype html>"))
+        self.assertIn("@media(max-width:760px)", content)
+        self.assertIn(str(release["snapshot_sha256"]), content)
+        self.assertIn('src="image-safe.png"', content)
+        self.assertNotIn("<script>", content)
+
     def test_bundle_writes_digital_exports_indesign_snapshot_and_manifest(self) -> None:
         release, items = fixture_release()
         with tempfile.TemporaryDirectory() as temporary:
@@ -90,7 +104,7 @@ class CatalogExportTests(unittest.TestCase):
                 release, items, output,
                 config={"title": "Catálogo verificable", "columns_per_row": 2},
             )
-            self.assertEqual([entry["format"] for entry in result["files"]], ["pdf", "pptx", "indesign-json"])
+            self.assertEqual([entry["format"] for entry in result["files"]], ["html", "pdf", "pptx", "indesign-json"])
             self.assertTrue((output / result["manifest"]).is_file())
             manifest = json.loads((output / result["manifest"]).read_text(encoding="utf-8"))
             self.assertEqual(manifest["release"]["snapshot_sha256"], release["snapshot_sha256"])
