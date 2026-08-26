@@ -305,6 +305,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .preview-toolbar { display: flex; justify-content: space-between; gap: 20px; align-items: end; margin-bottom: 18px; }
 .preview-toolbar form { display: grid; grid-template-columns: repeat(3, minmax(130px, 1fr)); gap: 9px; align-items: end; flex: 1; }
 .preview-toolbar label { display: grid; gap: 5px; }
+.preview-toolbar .preview-references { grid-column: span 2; }
+.preview-toolbar textarea { min-height: 48px; max-height: 110px; }
 .preview-toolbar > span { color: var(--muted); font-size: 10px; text-transform: uppercase; }
 .catalog-preview-sheet { padding: clamp(24px, 5vw, 58px); border: 1px solid #d7d3c7; background: #fffef8; box-shadow: 0 30px 80px rgba(46, 42, 31, .14); }
 .catalog-preview-sheet.theme-industrial { --forest: #c34a21; --forest-dark: #22272b; background: #ecebe7; }
@@ -405,6 +407,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .profile-choices, .theme-choices { grid-template-columns: repeat(2, 1fr); }
   .density-choices { grid-template-columns: 1fr; }
   .preview-launcher, .preview-toolbar form { grid-template-columns: 1fr; }
+  .preview-toolbar .preview-references { grid-column: auto; }
   .preview-toolbar { display: grid; }
   .preview-products.columns-2, .preview-products.columns-3 { grid-template-columns: 1fr; }
   .catalog-preview-sheet.target-indesign.profile-TABLE .preview-products article { grid-template-columns: 1fr; }

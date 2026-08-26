@@ -145,7 +145,8 @@ class ReviewGateway(Protocol):
 
     def preview_catalog_release(
         self, release_id: uuid.UUID, *, group_by: str, group_by_secondary: str = "",
-        filter_field: str = "all", filter_query: str = "", sample_limit: int = 24,
+        filter_field: str = "all", filter_query: str = "", selected_references: str = "",
+        sample_limit: int = 24,
     ) -> dict[str, Any]: ...
 
     def catalog_preview_image(
@@ -771,6 +772,7 @@ def create_operator_app(
         group_by_secondary: str = "", filter_field: str = "all",
         filter_query: str = "", columns: int = 2, theme: str = "forest",
         preview_target: str = "digital", template_profile: str = "T4",
+        title: str = "", subtitle: str = "", selected_references: str = "",
     ) -> Response:
         session_or_redirect = require_session(request)
         if isinstance(session_or_redirect, RedirectResponse):
@@ -793,12 +795,19 @@ def create_operator_app(
                 raise ValueError("Campo de filtro no permitido.")
             if len(filter_query) > 120:
                 raise ValueError("El filtro no puede superar 120 caracteres.")
+            title = title.strip()
+            subtitle = subtitle.strip()
+            if len(title) > 120 or len(subtitle) > 180:
+                raise ValueError("Título o subtítulo demasiado largo.")
+            if len(selected_references) > 20000:
+                raise ValueError("La lista manual de referencias es demasiado larga.")
             preview = await run_in_threadpool(
                 gateway.preview_catalog_release,
                 _uuid(release_id, "release_id"), group_by=group_by,
                 group_by_secondary=group_by_secondary, filter_field=filter_field,
-                filter_query=filter_query, sample_limit=24,
+                filter_query=filter_query, selected_references=selected_references, sample_limit=24,
             )
+            title = title or f"Catálogo {preview['release']['version']}"
             layout_estimate = estimate_indesign_layout(preview["groups"], template_profile)
         except (ValueError, RuntimeError, PermissionError) as exc:
             return _error(environment, 400, "Vista previa no disponible", str(exc), session=session_or_redirect)
@@ -809,6 +818,7 @@ def create_operator_app(
             preview=preview, columns=columns, theme=theme, themes=CATALOG_THEMES,
             preview_target=preview_target, template_profile=template_profile,
             layout_estimate=layout_estimate,
+            title=title, subtitle=subtitle,
             session=session_or_redirect,
             version=OPERATOR_VERSION,
         )

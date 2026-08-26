@@ -882,14 +882,16 @@ class DatabaseReviewGateway:
 
     def preview_catalog_release(
         self, release_id: uuid.UUID, *, group_by: str, group_by_secondary: str = "",
-        filter_field: str = "all", filter_query: str = "", sample_limit: int = 24,
+        filter_field: str = "all", filter_query: str = "", selected_references: str = "",
+        sample_limit: int = 24,
     ) -> dict[str, Any]:
         from .catalog_export_job import preview_catalog_release
 
         return preview_catalog_release(
             release_id, self._config, self._password,
             group_by=group_by, group_by_secondary=group_by_secondary,
-            filter_field=filter_field, filter_query=filter_query, sample_limit=sample_limit,
+            filter_field=filter_field, filter_query=filter_query,
+            selected_references=selected_references, sample_limit=sample_limit,
         )
 
     def catalog_preview_image(

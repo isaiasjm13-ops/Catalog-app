@@ -357,6 +357,17 @@ class CatalogExportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "snapshot_sha256"):
             build_catalog_preview(release, items)
 
+    def test_preview_uses_the_same_exact_reference_selection_as_export(self) -> None:
+        release, items = fixture_release()
+        preview = build_catalog_preview(
+            release, items, selected_references="nk-001\nNK-001", sample_limit=24
+        )
+        self.assertEqual(preview["total_count"], 1)
+        self.assertEqual(preview["selected_references"], ["nk-001"])
+        self.assertRegex(preview["selected_references_sha256"], r"^[0-9a-f]{64}$")
+        with self.assertRaisesRegex(ValueError, "Referencias no encontradas"):
+            build_catalog_preview(release, items, selected_references="NO-EXISTE")
+
     def test_selection_filter_and_secondary_group_are_manifested(self) -> None:
         release, items = fixture_release()
         with tempfile.TemporaryDirectory() as temporary:

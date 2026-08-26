@@ -693,7 +693,8 @@ def list_operator_catalog_exports(output_root: Path, *, limit: int = 100) -> lis
 def build_catalog_preview(
     release: dict[str, Any], items: Iterable[dict[str, Any]],
     *, group_by: str = "category_path", group_by_secondary: str = "",
-    filter_field: str = "all", filter_query: str = "", sample_limit: int = 24,
+    filter_field: str = "all", filter_query: str = "",
+    selected_references: str | list[str] | tuple[str, ...] = (), sample_limit: int = 24,
 ) -> dict[str, Any]:
     if sample_limit < 1 or sample_limit > 100:
         raise ValueError("sample_limit debe estar entre 1 y 100.")
@@ -703,6 +704,7 @@ def build_catalog_preview(
     preview_config = {
         "group_by": group_by, "group_by_secondary": group_by_secondary,
         "filter_field": filter_field, "filter_query": filter_query,
+        "selected_references": selected_references,
     }
     rows, selection = _selection(source_rows, preview_config)
     groups: dict[str, dict[str, Any]] = {}
@@ -722,6 +724,8 @@ def build_catalog_preview(
         "group_by_secondary": preview_config["group_by_secondary"],
         "filter_field": filter_field,
         "filter_query": filter_query,
+        "selected_references": selection["selected_references"],
+        "selected_references_sha256": selection["selected_references_sha256"],
         "source_count": selection["source_item_count"],
         "total_count": len(rows),
         "sample_count": sampled,
@@ -732,12 +736,14 @@ def build_catalog_preview(
 def preview_catalog_release(
     release_id: uuid.UUID, database: DatabaseConfig, password: str,
     *, group_by: str = "category_path", group_by_secondary: str = "",
-    filter_field: str = "all", filter_query: str = "", sample_limit: int = 24,
+    filter_field: str = "all", filter_query: str = "", selected_references: str = "",
+    sample_limit: int = 24,
 ) -> dict[str, Any]:
     release, items = load_published_release(release_id, database, password)
     return build_catalog_preview(
         release, items, group_by=group_by, group_by_secondary=group_by_secondary,
-        filter_field=filter_field, filter_query=filter_query, sample_limit=sample_limit,
+        filter_field=filter_field, filter_query=filter_query,
+        selected_references=selected_references, sample_limit=sample_limit,
     )
 
 

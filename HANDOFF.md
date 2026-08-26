@@ -124,7 +124,10 @@
   productos. El recibo append-only queda fuera del bundle e incluye actor, fecha y SHA-256 del reporte.
 - La consola muestra el último resultado: páginas, imágenes faltantes, overflows y fuentes. La prueba
   HTTP multipart real comprobó rechazo sin Origin y aceptación/redirección/estado con evidencia válida.
-- Suite local actual: 205 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
+- Preview acepta título, subtítulo y hasta 5.000 referencias manuales exactas bajo el mismo contrato de
+  exportación: normaliza duplicados, combina por intersección con filtros, conserva SHA-256 y rechaza
+  cualquier referencia inexistente. La portada refleja esos valores antes de producir archivos.
+- Suite local actual: 206 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
 

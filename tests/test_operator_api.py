@@ -281,13 +281,15 @@ class SyntheticReviewGateway:
 
     def preview_catalog_release(
         self, release_id: uuid.UUID, *, group_by: str, group_by_secondary: str = "",
-        filter_field: str = "all", filter_query: str = "", sample_limit: int = 24,
+        filter_field: str = "all", filter_query: str = "", selected_references: str = "",
+        sample_limit: int = 24,
     ) -> dict[str, Any]:
         return {
             "release": {"release_id": str(release_id), "version": "2026.08", "status": "published",
                         "snapshot_sha256": "c" * 64, "item_count": 12},
             "group_by": group_by, "group_by_secondary": group_by_secondary,
             "filter_field": filter_field, "filter_query": filter_query,
+            "selected_references": [value for value in selected_references.splitlines() if value],
             "source_count": 12, "total_count": 12, "sample_count": 1,
             "groups": [{"label": "Motor <seguro>", "count": 12, "products": [{
                 "internal_reference_original": "NK-001", "name_original": "Empaque <script>",
@@ -642,6 +644,17 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Motor · Natsuki", response.text)
         self.assertIn("<b>OEM:</b> OEM-123", response.text)
         self.assertIn("<b>Aplicaciones:</b> Toyota Corolla", response.text)
+        customized = await self.client.get(
+            f"/operator/catalogs/{RELEASE_ID}/preview",
+            params={
+                "title": "Edición Toyota 2026", "subtitle": "Selección comercial",
+                "selected_references": "NK-001\nNK-002", "preview_target": "indesign",
+            },
+        )
+        self.assertEqual(customized.status_code, 200)
+        self.assertIn("Edición Toyota 2026", customized.text)
+        self.assertIn("Selección comercial", customized.text)
+        self.assertIn("2 referencias manuales exactas", customized.text)
         image = await self.client.get(
             f"/operator/catalogs/{RELEASE_ID}/preview/images/1"
         )

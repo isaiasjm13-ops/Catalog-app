@@ -39,6 +39,11 @@ checksum, perfil, tema y cantidad de productos. También valida conteos, índice
 incidencias. El recibo se conserva append-only bajo `_indesign_preflight`, separado del bundle para no
 alterar sus hashes. La biblioteca presenta páginas, imágenes faltantes, textos desbordados y fuentes.
 
+El preview permite ensayar el título, subtítulo y la misma selección manual exacta que usará la
+exportación. Las referencias se separan por línea/coma/punto y coma, se deduplican sin distinguir
+mayúsculas y se cruzan con el filtro opcional. Una referencia inexistente detiene el preview; la selección
+canónica y su SHA-256 proceden del mismo motor que después escribe el manifiesto.
+
 La vista previa vuelve a verificar el release completo, calcula el total de todos los grupos y
 renderiza como máximo 24 fichas para mantener una respuesta ágil con catálogos grandes. No crea
 archivos ni altera datos.

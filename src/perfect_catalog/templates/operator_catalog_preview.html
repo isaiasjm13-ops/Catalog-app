@@ -18,6 +18,8 @@
 
 <div class="preview-toolbar">
   <form method="get">
+    <label><span>Título</span><input name="title" maxlength="120" value="{{ title }}"></label>
+    <label><span>Subtítulo</span><input name="subtitle" maxlength="180" value="{{ subtitle }}"></label>
     <label><span>Agrupar</span><select name="group_by"><option value="category_path" {% if preview.group_by == 'category_path' %}selected{% endif %}>Categoría</option><option value="brand" {% if preview.group_by == 'brand' %}selected{% endif %}>Marca</option><option value="internal_reference_original" {% if preview.group_by == 'internal_reference_original' %}selected{% endif %}>Referencia</option></select></label>
     <label><span>Columnas</span><select name="columns"><option {% if columns == 1 %}selected{% endif %}>1</option><option {% if columns == 2 %}selected{% endif %}>2</option><option {% if columns == 3 %}selected{% endif %}>3</option></select></label>
     <label><span>Tema</span><select name="theme"><option value="forest" {% if theme == 'forest' %}selected{% endif %}>Bosque</option><option value="industrial" {% if theme == 'industrial' %}selected{% endif %}>Industrial</option><option value="midnight" {% if theme == 'midnight' %}selected{% endif %}>Medianoche</option><option value="classic" {% if theme == 'classic' %}selected{% endif %}>Clásico</option></select></label>
@@ -26,13 +28,14 @@
     <label><span>Subagrupar</span><select name="group_by_secondary"><option value="">Ninguno</option><option value="category_path" {% if preview.group_by_secondary == 'category_path' %}selected{% endif %}>Categoría</option><option value="brand" {% if preview.group_by_secondary == 'brand' %}selected{% endif %}>Marca</option><option value="internal_reference_original" {% if preview.group_by_secondary == 'internal_reference_original' %}selected{% endif %}>Referencia</option></select></label>
     <label><span>Filtrar campo</span><select name="filter_field"><option value="all" {% if preview.filter_field == 'all' %}selected{% endif %}>Todos</option><option value="category_path" {% if preview.filter_field == 'category_path' %}selected{% endif %}>Categoría</option><option value="brand" {% if preview.filter_field == 'brand' %}selected{% endif %}>Marca</option><option value="internal_reference_original" {% if preview.filter_field == 'internal_reference_original' %}selected{% endif %}>Referencia</option><option value="name_original" {% if preview.filter_field == 'name_original' %}selected{% endif %}>Nombre</option></select></label>
     <label><span>Texto</span><input name="filter_query" maxlength="120" value="{{ preview.filter_query }}"></label>
+    <label class="preview-references"><span>Referencias exactas</span><textarea name="selected_references" maxlength="20000" placeholder="Una por línea">{{ preview.selected_references|join('\n') }}</textarea></label>
     <button class="secondary-button" type="submit">Actualizar</button>
   </form>
   <span>Vista {{ 'InDesign ' ~ template_profile if preview_target == 'indesign' else 'digital' }} · no genera archivos</span>
 </div>
 
 <section class="catalog-preview-sheet theme-{{ theme }} target-{{ preview_target }} profile-{{ template_profile }}">
-  <header class="preview-cover"><span>Perfect Trading</span><strong>Catálogo {{ preview.release.version }}</strong><small>{{ preview.total_count }} referencias verificadas</small>{% if preview_target == 'indesign' %}<em>Portada · página 1</em>{% endif %}</header>
+  <header class="preview-cover"><span>Perfect Trading · {{ preview.release.version }}</span><strong>{{ title }}</strong><small>{{ subtitle or (preview.total_count|string ~ ' referencias verificadas') }}</small>{% if preview.selected_references %}<small>{{ preview.selected_references|length }} referencias manuales exactas</small>{% endif %}{% if preview_target == 'indesign' %}<em>Portada · página 1</em>{% endif %}</header>
   {% for group in preview.groups %}
     {% if group.products %}
     <section class="preview-section">
