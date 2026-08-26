@@ -263,7 +263,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .preview-hero dt { color: #9fb8ae; }
 .preview-hero dd { color: white; }
 .preview-toolbar { display: flex; justify-content: space-between; gap: 20px; align-items: end; margin-bottom: 18px; }
-.preview-toolbar form { display: grid; grid-template-columns: 220px 110px auto; gap: 9px; align-items: end; }
+.preview-toolbar form { display: grid; grid-template-columns: repeat(2, minmax(130px, 1fr)) 110px repeat(2, minmax(130px, 1fr)) auto; gap: 9px; align-items: end; }
 .preview-toolbar label { display: grid; gap: 5px; }
 .preview-toolbar > span { color: var(--muted); font-size: 10px; text-transform: uppercase; }
 .catalog-preview-sheet { padding: clamp(24px, 5vw, 58px); border: 1px solid #d7d3c7; background: #fffef8; box-shadow: 0 30px 80px rgba(46, 42, 31, .14); }

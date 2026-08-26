@@ -11,7 +11,13 @@ from .application import apply_approved_plan, approve_plan
 from .importer import DEFAULT_MAX_PILOT_ROWS, inspect_plan, run_dry_run
 from .intake_promotion import promote_intake_to_dry_run
 from .image_archive_index import build_image_archive_index
-from .catalog_export_job import INDESIGN_TEMPLATE_PROFILES, SUPPORTED_FORMATS, export_catalog_release
+from .catalog_export_job import (
+    CATALOG_FILTER_FIELDS,
+    CATALOG_GROUP_FIELDS,
+    INDESIGN_TEMPLATE_PROFILES,
+    SUPPORTED_FORMATS,
+    export_catalog_release,
+)
 from .publication import (
     archive_release,
     build_release,
@@ -155,7 +161,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     export_parser.add_argument("--title", default="Catálogo de productos")
     export_parser.add_argument("--subtitle", default="")
-    export_parser.add_argument("--group-by", default="category_path")
+    export_parser.add_argument("--group-by", choices=CATALOG_GROUP_FIELDS, default="category_path")
+    export_parser.add_argument("--group-by-secondary", choices=("", *CATALOG_GROUP_FIELDS), default="")
+    export_parser.add_argument("--filter-field", choices=CATALOG_FILTER_FIELDS, default="all")
+    export_parser.add_argument("--filter-query", default="")
     export_parser.add_argument("--columns", type=int, choices=(1, 2, 3), default=2)
     export_parser.add_argument(
         "--indesign-template", choices=INDESIGN_TEMPLATE_PROFILES, default="T4"
@@ -263,6 +272,9 @@ def main(argv: list[str] | None = None) -> int:
                     "title": args.title,
                     "subtitle": args.subtitle,
                     "group_by": args.group_by,
+                    "group_by_secondary": args.group_by_secondary,
+                    "filter_field": args.filter_field,
+                    "filter_query": args.filter_query,
                     "columns_per_row": args.columns,
                     "template_profile": args.indesign_template,
                 },

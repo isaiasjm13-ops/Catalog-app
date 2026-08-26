@@ -61,6 +61,9 @@
         {% if release.status == 'published' %}
         <form class="preview-launcher" method="get" action="/operator/catalogs/{{ release.catalog_release_id }}/preview">
           <label><span>Vista previa</span><select name="group_by"><option value="category_path">Por categoría</option><option value="brand">Por marca</option><option value="internal_reference_original">Por referencia</option></select></label>
+          <input type="hidden" name="group_by_secondary" value="">
+          <input type="hidden" name="filter_field" value="all">
+          <input type="hidden" name="filter_query" value="">
           <label><span>Columnas</span><select name="columns"><option>1</option><option selected>2</option><option>3</option></select></label>
           <button class="secondary-button" type="submit">Previsualizar</button>
         </form>
@@ -80,6 +83,11 @@
               </label>
               <label><span>Columnas</span><select name="columns"><option>1</option><option selected>2</option><option>3</option></select></label>
             </div>
+            <div class="composer-row">
+              <label><span>Subagrupar por</span><select name="group_by_secondary"><option value="">Sin segundo nivel</option><option value="category_path">Categoría</option><option value="brand">Marca</option><option value="internal_reference_original">Referencia</option></select></label>
+              <label><span>Filtrar campo</span><select name="filter_field"><option value="all">Todos</option><option value="category_path">Categoría</option><option value="brand">Marca</option><option value="internal_reference_original">Referencia</option><option value="name_original">Nombre</option></select></label>
+            </div>
+            <label><span>Texto de filtro opcional</span><input name="filter_query" maxlength="120" placeholder="Ej. Toyota, motor o NK-001"></label>
             <div class="format-grid">
               <label><span>PDF digital</span><select name="format_pdf"><option value="yes">Generar</option><option value="no">Omitir</option></select></label>
               <label><span>PowerPoint</span><select name="format_pptx"><option value="yes">Generar</option><option value="no">Omitir</option></select></label>
@@ -122,7 +130,7 @@
     <div class="delivery-list">
       {% for export in exports %}
       <article>
-        <div><strong>{{ export.release.version }}</strong><small>{{ export.release.item_count }} productos</small></div>
+        <div><strong>{{ export.release.version }}</strong><small>{{ export.selection.selected_item_count }} de {{ export.release.item_count }} productos{% if export.selection.filter_query %} · “{{ export.selection.filter_query }}”{% endif %}</small></div>
         <ul>
           {% for file in export.files %}
           <li><a href="/operator/catalogs/{{ export.release_id }}/exports/{{ export.export_id }}/{{ file.filename }}">{{ file.format }}</a><span>{{ file.bytes }} B</span></li>

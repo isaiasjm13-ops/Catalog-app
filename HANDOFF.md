@@ -28,6 +28,8 @@
   release y checksum como etiquetas del INDD.
 - Rutas de imagen sólo se aceptan relativas y sin `..`; se enlazan sin modificar el original.
 - Cada INDD produce `perfect-catalog.indesign-preflight.v1` con imágenes faltantes, overflows y fuentes.
+- Selección derivada por campo/texto y agrupación primaria/secundaria añadidas a preview, PDF, PPTX
+  e InDesign; el manifiesto conserva conteo fuente, conteo seleccionado y criterios exactos.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
 

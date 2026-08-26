@@ -29,10 +29,14 @@ def export_rows_from_release(release: dict[str, Any], items: Iterable[dict[str, 
     return [dict(item["snapshot_data"]) for item in materialized]
 
 
-def _groups(rows: list[dict[str, Any]], key: str) -> list[tuple[str, list[dict[str, Any]]]]:
+def _groups(
+    rows: list[dict[str, Any]], key: str, secondary_key: str | None = None
+) -> list[tuple[str, list[dict[str, Any]]]]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
-        grouped[str(row.get(key) or "Sin categoría")].append(row)
+        primary = str(row.get(key) or "Sin categoría")
+        secondary = str(row.get(secondary_key) or "Sin subgrupo") if secondary_key else ""
+        grouped[f"{primary} · {secondary}" if secondary else primary].append(row)
     return list(grouped.items())
 
 
@@ -53,7 +57,10 @@ def generate_catalog_pdf(rows: list[dict[str, Any]], config: dict[str, Any] | No
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, title=title, leftMargin=1.2*cm, rightMargin=1.2*cm)
     story: list[Any] = [Spacer(1, 6*cm), Paragraph(escape(title), styles["Title"]), Paragraph(escape(str(config.get("subtitle") or "")), styles["Heading2"]), PageBreak()]
-    for section, section_rows in _groups(rows, str(config.get("group_by") or "category_path")):
+    for section, section_rows in _groups(
+        rows, str(config.get("group_by") or "category_path"),
+        str(config["group_by_secondary"]) if config.get("group_by_secondary") else None,
+    ):
         story.extend([Paragraph(escape(section), styles["Heading1"]), Spacer(1, .25*cm)])
         cells = [Paragraph(_detail(row), styles["BodyText"]) for row in section_rows]
         grid = [cells[index:index+columns] for index in range(0, len(cells), columns)]
@@ -75,7 +82,10 @@ def generate_catalog_pptx(rows: list[dict[str, Any]], config: dict[str, Any] | N
     cover.shapes.title.text = title
     cover.placeholders[1].text = str(config.get("subtitle") or "")
     per_slide = columns * 3
-    for section, section_rows in _groups(rows, str(config.get("group_by") or "category_path")):
+    for section, section_rows in _groups(
+        rows, str(config.get("group_by") or "category_path"),
+        str(config["group_by_secondary"]) if config.get("group_by_secondary") else None,
+    ):
         for start in range(0, len(section_rows), per_slide):
             slide = prs.slides.add_slide(prs.slide_layouts[6])
             heading = slide.shapes.add_textbox(Inches(.4), Inches(.2), Inches(12.5), Inches(.5))

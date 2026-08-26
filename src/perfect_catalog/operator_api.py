@@ -118,7 +118,8 @@ class ReviewGateway(Protocol):
     ) -> dict[str, Any]: ...
 
     def preview_catalog_release(
-        self, release_id: uuid.UUID, *, group_by: str, sample_limit: int = 24,
+        self, release_id: uuid.UUID, *, group_by: str, group_by_secondary: str = "",
+        filter_field: str = "all", filter_query: str = "", sample_limit: int = 24,
     ) -> dict[str, Any]: ...
 
 
@@ -721,7 +722,9 @@ def create_operator_app(
 
     @app.get("/operator/catalogs/{release_id}/preview", response_class=HTMLResponse)
     async def preview_catalog_release_route(
-        request: Request, release_id: str, group_by: str = "category_path", columns: int = 2
+        request: Request, release_id: str, group_by: str = "category_path",
+        group_by_secondary: str = "", filter_field: str = "all",
+        filter_query: str = "", columns: int = 2,
     ) -> Response:
         session_or_redirect = require_session(request)
         if isinstance(session_or_redirect, RedirectResponse):
@@ -731,9 +734,17 @@ def create_operator_app(
                 raise ValueError("La cantidad de columnas no es válida.")
             if group_by not in {"category_path", "brand", "internal_reference_original"}:
                 raise ValueError("Agrupación no permitida.")
+            if group_by_secondary not in {"", "category_path", "brand", "internal_reference_original"}:
+                raise ValueError("Agrupación secundaria no permitida.")
+            if filter_field not in {"all", "category_path", "brand", "internal_reference_original", "name_original"}:
+                raise ValueError("Campo de filtro no permitido.")
+            if len(filter_query) > 120:
+                raise ValueError("El filtro no puede superar 120 caracteres.")
             preview = await run_in_threadpool(
                 gateway.preview_catalog_release,
-                _uuid(release_id, "release_id"), group_by=group_by, sample_limit=24,
+                _uuid(release_id, "release_id"), group_by=group_by,
+                group_by_secondary=group_by_secondary, filter_field=filter_field,
+                filter_query=filter_query, sample_limit=24,
             )
         except (ValueError, RuntimeError, PermissionError) as exc:
             return _error(environment, 400, "Vista previa no disponible", str(exc), session=session_or_redirect)
@@ -783,7 +794,8 @@ def create_operator_app(
         try:
             form = await _parse_form(request)
             allowed_fields = {
-                "csrf_token", "title", "subtitle", "group_by", "columns", "template_profile",
+                "csrf_token", "title", "subtitle", "group_by", "group_by_secondary",
+                "filter_field", "filter_query", "columns", "template_profile",
                 "format_pdf", "format_pptx", "format_indesign_json", "confirm",
             }
             if set(form) != allowed_fields:
@@ -801,6 +813,15 @@ def create_operator_app(
                 raise ValueError("Título o subtítulo demasiado largo.")
             if group_by not in {"category_path", "brand", "internal_reference_original"}:
                 raise ValueError("Agrupación no permitida.")
+            group_by_secondary = form["group_by_secondary"].strip()
+            if group_by_secondary not in {"", "category_path", "brand", "internal_reference_original"}:
+                raise ValueError("Agrupación secundaria no permitida.")
+            filter_field = form["filter_field"].strip()
+            if filter_field not in {"all", "category_path", "brand", "internal_reference_original", "name_original"}:
+                raise ValueError("Campo de filtro no permitido.")
+            filter_query = form["filter_query"].strip()
+            if len(filter_query) > 120:
+                raise ValueError("El filtro no puede superar 120 caracteres.")
             columns = int(form["columns"])
             if columns not in {1, 2, 3}:
                 raise ValueError("La cantidad de columnas no es válida.")
@@ -826,6 +847,9 @@ def create_operator_app(
                     "title": title,
                     "subtitle": subtitle,
                     "group_by": group_by,
+                    "group_by_secondary": group_by_secondary,
+                    "filter_field": filter_field,
+                    "filter_query": filter_query,
                     "columns_per_row": columns,
                     "template_profile": template_profile,
                 },

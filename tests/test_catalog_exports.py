@@ -142,3 +142,24 @@ class CatalogExportTests(unittest.TestCase):
         release["snapshot_sha256"] = "0" * 64
         with self.assertRaisesRegex(ValueError, "snapshot_sha256"):
             build_catalog_preview(release, items)
+
+    def test_selection_filter_and_secondary_group_are_manifested(self) -> None:
+        release, items = fixture_release()
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "bundle"
+            result = build_catalog_bundle(
+                release, items, output, formats=("indesign-json",),
+                config={
+                    "group_by": "brand", "group_by_secondary": "category_path",
+                    "filter_field": "name_original", "filter_query": "empaque",
+                },
+            )
+            self.assertEqual(result["selection"]["selected_item_count"], 1)
+            self.assertEqual(result["selection"]["group_by_secondary"], "category_path")
+            manifest = json.loads((output / result["manifest"]).read_text(encoding="utf-8"))
+            self.assertEqual(manifest["selection"]["filter_query"], "empaque")
+            with self.assertRaisesRegex(ValueError, "ningún producto"):
+                build_catalog_bundle(
+                    release, items, Path(temporary) / "empty", formats=("pdf",),
+                    config={"filter_field": "name_original", "filter_query": "inexistente"},
+                )

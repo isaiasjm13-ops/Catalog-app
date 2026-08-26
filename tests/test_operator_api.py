@@ -217,12 +217,15 @@ class SyntheticReviewGateway:
         return {"status": "published", "release_id": str(release_id)}
 
     def preview_catalog_release(
-        self, release_id: uuid.UUID, *, group_by: str, sample_limit: int = 24,
+        self, release_id: uuid.UUID, *, group_by: str, group_by_secondary: str = "",
+        filter_field: str = "all", filter_query: str = "", sample_limit: int = 24,
     ) -> dict[str, Any]:
         return {
             "release": {"release_id": str(release_id), "version": "2026.08", "status": "published",
                         "snapshot_sha256": "c" * 64, "item_count": 12},
-            "group_by": group_by, "total_count": 12, "sample_count": 1,
+            "group_by": group_by, "group_by_secondary": group_by_secondary,
+            "filter_field": filter_field, "filter_query": filter_query,
+            "source_count": 12, "total_count": 12, "sample_count": 1,
             "groups": [{"label": "Motor <seguro>", "count": 12, "products": [{
                 "internal_reference_original": "NK-001", "name_original": "Empaque <script>",
                 "applications": ["Toyota Corolla"],
@@ -410,6 +413,9 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
                 "title": "Catálogo web",
                 "subtitle": "Edición segura",
                 "group_by": "category_path",
+                "group_by_secondary": "brand",
+                "filter_field": "all",
+                "filter_query": "",
                 "columns": "2",
                 "format_pdf": "yes",
                 "format_pptx": "no",
@@ -439,6 +445,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         fields = {
             "csrf_token": hidden_value(page.text, "csrf_token"),
             "title": "Catálogo web", "subtitle": "", "group_by": "category_path",
+            "group_by_secondary": "", "filter_field": "all", "filter_query": "",
             "columns": "2", "format_pdf": "yes", "format_pptx": "yes",
             "format_indesign_json": "yes", "confirm": "yes",
             "template_profile": "TABLE",
@@ -485,7 +492,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
             f"/operator/catalogs/{RELEASE_ID}/preview?group_by=category_path&columns=3"
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Muestra 1 de 12 productos", response.text)
+        self.assertIn("Muestra 1 de 12 productos seleccionados", response.text)
         self.assertIn("columns-3", response.text)
         self.assertIn("Motor &lt;seguro&gt;", response.text)
         self.assertNotIn("<script>", response.text)

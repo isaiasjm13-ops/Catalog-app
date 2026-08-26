@@ -880,13 +880,15 @@ class DatabaseReviewGateway:
         )
 
     def preview_catalog_release(
-        self, release_id: uuid.UUID, *, group_by: str, sample_limit: int = 24,
+        self, release_id: uuid.UUID, *, group_by: str, group_by_secondary: str = "",
+        filter_field: str = "all", filter_query: str = "", sample_limit: int = 24,
     ) -> dict[str, Any]:
         from .catalog_export_job import preview_catalog_release
 
         return preview_catalog_release(
             release_id, self._config, self._password,
-            group_by=group_by, sample_limit=sample_limit,
+            group_by=group_by, group_by_secondary=group_by_secondary,
+            filter_field=filter_field, filter_query=filter_query, sample_limit=sample_limit,
         )
 
     def plans(self, *, limit: int = 100) -> list[dict[str, Any]]:

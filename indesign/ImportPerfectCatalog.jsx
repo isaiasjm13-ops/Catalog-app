@@ -95,9 +95,11 @@
         frame(document.pages[0], [160, 55, 245, 540], title, 30, true);
         frame(document.pages[0], [260, 55, 315, 540], subtitle, 16, false);
         var definition = profileDefinition(profile), groupBy = (snapshot.layout && snapshot.layout.group_by) || "category_path";
+        var secondaryGroupBy = (snapshot.layout && snapshot.layout.group_by_secondary) || "";
         var currentGroup = null, slot = definition.perPage, page = null;
         for (var index = 0; index < snapshot.products.length; index++) {
             var product = snapshot.products[index], group = value(product, groupBy, "Sin categoría");
+            if (secondaryGroupBy) group += " · " + value(product, secondaryGroupBy, "Sin subgrupo");
             if (group !== currentGroup) { separatorPage(document, group); currentGroup = group; slot = definition.perPage; }
             if (slot >= definition.perPage) { page = document.pages.add(); slot = 0; }
             productFrame(page, productBounds(definition, slot), product, index, definition, baseFolder, report); slot++;
