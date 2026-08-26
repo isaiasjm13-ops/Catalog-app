@@ -104,7 +104,11 @@ class CatalogExportTests(unittest.TestCase):
                 release, items, output,
                 config={"title": "Catálogo verificable", "columns_per_row": 2},
             )
-            self.assertEqual([entry["format"] for entry in result["files"]], ["html", "pdf", "pptx", "indesign-json"])
+            self.assertEqual([entry["format"] for entry in result["files"]], ["html", "digital-zip", "pdf", "pptx", "indesign-json"])
+            zip_entry = next(item for item in result["files"] if item["format"] == "digital-zip")
+            with zipfile.ZipFile(output / zip_entry["filename"]) as digital:
+                self.assertIn("index.html", digital.namelist())
+                self.assertTrue(digital.read("index.html").startswith(b"<!doctype html>"))
             self.assertTrue((output / result["manifest"]).is_file())
             manifest = json.loads((output / result["manifest"]).read_text(encoding="utf-8"))
             self.assertEqual(manifest["release"]["snapshot_sha256"], release["snapshot_sha256"])
@@ -145,13 +149,16 @@ class CatalogExportTests(unittest.TestCase):
             source.write_bytes(content)
             output = root / "bundle"
             result = build_catalog_bundle(
-                release, items, output, formats=("indesign-json",), image_root=root / "images"
+                release, items, output, formats=("html", "indesign-json"), image_root=root / "images"
             )
             image_entry = next(entry for entry in result["files"] if entry["format"] == "image")
             self.assertEqual((output / image_entry["filename"]).read_bytes(), content)
             snapshot_entry = next(entry for entry in result["files"] if entry["format"] == "indesign-json")
             snapshot = json.loads((output / snapshot_entry["filename"]).read_text(encoding="utf-8"))
             self.assertEqual(snapshot["products"][0]["image_path"], image_entry["filename"])
+            zip_entry = next(entry for entry in result["files"] if entry["format"] == "digital-zip")
+            with zipfile.ZipFile(output / zip_entry["filename"]) as digital:
+                self.assertEqual(digital.read(image_entry["filename"]), content)
 
             source.write_bytes(b"tampered")
             with self.assertRaisesRegex(RuntimeError, "SHA-256"):

@@ -6,6 +6,8 @@ import os
 import re
 import shutil
 import uuid
+import io
+import zipfile
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -48,6 +50,24 @@ def _write_new(path: Path, content: bytes) -> None:
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _digital_zip(
+    html_content: bytes, image_files: list[dict[str, Any]], output_dir: Path
+) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+        entries = [("index.html", html_content)]
+        entries.extend(
+            (str(item["filename"]), (output_dir / str(item["filename"])).read_bytes())
+            for item in image_files
+        )
+        for filename, content in entries:
+            info = zipfile.ZipInfo(filename, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o100644 << 16
+            archive.writestr(info, content)
+    return buffer.getvalue()
 
 
 def _package_images(
@@ -198,8 +218,11 @@ def build_catalog_bundle(
     stem = _safe_stem(f"catalogo-{release['version']}-{str(release['catalog_release_id'])[:8]}")
     payloads: dict[str, tuple[str, bytes]] = {}
     if "html" in requested:
-        payloads["html"] = (
-            f"{stem}.html", generate_catalog_html(rows, export_config, release=metadata)
+        html_name = f"{stem}.html"
+        html_content = generate_catalog_html(rows, export_config, release=metadata)
+        payloads["html"] = (html_name, html_content)
+        payloads["digital-zip"] = (
+            f"{stem}.digital.zip", _digital_zip(html_content, image_files, output_dir)
         )
     if "pdf" in requested:
         payloads["pdf"] = (

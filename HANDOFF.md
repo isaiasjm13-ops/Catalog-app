@@ -59,6 +59,9 @@
   versión y checksum del release, con escape estricto del texto procedente del snapshot.
 - El HTML se selecciona desde la consola o con `--format html`, figura en el manifiesto SHA-256 y se
   descarga únicamente mediante la ruta autenticada ya limitada a archivos del manifiesto.
+- Cada edición HTML produce además un `.digital.zip` determinista con `index.html` y todas sus
+  imágenes verificadas. El ZIP figura como entregable separado con bytes y SHA-256, permitiendo
+  trasladar o publicar el catálogo completo sin descargar assets uno por uno.
 - Suite local actual: 198 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
