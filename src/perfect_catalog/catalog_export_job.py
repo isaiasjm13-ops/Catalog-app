@@ -17,6 +17,7 @@ from .publication import load_published_release
 
 INDESIGN_SNAPSHOT_SCHEMA = "perfect-catalog.indesign-snapshot.v1"
 EXPORT_MANIFEST_SCHEMA = "perfect-catalog.export-manifest.v1"
+EXPORT_VERIFICATION_SCHEMA = "perfect-catalog.export-verification.v1"
 SUPPORTED_FORMATS = ("html", "pdf", "pptx", "indesign-json")
 INDESIGN_TEMPLATE_PROFILES = ("T4", "T2", "T1", "TABLE")
 CATALOG_GROUP_FIELDS = ("category_path", "brand", "internal_reference_original")
@@ -374,6 +375,99 @@ def resolve_catalog_download(
     if not target.is_file() or target.parent.resolve() != directory.resolve():
         raise FileNotFoundError("El archivo exportado no existe.")
     return target
+
+
+def verify_catalog_bundle(manifest_path: Path) -> dict[str, Any]:
+    manifest_path = manifest_path.resolve()
+    if not manifest_path.is_file() or not manifest_path.name.endswith(".manifest.json"):
+        raise FileNotFoundError("No se encontró un manifiesto de exportación válido.")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("El manifiesto no es JSON UTF-8 válido.") from exc
+    if manifest.get("schema") != EXPORT_MANIFEST_SCHEMA:
+        raise ValueError("El esquema del manifiesto no es compatible.")
+    release = manifest.get("release")
+    files = manifest.get("files")
+    if not isinstance(release, dict) or not re.fullmatch(r"[0-9a-f]{64}", str(release.get("snapshot_sha256") or "")):
+        raise ValueError("El manifiesto no conserva un release verificable.")
+    if not isinstance(files, list) or not files:
+        raise ValueError("El manifiesto no enumera entregables.")
+    directory = manifest_path.parent
+    verified: dict[str, bytes] = {}
+    formats: dict[str, str] = {}
+    for entry in files:
+        if not isinstance(entry, dict):
+            raise ValueError("Una entrada del manifiesto no es válida.")
+        filename = str(entry.get("filename") or "")
+        digest = str(entry.get("sha256") or "")
+        if filename != Path(filename).name or not filename or filename in verified:
+            raise ValueError("El manifiesto contiene nombres duplicados o inseguros.")
+        if not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise ValueError(f"SHA-256 inválido para {filename}.")
+        target = (directory / filename).resolve()
+        if target.parent != directory or not target.is_file():
+            raise FileNotFoundError(f"Falta el entregable {filename}.")
+        content = target.read_bytes()
+        if len(content) != entry.get("bytes") or _sha256(content) != digest:
+            raise ValueError(f"El entregable {filename} no coincide con su manifiesto.")
+        verified[filename] = content
+        formats[str(entry.get("format") or "")] = filename
+    expected_names = set(verified) | {manifest_path.name}
+    actual_names = {path.name for path in directory.iterdir()}
+    if actual_names != expected_names:
+        unexpected = sorted(actual_names - expected_names)
+        missing = sorted(expected_names - actual_names)
+        raise ValueError(
+            "El directorio no coincide exactamente con el manifiesto"
+            f" (inesperados: {unexpected or 'ninguno'}; faltantes: {missing or 'ninguno'})."
+        )
+    image_names = {
+        str(entry["filename"]): str(entry["sha256"])
+        for entry in files if entry.get("format") == "image"
+    }
+    for package_format, required in (
+        ("digital-zip", {"index.html"}),
+        ("indesign-package", {"catalog.indesign.json", "ImportPerfectCatalog.jsx", "LEEME-INDESIGN.txt"}),
+    ):
+        package_name = formats.get(package_format)
+        if not package_name:
+            continue
+        try:
+            with zipfile.ZipFile(io.BytesIO(verified[package_name])) as archive:
+                infos = archive.infolist()
+                names = [info.filename for info in infos]
+                if len(names) != len(set(names)) or any(
+                    not name or name.endswith("/") or Path(name).is_absolute()
+                    or name.startswith(("/", "\\")) or ".." in Path(name).parts
+                    or bool(info.flag_bits & 0x1)
+                    for name, info in zip(names, infos, strict=True)
+                ):
+                    raise ValueError(f"El paquete {package_name} contiene rutas inseguras, cifradas o duplicadas.")
+                image_bytes = sum(
+                    int(entry["bytes"]) for entry in files if entry.get("format") == "image"
+                )
+                if sum(info.file_size for info in infos) > image_bytes + 512 * 1024 * 1024:
+                    raise ValueError(f"El paquete {package_name} declara un tamaño descomprimido excesivo.")
+                if not required.issubset(set(names)):
+                    raise ValueError(f"El paquete {package_name} está incompleto.")
+                for image_name, image_digest in image_names.items():
+                    if image_name not in names or _sha256(archive.read(image_name)) != image_digest:
+                        raise ValueError(f"El paquete {package_name} no conserva la imagen {image_name}.")
+                if package_format == "indesign-package":
+                    snapshot = json.loads(archive.read("catalog.indesign.json").decode("utf-8"))
+                    if snapshot.get("schema") != INDESIGN_SNAPSHOT_SCHEMA or snapshot.get("release") != release:
+                        raise ValueError("El paquete InDesign no corresponde al release del manifiesto.")
+        except (zipfile.BadZipFile, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"El paquete {package_name} no es un ZIP verificable.") from exc
+    return {
+        "schema": EXPORT_VERIFICATION_SCHEMA,
+        "release_id": str(release.get("release_id")),
+        "snapshot_sha256": str(release["snapshot_sha256"]),
+        "file_count": len(verified),
+        "total_bytes": sum(len(content) for content in verified.values()),
+        "status": "verified",
+    }
 
 
 def list_operator_catalog_exports(output_root: Path, *, limit: int = 100) -> list[dict[str, Any]]:

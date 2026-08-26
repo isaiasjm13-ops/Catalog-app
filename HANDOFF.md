@@ -89,6 +89,9 @@
   portada, separadores, marcos de imagen, fichas y TABLE. Tema desconocido se rechaza.
 - El INDD conserva `perfect_catalog_theme`; el preflight añade tema y conteos de grupos/páginas,
   además de imágenes faltantes, desbordamientos y fuentes no disponibles.
+- Nuevo `verify-catalog-export MANIFEST`: validación offline sin contraseña que exige coincidencia
+  exacta de directorio, bytes y hashes; inspecciona ZIP digital/InDesign, rutas, cifrado, tamaño
+  descomprimido, archivos requeridos e imágenes. Devuelve `perfect-catalog.export-verification.v1`.
 - Suite local actual: 198 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)

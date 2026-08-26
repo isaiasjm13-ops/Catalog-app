@@ -4,6 +4,7 @@ import hashlib
 import base64
 import tempfile
 import unittest
+from unittest import mock
 import uuid
 import zipfile
 from pathlib import Path
@@ -14,8 +15,9 @@ from perfect_catalog.catalog_export_job import (
     build_catalog_preview,
     list_operator_catalog_exports,
     resolve_catalog_download,
+    verify_catalog_bundle,
 )
-from perfect_catalog.cli import build_parser
+from perfect_catalog.cli import build_parser, main as cli_main
 from perfect_catalog.releases import RELEASE_HASH_ALGORITHM, SNAPSHOT_SCHEMA_VERSION, product_snapshot_sha256, release_snapshot_sha256
 
 
@@ -130,6 +132,27 @@ class CatalogExportTests(unittest.TestCase):
                 self.assertEqual(
                     json.loads(package.read("catalog.indesign.json")), snapshot,
                 )
+            verification = verify_catalog_bundle(output / result["manifest"])
+            self.assertEqual(verification["status"], "verified")
+            self.assertEqual(verification["file_count"], len(result["files"]))
+            captured = io.StringIO()
+            with mock.patch("sys.stdout", captured), mock.patch(
+                "perfect_catalog.cli.prompt_password",
+                side_effect=AssertionError("offline verification must not prompt"),
+            ):
+                self.assertEqual(cli_main(["verify-catalog-export", str(output / result["manifest"])]), 0)
+            self.assertEqual(json.loads(captured.getvalue())["status"], "verified")
+
+            pdf_entry = next(item for item in result["files"] if item["format"] == "pdf")
+            pdf_path = output / pdf_entry["filename"]
+            original_pdf = pdf_path.read_bytes()
+            pdf_path.write_bytes(original_pdf + b"tampered")
+            with self.assertRaisesRegex(ValueError, "no coincide"):
+                verify_catalog_bundle(output / result["manifest"])
+            pdf_path.write_bytes(original_pdf)
+            (output / "unexpected.txt").write_text("not manifested", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "inesperados"):
+                verify_catalog_bundle(output / result["manifest"])
 
     def test_bundle_validates_indesign_template_profile(self) -> None:
         release, items = fixture_release()

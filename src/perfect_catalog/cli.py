@@ -18,6 +18,7 @@ from .catalog_export_job import (
     INDESIGN_TEMPLATE_PROFILES,
     SUPPORTED_FORMATS,
     export_catalog_release,
+    verify_catalog_bundle,
 )
 from .publication import (
     archive_release,
@@ -177,6 +178,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--indesign-template", choices=INDESIGN_TEMPLATE_PROFILES, default="T4"
     )
     _database_arguments(export_parser)
+
+    verify_export_parser = subparsers.add_parser(
+        "verify-catalog-export",
+        help="Verifica offline manifiesto, entregables y paquetes ZIP de una exportación.",
+    )
+    verify_export_parser.add_argument("manifest", type=Path)
     return parser
 
 
@@ -184,6 +191,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "verify-catalog-export":
+            result = verify_catalog_bundle(args.manifest)
+            print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+            return 0
         config = DatabaseConfig.from_args(args)
         password = prompt_password(args.prompt_password)
         if args.command == "import-odoo":
@@ -291,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
-    except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
+    except (ValueError, RuntimeError, PermissionError, FileNotFoundError, NotImplementedError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 

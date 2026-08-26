@@ -48,6 +48,20 @@ Por defecto se generan:
 Se puede repetir `--format pdf`, `--format pptx` o `--format indesign-json` para limitar
 la salida. El directorio de destino debe estar vacío; el comando no reemplaza archivos.
 
+## Verificar antes de distribuir
+
+La verificación es offline y no solicita contraseña PostgreSQL:
+
+```powershell
+perfect-catalog verify-catalog-export `
+  data/exports/catalogs/RELEASE_UUID/EXPORT_UUID/catalogo.manifest.json
+```
+
+Comprueba esquema/release, lista exacta del directorio, bytes y SHA-256 de cada entregable. También
+abre los ZIP digital e InDesign, rechaza rutas inseguras, duplicadas o cifradas, limita el tamaño
+descomprimido y vuelve a comprobar que todas las imágenes manifestadas estén dentro de cada paquete.
+Un resultado válido devuelve `perfect-catalog.export-verification.v1` con estado `verified`.
+
 ## Contrato InDesign v1
 
 El snapshot usa el esquema `perfect-catalog.indesign-snapshot.v1` e incluye:
