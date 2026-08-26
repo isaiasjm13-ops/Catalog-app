@@ -35,10 +35,11 @@ from .intake import (
     SecureIntakeService,
     intake_kind_options,
 )
+from .importer import DEFAULT_MAX_PILOT_ROWS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.1.0"
+OPERATOR_VERSION = "1.2.0"
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
 MAX_FORM_BYTES = 16_384
@@ -87,6 +88,11 @@ class ReviewGateway(Protocol):
     ) -> dict[str, Any]: ...
 
     def record_intake(self, record: dict[str, Any]) -> dict[str, Any]: ...
+
+    def promote_intake(
+        self, submission_id: uuid.UUID, intake_root: Path, output_dir: Path,
+        actor: str, reason: str, max_rows: int,
+    ) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True)
@@ -328,11 +334,12 @@ def create_operator_app(
     authenticator: OperatorAuthenticator,
     *,
     intake_root: Path | None = None,
+    promotion_output_dir: Path | None = None,
 ) -> FastAPI:
     environment = _templates()
-    intake_service = SecureIntakeService(
-        intake_root or Path("data/intake"), gateway
-    )
+    resolved_intake_root = intake_root or Path("data/intake")
+    resolved_promotion_output = promotion_output_dir or Path("data/exports/imports")
+    intake_service = SecureIntakeService(resolved_intake_root, gateway)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -547,6 +554,8 @@ def create_operator_app(
                 "Se conservó el nuevo evento sin copiar los bytes."
             ),
             "rejected": "Archivo rechazado por el validador. No se conservaron sus bytes.",
+            "promoted": "Ingreso perfilado; el dry-run quedó pendiente de revisión.",
+            "already_promoted": "Este ingreso ya tenía un dry-run enlazado.",
         }.get(result)
         query_args = {"kind": kind, "status": status}
         previous_url = (
@@ -688,6 +697,48 @@ def create_operator_app(
             f"/operator/intake?{urlencode({'result': result})}", status_code=303
         )
 
+    @app.post("/operator/intake/{submission_id}/promote")
+    async def promote_intake(request: Request, submission_id: str) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "reason", "confirm"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if not _same_origin(request) or not hmac.compare_digest(
+                form.get("csrf_token", ""), session.csrf_token
+            ):
+                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            reason = _require_text(form.get("reason", ""), "reason")
+            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
+                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
+            if form.get("confirm") != "yes":
+                raise ValueError("Debes confirmar el perfilado y dry-run individual.")
+            parsed_submission_id = _uuid(submission_id, "submission_id")
+            result = await run_in_threadpool(
+                gateway.promote_intake,
+                parsed_submission_id,
+                resolved_intake_root,
+                resolved_promotion_output,
+                session.actor,
+                reason,
+                DEFAULT_MAX_PILOT_ROWS,
+            )
+        except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
+            return _error(environment, 409, "Promoción no aplicada", str(exc), session=session)
+        except Exception:
+            return _error(
+                environment, 503, "Promoción no disponible",
+                "No se creó el dry-run. Verifica que la migración 0008 esté aplicada y revisa la consola.",
+                session=session,
+            )
+        return RedirectResponse(
+            f"/operator/intake?{urlencode({'result': str(result['status'])})}",
+            status_code=303,
+        )
+
     @app.get("/operator/plans/{plan_id}", response_class=HTMLResponse)
     async def review_queue(
         request: Request,
@@ -813,6 +864,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--db-host", dest="host_db", default=None)
     parser.add_argument("--db-port", dest="port_db", type=int, default=None)
     parser.add_argument("--intake-dir", default="data/intake")
+    parser.add_argument("--promotion-output-dir", default="data/exports/imports")
     parser.add_argument("--prompt-password", action="store_true")
     parser.add_argument("--prompt-operator", action="store_true")
     parser.add_argument("--prompt-access-code", action="store_true")
@@ -866,7 +918,10 @@ def main(argv: list[str] | None = None) -> int:
     print("Acceso temporal, solo local. Presiona Ctrl+C para detener.")
     uvicorn.run(
         create_operator_app(
-            gateway, authenticator, intake_root=Path(args.intake_dir)
+            gateway,
+            authenticator,
+            intake_root=Path(args.intake_dir),
+            promotion_output_dir=Path(args.promotion_output_dir),
         ),
         host=args.host,
         port=args.port,

@@ -174,7 +174,7 @@ dd { margin: 0; font-size: 12px; }
 .history-heading > span { color: var(--muted); font-size: 11px; }
 .intake-filter { grid-template-columns: minmax(220px, 1fr) minmax(180px, .6fr) auto; padding-top: 8px; }
 .intake-history { display: grid; gap: 10px; }
-.intake-row { position: relative; display: grid; grid-template-columns: 58px minmax(240px, 1fr) minmax(230px, .72fr) 150px; gap: 18px; align-items: center; padding: 18px 20px; overflow: hidden; border: 1px solid rgba(12, 91, 72, .13); border-radius: 16px; background: var(--card); }
+.intake-row { position: relative; display: grid; grid-template-columns: 58px minmax(240px, 1fr) minmax(230px, .72fr) 150px; gap: 18px; align-items: center; padding: 18px 20px; border: 1px solid rgba(12, 91, 72, .13); border-radius: 16px; background: var(--card); }
 .intake-row::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: #48a46f; }
 .intake-row.status-rejected::before { background: var(--red); }
 .file-icon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 13px; color: var(--forest); background: #e7eee7; font: 800 11px "Cascadia Code", Consolas, monospace; }
@@ -187,6 +187,13 @@ dd { margin: 0; font-size: 12px; }
 .intake-details summary { color: var(--forest); cursor: pointer; font-weight: 700; }
 .intake-details dl { position: absolute; z-index: 2; right: 18px; width: min(480px, calc(100% - 36px)); margin-top: 10px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: white; box-shadow: var(--shadow); }
 .intake-details dl div { display: grid; grid-template-columns: 110px 1fr; gap: 10px; padding: 6px 0; }
+.promotion-action { grid-column: 2 / -1; padding-top: 12px; border-top: 1px solid var(--line); font-size: 11px; }
+.promotion-action summary { color: var(--forest); cursor: pointer; font-weight: 800; }
+.promotion-action form { display: grid; gap: 10px; margin-top: 12px; padding: 15px; border-radius: 12px; background: #f3f6f1; }
+.promotion-action textarea { min-height: 70px; }
+.promotion-action .confirm-field { display: grid; grid-template-columns: auto 1fr; gap: 9px; align-items: start; color: var(--muted); }
+.promotion-action .confirm-field input { width: 16px; min-height: 16px; }
+.promotion-action > a { margin-left: 10px; color: var(--forest); font-weight: 700; }
 
 @media (max-width: 980px) {
   .review-card { grid-template-columns: 1fr 1fr; }

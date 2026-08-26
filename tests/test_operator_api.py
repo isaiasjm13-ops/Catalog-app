@@ -28,6 +28,7 @@ class SyntheticReviewGateway:
         self.closed = False
         self.decisions: list[dict[str, Any]] = []
         self.intake_records: list[dict[str, Any]] = []
+        self.promotions: list[dict[str, Any]] = []
         self.plan_data = {
             "import_plan_id": str(PLAN_ID),
             "approval_fingerprint_sha256": FINGERPRINT,
@@ -120,9 +121,35 @@ class SyntheticReviewGateway:
             "intake_submission_id": str(record["intake_submission_id"]),
             "intake_asset_id": "asset-test" if record["validation_status"] == "quarantined" else None,
             "duplicate_content": False,
+            "intake_promotion_id": None,
+            "import_plan_id": None,
+            "promoted_at": None,
+            "promoted_by": None,
         }
         self.intake_records.append(stored)
         return stored
+
+    def promote_intake(
+        self, submission_id: uuid.UUID, intake_root: Path, output_dir: Path,
+        actor: str, reason: str, max_rows: int,
+    ) -> dict[str, Any]:
+        record = next(
+            (item for item in self.intake_records if item["intake_submission_id"] == str(submission_id)),
+            None,
+        )
+        if record is None or record["intake_kind"] != "odoo_data" or record["validation_status"] != "quarantined":
+            raise PermissionError("ingreso no promovible")
+        if record["intake_promotion_id"]:
+            return {"status": "already_promoted"}
+        promotion = {
+            "submission_id": submission_id, "intake_root": intake_root,
+            "output_dir": output_dir, "actor": actor, "reason": reason,
+            "max_rows": max_rows,
+        }
+        self.promotions.append(promotion)
+        record["intake_promotion_id"] = str(uuid.uuid4())
+        record["import_plan_id"] = str(uuid.uuid4())
+        return {"status": "promoted"}
 
     def intake_submissions(
         self,
@@ -320,7 +347,48 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.1.0")
+        self.assertEqual(OPERATOR_VERSION, "1.2.0")
+
+    async def test_promotion_requires_individual_post_origin_csrf_and_confirmation(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/intake")
+        csrf = hidden_value(page.text, "csrf_token")
+        uploaded = await self.client.post(
+            "/operator/intake",
+            data={
+                "csrf_token": csrf, "kind": "odoo_data",
+                "reason": "Exportación sintética para dry-run", "confirm": "yes",
+            },
+            files={"file": ("productos.csv", b"Nombre,Referencia interna\nEmpaque,ABC-1\n", "text/csv")},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(uploaded.status_code, 303)
+        submission_id = self.gateway.intake_records[-1]["intake_submission_id"]
+        form = {
+            "csrf_token": csrf,
+            "reason": "Perfilado individual autorizado por calidad",
+            "confirm": "yes",
+        }
+        path = f"/operator/intake/{submission_id}/promote"
+        self.assertEqual((await self.client.get(path)).status_code, 405)
+        self.assertEqual((await self.client.post(path, data=form)).status_code, 403)
+        self.assertEqual((await self.client.post(
+            path, data={**form, "csrf_token": "wrong"}, headers={"Origin": "http://testserver"}
+        )).status_code, 403)
+        self.assertEqual((await self.client.post(
+            path, data={key: value for key, value in form.items() if key != "confirm"},
+            headers={"Origin": "http://testserver"},
+        )).status_code, 409)
+        self.assertEqual(self.gateway.promotions, [])
+        accepted = await self.client.post(path, data=form, headers={"Origin": "http://testserver"})
+        self.assertEqual(accepted.status_code, 303)
+        self.assertIn("result=promoted", accepted.headers["location"])
+        self.assertEqual(len(self.gateway.promotions), 1)
+        self.assertEqual(self.gateway.promotions[0]["actor"], "web-reviewer")
+        self.assertEqual(self.gateway.promotions[0]["max_rows"], 5_000)
+        history = await self.client.get("/operator/intake")
+        self.assertIn("Dry-run creado", history.text)
+        self.assertNotIn("Promover a dry-run", history.text)
 
     async def test_intake_requires_auth_origin_csrf_and_confirmation(self) -> None:
         unauthenticated = await self.client.get("/operator/intake")
