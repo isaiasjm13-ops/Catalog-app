@@ -1,5 +1,6 @@
 import io
 import json
+import hashlib
 import tempfile
 import unittest
 import uuid
@@ -98,6 +99,43 @@ class CatalogExportTests(unittest.TestCase):
                 build_catalog_bundle(
                     release, items, Path(temporary) / "bundle",
                     formats=("indesign-json",), config={"template_profile": "UNKNOWN"},
+                )
+
+    def test_bundle_packages_only_sha_verified_approved_images(self) -> None:
+        release, items = fixture_release()
+        content = b"synthetic-approved-image"
+        digest = hashlib.sha256(content).hexdigest()
+        data = items[0]["snapshot_data"]
+        data.update({
+            "image_status": True,
+            "image_storage_relpath": f"objects/{digest[:2]}/{digest}.jpg",
+            "image_sha256": digest,
+            "image_media_type": "image/jpeg",
+        })
+        items[0]["snapshot_sha256"] = product_snapshot_sha256(data)
+        release["snapshot_sha256"] = release_snapshot_sha256(
+            release["brand_id"], release["version"], release["definition"], items
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "images" / data["image_storage_relpath"]
+            source.parent.mkdir(parents=True)
+            source.write_bytes(content)
+            output = root / "bundle"
+            result = build_catalog_bundle(
+                release, items, output, formats=("indesign-json",), image_root=root / "images"
+            )
+            image_entry = next(entry for entry in result["files"] if entry["format"] == "image")
+            self.assertEqual((output / image_entry["filename"]).read_bytes(), content)
+            snapshot_entry = next(entry for entry in result["files"] if entry["format"] == "indesign-json")
+            snapshot = json.loads((output / snapshot_entry["filename"]).read_text(encoding="utf-8"))
+            self.assertEqual(snapshot["products"][0]["image_path"], image_entry["filename"])
+
+            source.write_bytes(b"tampered")
+            with self.assertRaisesRegex(RuntimeError, "SHA-256"):
+                build_catalog_bundle(
+                    release, items, root / "tampered", formats=("indesign-json",),
+                    image_root=root / "images",
                 )
 
     def test_bundle_refuses_drafts_and_nonempty_destinations(self) -> None:

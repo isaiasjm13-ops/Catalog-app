@@ -112,12 +112,14 @@ def list_image_candidates(
                        r.value_original AS reference, p.name_original AS product_name,
                        c.product_template_id, c.product_variant_id,
                        d.decision, d.decided_by, d.decided_at,
+                       m.approved_image_materialization_id, m.storage_relpath,
                        count(*) OVER () AS filtered_count
                 FROM perfect_catalog.image_product_candidate AS c
                 JOIN perfect_catalog.image_archive_entry AS e ON e.image_archive_entry_id=c.image_archive_entry_id
                 JOIN perfect_catalog.product_reference AS r ON r.product_reference_id=c.product_reference_id
                 JOIN perfect_catalog.product_template AS p ON p.product_template_id=c.product_template_id
                 LEFT JOIN perfect_catalog.image_product_decision AS d ON d.image_product_candidate_id=c.image_product_candidate_id
+                LEFT JOIN perfect_catalog.approved_image_materialization AS m ON m.image_product_candidate_id=c.image_product_candidate_id
                 ORDER BY c.generated_at DESC, c.image_product_candidate_id
                 LIMIT %s OFFSET %s
                 """,

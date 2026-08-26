@@ -155,6 +155,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     export_parser.add_argument("release_id", type=uuid.UUID)
     export_parser.add_argument("--output-dir", type=Path, required=True)
+    export_parser.add_argument("--image-root", type=Path, default=Path("data/images"))
     export_parser.add_argument(
         "--format", dest="formats", action="append", choices=SUPPORTED_FORMATS,
         help="Puede repetirse; por defecto genera los tres formatos.",
@@ -278,6 +279,7 @@ def main(argv: list[str] | None = None) -> int:
                     "columns_per_row": args.columns,
                     "template_profile": args.indesign_template,
                 },
+                image_root=args.image_root,
             )
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         return 0

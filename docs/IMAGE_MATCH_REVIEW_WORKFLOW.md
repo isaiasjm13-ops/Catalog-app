@@ -15,9 +15,17 @@ lo compara con referencias internas aprobadas. No usa similitud difusa, no extra
 `media_asset` y no escribe `product_media`. Cada candidato conserva un SHA-256 de su evidencia y
 cada decisión humana queda vinculada a ese hash exacto.
 
-La materialización de una asociación aprobada será un bloque posterior y separado: deberá volver
-a verificar ZIP, entrada, CRC/SHA-256 y decisión antes de extraer una copia content-addressed.
+La migración `0011` incorpora la materialización append-only. Tras una aprobación, la acción
+individual vuelve a verificar el SHA-256 y tamaño del ZIP en cuarentena, el miembro, su CRC, tamaño
+y SHA-256, y la evidencia exacta de candidato/decisión. Sólo entonces extrae una copia nueva y
+content-addressed bajo `data/images/objects`; nunca modifica el ZIP original.
 
 Tras aplicar `0010`, la cola está disponible en `http://127.0.0.1:8081/operator/images`.
 Los candidatos se generan desde el índice mostrado en `Ingresos`; aprobar o rechazar sólo añade
-una decisión append-only y no tiene efectos sobre los archivos ni el catálogo publicado.
+una decisión append-only. El botón posterior `Materializar copia aprobada` es independiente,
+idempotente y conserva su ruta y checksum en `approved_image_materialization`.
+
+Los releases siguen siendo inmutables: una materialización no cambia releases existentes. Un release
+nuevo captura la ruta, tipo y hash aprobados. Al exportarlo, el servidor vuelve a verificar el hash,
+copia la imagen dentro del bundle y enumera esa copia en el manifiesto. El JSON de InDesign recibe
+solamente la ruta relativa de esa copia autocontenida.

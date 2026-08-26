@@ -49,6 +49,42 @@ def _write_new(path: Path, content: bytes) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _package_images(
+    rows: list[dict[str, Any]], output_dir: Path, image_root: Path | None
+) -> list[dict[str, Any]]:
+    image_rows = [row for row in rows if row.get("image_storage_relpath")]
+    if not image_rows:
+        return []
+    if image_root is None:
+        raise RuntimeError("El release contiene imágenes pero no se configuró image_root.")
+    root = image_root.resolve()
+    packaged: dict[str, dict[str, Any]] = {}
+    for row in image_rows:
+        digest = str(row.get("image_sha256") or "")
+        if not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise RuntimeError("Una imagen materializada no conserva un SHA-256 válido.")
+        relative = Path(str(row["image_storage_relpath"]))
+        source = (root / relative).resolve()
+        if not source.is_relative_to(root) or not source.is_file():
+            raise RuntimeError("Una imagen materializada falta o sale de image_root.")
+        suffix = source.suffix.lower()
+        # Keep deliverables flat: the operator download route deliberately accepts
+        # only manifest-approved basenames, which avoids traversal ambiguities.
+        filename = f"image-{digest}{suffix}"
+        if digest not in packaged:
+            content = source.read_bytes()
+            if _sha256(content) != digest:
+                raise RuntimeError("Una imagen materializada no coincide con su SHA-256.")
+            _write_new(output_dir / filename, content)
+            packaged[digest] = {
+                "format": "image", "filename": filename,
+                "bytes": len(content), "sha256": digest,
+                "media_type": row.get("image_media_type"),
+            }
+        row["image_path"] = filename
+    return list(packaged.values())
+
+
 def _release_metadata(release: dict[str, Any], item_count: int) -> dict[str, Any]:
     return {
         "release_id": str(release["catalog_release_id"]),
@@ -97,6 +133,7 @@ def build_catalog_bundle(
     *,
     formats: Iterable[str] = SUPPORTED_FORMATS,
     config: dict[str, Any] | None = None,
+    image_root: Path | None = None,
 ) -> dict[str, Any]:
     if release.get("status") != "published":
         raise PermissionError("Solo se puede exportar un release publicado.")
@@ -114,6 +151,10 @@ def build_catalog_bundle(
     export_config["template_profile"] = template_profile
     rows, selection = _selection(source_rows, export_config)
     metadata = _release_metadata(release, len(source_rows))
+    output_dir = output_dir.resolve()
+    if output_dir.exists() and any(output_dir.iterdir()):
+        raise FileExistsError(f"El directorio de exportación no está vacío: {output_dir}")
+    image_files = _package_images(rows, output_dir, image_root)
     stem = _safe_stem(f"catalogo-{release['version']}-{str(release['catalog_release_id'])[:8]}")
     payloads: dict[str, tuple[str, bytes]] = {}
     if "pdf" in requested:
@@ -129,10 +170,7 @@ def build_catalog_bundle(
         }
         payloads["indesign-json"] = (f"{stem}.indesign.json", _json_bytes(snapshot))
 
-    output_dir = output_dir.resolve()
-    if output_dir.exists() and any(output_dir.iterdir()):
-        raise FileExistsError(f"El directorio de exportación no está vacío: {output_dir}")
-    files: list[dict[str, Any]] = []
+    files: list[dict[str, Any]] = list(image_files)
     for export_format, (filename, content) in payloads.items():
         _write_new(output_dir / filename, content)
         files.append({
@@ -160,9 +198,12 @@ def export_catalog_release(
     *,
     formats: Iterable[str] = SUPPORTED_FORMATS,
     config: dict[str, Any] | None = None,
+    image_root: Path | None = None,
 ) -> dict[str, Any]:
     release, items = load_published_release(release_id, database, password)
-    return build_catalog_bundle(release, items, output_dir, formats=formats, config=config)
+    return build_catalog_bundle(
+        release, items, output_dir, formats=formats, config=config, image_root=image_root
+    )
 
 
 def create_operator_catalog_export(
@@ -173,6 +214,7 @@ def create_operator_catalog_export(
     *,
     formats: Iterable[str],
     config: dict[str, Any],
+    image_root: Path | None = None,
 ) -> dict[str, Any]:
     export_id = uuid.uuid4()
     root = output_root.resolve()
@@ -183,7 +225,7 @@ def create_operator_catalog_export(
     try:
         result = export_catalog_release(
             release_id, database, password, temporary,
-            formats=formats, config=config,
+            formats=formats, config=config, image_root=image_root,
         )
         destination.parent.mkdir(parents=True, exist_ok=True)
         temporary.replace(destination)

@@ -25,7 +25,22 @@
       <details><summary>Evidencia SHA-256</summary><code class="hash-code">{{ candidate.evidence_sha256 }}</code></details>
     </div>
     {% if candidate.decision %}
-    <div class="resolved-note"><strong>{{ candidate.decision }}</strong><br>Decidido por {{ candidate.decided_by }}</div>
+    <div class="resolved-note">
+      <strong>{{ candidate.decision }}</strong><br>Decidido por {{ candidate.decided_by }}
+      {% if candidate.approved_image_materialization_id %}
+      <p>Objeto verificado</p><code>{{ candidate.storage_relpath }}</code>
+      {% elif candidate.decision == 'approved' %}
+      <details class="materialize-action"><summary>Materializar copia aprobada</summary>
+        <form method="post" action="/operator/images/candidates/{{ candidate.image_product_candidate_id }}/materialize">
+          <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+          <input type="hidden" name="evidence_sha256" value="{{ candidate.evidence_sha256 }}">
+          <label><span>Motivo</span><textarea name="reason" minlength="4" maxlength="500" required></textarea></label>
+          <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Verificar y copiar sin modificar el ZIP original.</span></label>
+          <button class="primary-button">Crear objeto content-addressed</button>
+        </form>
+      </details>
+      {% endif %}
+    </div>
     {% else %}
     <form class="decision-form" method="post" action="/operator/images/candidates/{{ candidate.image_product_candidate_id }}/decision">
       <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">

@@ -116,11 +116,17 @@ class ReviewGateway(Protocol):
         actor: str, reason: str,
     ) -> dict[str, Any]: ...
 
+    def materialize_approved_image(
+        self, candidate_id: uuid.UUID, evidence_sha256: str,
+        intake_root: Path, image_root: Path, actor: str, reason: str,
+    ) -> dict[str, Any]: ...
+
     def catalog_releases(self, *, limit: int = 100) -> list[dict[str, Any]]: ...
 
     def export_catalog(
         self, release_id: uuid.UUID, output_root: Path,
         *, formats: tuple[str, ...], export_config: dict[str, Any],
+        image_root: Path | None = None,
     ) -> dict[str, Any]: ...
 
     def build_catalog_release(
@@ -394,11 +400,13 @@ def create_operator_app(
     intake_root: Path | None = None,
     promotion_output_dir: Path | None = None,
     catalog_output_dir: Path | None = None,
+    image_output_dir: Path | None = None,
 ) -> FastAPI:
     environment = _templates()
     resolved_intake_root = intake_root or Path("data/intake")
     resolved_promotion_output = promotion_output_dir or Path("data/exports/imports")
     resolved_catalog_output = catalog_output_dir or Path("data/exports/catalogs")
+    resolved_image_output = image_output_dir or Path("data/images")
     intake_service = SecureIntakeService(resolved_intake_root, gateway)
 
     @asynccontextmanager
@@ -860,6 +868,7 @@ def create_operator_app(
                 parsed_release_id,
                 resolved_catalog_output,
                 formats=selected_formats,
+                image_root=resolved_image_output,
                 export_config={
                     "title": title,
                     "subtitle": subtitle,
@@ -1106,6 +1115,8 @@ def create_operator_app(
             "rejected": "Candidato de imagen rechazado; la evidencia permanece conservada.",
             "already_approved": "La aprobación exacta ya existía.",
             "already_rejected": "El rechazo exacto ya existía.",
+            "materialized": "Imagen verificada y copiada al almacenamiento content-addressed.",
+            "already_materialized": "La imagen aprobada ya estaba materializada.",
         }.get(request.query_params.get("result"))
         previous_url = f"/operator/images?page={page - 1}" if page > 1 else None
         next_url = f"/operator/images?page={page + 1}" if page * limit < candidates["filtered_count"] else None
@@ -1167,6 +1178,36 @@ def create_operator_app(
             return _error(environment, 409, "Decisión no aplicada", str(exc), session=session)
         except Exception:
             return _error(environment, 503, "Decisión no disponible", "No se guardó la decisión. Revisa la consola.", session=session)
+        return RedirectResponse(
+            f"/operator/images?{urlencode({'result': str(result['status'])})}", status_code=303
+        )
+
+    @app.post("/operator/images/candidates/{candidate_id}/materialize")
+    async def materialize_approved_image_route(request: Request, candidate_id: str) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "evidence_sha256", "reason", "confirm"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
+                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            reason = _require_text(form["reason"], "reason")
+            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
+                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
+            if form["confirm"] != "yes":
+                raise ValueError("Debes confirmar la copia verificada de la imagen aprobada.")
+            result = await run_in_threadpool(
+                gateway.materialize_approved_image, _uuid(candidate_id, "candidate_id"),
+                form["evidence_sha256"], resolved_intake_root, resolved_image_output,
+                session.actor, reason,
+            )
+        except (ValueError, RuntimeError, PermissionError, FileExistsError) as exc:
+            return _error(environment, 409, "Imagen no materializada", str(exc), session=session)
+        except Exception:
+            return _error(environment, 503, "Materialización no disponible", "No se publicó la copia verificada. Revisa la consola.", session=session)
         return RedirectResponse(
             f"/operator/images?{urlencode({'result': str(result['status'])})}", status_code=303
         )
@@ -1298,6 +1339,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--intake-dir", default="data/intake")
     parser.add_argument("--promotion-output-dir", default="data/exports/imports")
     parser.add_argument("--catalog-output-dir", default="data/exports/catalogs")
+    parser.add_argument("--image-output-dir", default="data/images")
     parser.add_argument("--prompt-password", action="store_true")
     parser.add_argument("--prompt-operator", action="store_true")
     parser.add_argument("--prompt-access-code", action="store_true")
@@ -1356,6 +1398,7 @@ def main(argv: list[str] | None = None) -> int:
             intake_root=Path(args.intake_dir),
             promotion_output_dir=Path(args.promotion_output_dir),
             catalog_output_dir=Path(args.catalog_output_dir),
+            image_output_dir=Path(args.image_output_dir),
         ),
         host=args.host,
         port=args.port,

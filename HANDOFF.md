@@ -37,7 +37,15 @@
 - Migración `0010` aplicada correctamente en `perfect_catalog_dev`; launcher
   `MIGRAR-REVISION-IMAGENES.cmd` conservado para otras instalaciones.
 - Nueva cola `Imágenes`: generación exacta desde un índice concreto y aprobación/rechazo individual
-  con sesión, Origin, CSRF, confirmación, motivo y hash de evidencia. Aún no materializa `product_media`.
+  con sesión, Origin, CSRF, confirmación, motivo y hash de evidencia.
+- Migración `0011` aplicada correctamente: materialización append-only e idempotente de decisiones
+  aprobadas, con nueva verificación de ZIP, miembro, CRC, tamaño y SHA-256 antes de copiar.
+- Las copias aprobadas se guardan content-addressed en `data/images/objects`; el ZIP de cuarentena
+  permanece intacto y la aplicación no recibe permisos UPDATE/DELETE sobre la evidencia.
+- Los releases nuevos capturan la imagen aprobada sin mutar releases anteriores. Cada exportación
+  verifica de nuevo el SHA-256, empaqueta una copia autocontenida, la incluye en el manifiesto y
+  entrega una ruta relativa segura al adaptador InDesign.
+- Suite local actual: 194 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
 

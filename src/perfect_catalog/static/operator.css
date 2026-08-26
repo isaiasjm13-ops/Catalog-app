@@ -300,6 +300,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .candidate-match strong { color: var(--forest); font-size: 26px; }
 .candidate-match code { color: var(--forest-dark); font-weight: 900; }
 .candidate-product details { color: var(--muted); font-size: 10px; }
+.materialize-action { margin-top: 10px; }
+.materialize-action summary { color: var(--forest); cursor: pointer; font-weight: 800; }
+.materialize-action form { display: grid; gap: 8px; margin-top: 9px; }
+.materialize-action label { display: grid; gap: 5px; }
 
 @media (max-width: 980px) {
   .review-card { grid-template-columns: 1fr 1fr; }

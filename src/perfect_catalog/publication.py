@@ -97,7 +97,10 @@ def snapshot_from_record(record: dict[str, Any]) -> dict[str, Any]:
         "quantity_available": _json_number(record.get("quantity_available")),
         "uom_original": record.get("uom_original"),
         "currency": record.get("currency_code"),
-        "image_status": "present" if record.get("has_processed_media") else "absent",
+        "image_status": "present" if record.get("has_processed_media") or record.get("approved_image_relpath") else "absent",
+        "image_storage_relpath": record.get("approved_image_relpath"),
+        "image_sha256": record.get("approved_image_sha256"),
+        "image_media_type": record.get("approved_image_media_type"),
         "brand": _require_text(record["brand_name"], "brand"),
         "family": None,
         "source_active": record.get("source_active"),
@@ -231,6 +234,9 @@ def _load_release_records(
                          AND pm.product_variant_id IS NOT DISTINCT FROM t.product_variant_id
                          AND pm.is_primary=true AND ma.status='procesada'
                    ) AS has_processed_media,
+                   approved_image.storage_relpath AS approved_image_relpath,
+                   approved_image.content_sha256 AS approved_image_sha256,
+                   approved_image.media_type AS approved_image_media_type,
                    b.name AS brand_name
             FROM targets AS t
             JOIN perfect_catalog.brand AS b ON b.brand_id=%s
@@ -259,6 +265,14 @@ def _load_release_records(
                 ORDER BY i.captured_at DESC, i.inventory_snapshot_id DESC
                 LIMIT 1
             ) AS inv ON true
+            LEFT JOIN LATERAL (
+                SELECT m.storage_relpath, m.content_sha256, m.media_type
+                FROM perfect_catalog.approved_image_materialization AS m
+                WHERE m.product_template_id=t.product_template_id
+                  AND m.product_variant_id IS NOT DISTINCT FROM t.product_variant_id
+                ORDER BY m.materialized_at, m.approved_image_materialization_id
+                LIMIT 1
+            ) AS approved_image ON true
             ORDER BY ref.value_normalized NULLS LAST,
                      COALESCE(t.product_variant_id, t.product_template_id)
             """,

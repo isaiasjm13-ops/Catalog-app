@@ -196,6 +196,7 @@ class SyntheticReviewGateway:
                 "lookup_key": "NK-001", "content_sha256": "8" * 64, "reference": "NK-001",
                 "product_name": "Empaque <seguro>", "product_template_id": str(uuid.uuid4()),
                 "product_variant_id": None, "decision": None, "decided_by": None, "decided_at": None,
+                "approved_image_materialization_id": None, "storage_relpath": None,
             })
         return {"status": "generated", "candidate_count": 1, "inserted_count": 1}
 
@@ -212,6 +213,17 @@ class SyntheticReviewGateway:
             raise PermissionError("evidencia incorrecta")
         candidate.update({"decision": decision, "decided_by": actor, "decided_at": "2026-08-26"})
         return {"status": decision}
+
+    def materialize_approved_image(
+        self, candidate_id: uuid.UUID, evidence_sha256: str,
+        intake_root: Path, image_root: Path, actor: str, reason: str,
+    ) -> dict[str, Any]:
+        candidate = next(item for item in self.image_candidate_data if item["image_product_candidate_id"] == str(candidate_id))
+        if candidate["decision"] != "approved" or candidate["evidence_sha256"] != evidence_sha256:
+            raise PermissionError("no aprobado")
+        candidate["approved_image_materialization_id"] = str(uuid.uuid4())
+        candidate["storage_relpath"] = "objects/88/" + "8" * 64 + ".jpg"
+        return {"status": "materialized"}
 
     def intake_submissions(
         self,
@@ -285,6 +297,7 @@ class SyntheticReviewGateway:
     def export_catalog(
         self, release_id: uuid.UUID, output_root: Path,
         *, formats: tuple[str, ...], export_config: dict[str, Any],
+        image_root: Path | None = None,
     ) -> dict[str, Any]:
         export_id = uuid.uuid4()
         directory = output_root / str(release_id) / str(export_id)
@@ -711,6 +724,15 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(decided.status_code, 303)
         self.assertIn("result=approved", decided.headers["location"])
         self.assertEqual(candidate["decision"], "approved")
+        materialized = await self.client.post(
+            f"/operator/images/candidates/{candidate['image_product_candidate_id']}/materialize",
+            data={"csrf_token": csrf, "evidence_sha256": candidate["evidence_sha256"],
+                  "reason": "Copia primaria autorizada", "confirm": "yes"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(materialized.status_code, 303)
+        self.assertIn("result=materialized", materialized.headers["location"])
+        self.assertTrue(candidate["storage_relpath"].startswith("objects/"))
 
     async def test_intake_requires_auth_origin_csrf_and_confirmation(self) -> None:
         unauthenticated = await self.client.get("/operator/intake")

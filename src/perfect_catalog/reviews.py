@@ -851,12 +851,13 @@ class DatabaseReviewGateway:
     def export_catalog(
         self, release_id: uuid.UUID, output_root: Path,
         *, formats: tuple[str, ...], export_config: dict[str, Any],
+        image_root: Path | None = None,
     ) -> dict[str, Any]:
         from .catalog_export_job import create_operator_catalog_export
 
         return create_operator_catalog_export(
             release_id, self._config, self._password, output_root,
-            formats=formats, config=export_config,
+            formats=formats, config=export_config, image_root=image_root,
         )
 
     def build_catalog_release(
@@ -986,6 +987,17 @@ class DatabaseReviewGateway:
         return decide_image_candidate(
             candidate_id, evidence_sha256, decision, actor, reason,
             self._config, self._password,
+        )
+
+    def materialize_approved_image(
+        self, candidate_id: uuid.UUID, evidence_sha256: str,
+        intake_root: Path, image_root: Path, actor: str, reason: str,
+    ) -> dict[str, Any]:
+        from .approved_image_materialization import materialize_approved_image
+
+        return materialize_approved_image(
+            candidate_id, evidence_sha256, intake_root, image_root,
+            self._config, self._password, actor=actor, reason=reason,
         )
 
     def decide(
