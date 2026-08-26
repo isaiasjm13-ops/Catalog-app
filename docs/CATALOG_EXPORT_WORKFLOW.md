@@ -7,8 +7,13 @@ La pantalla permite, en orden:
 
 1. construir un borrador inmutable desde un plan aplicado y completamente revisado;
 2. revisar UUID/checksum y publicar individualmente el borrador;
-3. elegir título, subtítulo, agrupación, columnas y formatos;
-4. generar y descargar PDF, PPTX, snapshot InDesign y manifiesto.
+3. abrir una vista previa HTML limitada, con agrupación y 1-3 columnas;
+4. elegir título, subtítulo, agrupación, columnas y formatos;
+5. generar y descargar PDF, PPTX, snapshot InDesign y manifiesto.
+
+La vista previa vuelve a verificar el release completo, calcula el total de todos los grupos y
+renderiza como máximo 24 fichas para mantener una respuesta ágil con catálogos grandes. No crea
+archivos ni altera datos.
 
 Los archivos quedan bajo `data/exports/catalogs/<release-uuid>/<export-uuid>/`. El navegador
 no decide rutas y sólo puede descargar nombres incluidos en el manifiesto de esa exportación.

@@ -1,0 +1,48 @@
+{% extends "operator_base.html" %}
+{% block title %}Vista previa · {{ preview.release.version }}{% endblock %}
+{% block content %}
+<nav class="breadcrumbs"><a href="/operator/catalogs">Catálogos</a><span>/</span><span>Vista previa {{ preview.release.version }}</span></nav>
+<section class="preview-hero">
+  <div>
+    <span class="kicker">Simulación de composición</span>
+    <h1>Vista previa editorial</h1>
+    <p>Muestra {{ preview.sample_count }} de {{ preview.total_count }} productos. La exportación final conserva el release completo.</p>
+  </div>
+  <dl>
+    <div><dt>Versión</dt><dd>{{ preview.release.version }}</dd></div>
+    <div><dt>Productos</dt><dd>{{ preview.total_count }}</dd></div>
+    <div><dt>Checksum</dt><dd><code>{{ preview.release.snapshot_sha256[:16] }}…</code></dd></div>
+  </dl>
+</section>
+
+<div class="preview-toolbar">
+  <form method="get">
+    <label><span>Agrupar</span><select name="group_by"><option value="category_path" {% if preview.group_by == 'category_path' %}selected{% endif %}>Categoría</option><option value="brand" {% if preview.group_by == 'brand' %}selected{% endif %}>Marca</option><option value="internal_reference_original" {% if preview.group_by == 'internal_reference_original' %}selected{% endif %}>Referencia</option></select></label>
+    <label><span>Columnas</span><select name="columns"><option {% if columns == 1 %}selected{% endif %}>1</option><option {% if columns == 2 %}selected{% endif %}>2</option><option {% if columns == 3 %}selected{% endif %}>3</option></select></label>
+    <button class="secondary-button" type="submit">Actualizar</button>
+  </form>
+  <span>Vista de control · no genera archivos</span>
+</div>
+
+<section class="catalog-preview-sheet">
+  <header><span>Perfect Trading</span><strong>Catálogo {{ preview.release.version }}</strong><small>{{ preview.total_count }} referencias verificadas</small></header>
+  {% for group in preview.groups %}
+    {% if group.products %}
+    <section class="preview-section">
+      <div class="preview-section-title"><span>{{ loop.index|string|upper }}</span><h2>{{ group.label }}</h2><small>{{ group.count }} productos</small></div>
+      <div class="preview-products columns-{{ columns }}">
+        {% for product in group.products %}
+        <article>
+          <div class="preview-image"><span>Imagen</span><small>pendiente de asociación</small></div>
+          <code>{{ product.internal_reference_original or 'Sin referencia' }}</code>
+          <h3>{{ product.name_original or 'Sin nombre' }}</h3>
+          <p>{{ product.applications|join('; ') if product.applications else 'Aplicaciones no indicadas' }}</p>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+  {% endfor %}
+  {% if preview.sample_count < preview.total_count %}<footer>Vista limitada · {{ preview.total_count - preview.sample_count }} productos adicionales se incluirán al exportar</footer>{% endif %}
+</section>
+{% endblock %}

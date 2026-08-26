@@ -59,6 +59,11 @@
           <div><dt>Publicado por</dt><dd>{{ release.published_by or 'Sin publicar' }}</dd></div>
         </dl>
         {% if release.status == 'published' %}
+        <form class="preview-launcher" method="get" action="/operator/catalogs/{{ release.catalog_release_id }}/preview">
+          <label><span>Vista previa</span><select name="group_by"><option value="category_path">Por categoría</option><option value="brand">Por marca</option><option value="internal_reference_original">Por referencia</option></select></label>
+          <label><span>Columnas</span><select name="columns"><option>1</option><option selected>2</option><option>3</option></select></label>
+          <button class="secondary-button" type="submit">Previsualizar</button>
+        </form>
         <details class="export-composer">
           <summary>Configurar exportación</summary>
           <form method="post" action="/operator/catalogs/{{ release.catalog_release_id }}/exports">

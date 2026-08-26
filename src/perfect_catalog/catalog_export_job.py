@@ -213,3 +213,38 @@ def list_operator_catalog_exports(output_root: Path, *, limit: int = 100) -> lis
         if len(results) >= limit:
             break
     return results
+
+
+def build_catalog_preview(
+    release: dict[str, Any], items: Iterable[dict[str, Any]],
+    *, group_by: str = "category_path", sample_limit: int = 24,
+) -> dict[str, Any]:
+    if group_by not in {"category_path", "brand", "internal_reference_original"}:
+        raise ValueError("Agrupación no permitida.")
+    if sample_limit < 1 or sample_limit > 100:
+        raise ValueError("sample_limit debe estar entre 1 y 100.")
+    rows = export_rows_from_release(release, items)
+    groups: dict[str, dict[str, Any]] = {}
+    sampled = 0
+    for row in rows:
+        label = str(row.get(group_by) or "Sin categoría")
+        group = groups.setdefault(label, {"label": label, "count": 0, "products": []})
+        group["count"] += 1
+        if sampled < sample_limit:
+            group["products"].append(row)
+            sampled += 1
+    return {
+        "release": _release_metadata(release, len(rows)),
+        "group_by": group_by,
+        "total_count": len(rows),
+        "sample_count": sampled,
+        "groups": list(groups.values()),
+    }
+
+
+def preview_catalog_release(
+    release_id: uuid.UUID, database: DatabaseConfig, password: str,
+    *, group_by: str = "category_path", sample_limit: int = 24,
+) -> dict[str, Any]:
+    release, items = load_published_release(release_id, database, password)
+    return build_catalog_preview(release, items, group_by=group_by, sample_limit=sample_limit)

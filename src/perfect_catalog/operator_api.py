@@ -116,6 +116,10 @@ class ReviewGateway(Protocol):
         self, release_id: uuid.UUID, snapshot_sha256: str, actor: str, reason: str,
     ) -> dict[str, Any]: ...
 
+    def preview_catalog_release(
+        self, release_id: uuid.UUID, *, group_by: str, sample_limit: int = 24,
+    ) -> dict[str, Any]: ...
+
 
 @dataclass(frozen=True)
 class OperatorSession:
@@ -711,6 +715,32 @@ def create_operator_app(
             return _error(environment, 503, "Construcción no disponible", "No se creó el release. Revisa la consola del servidor.", session=session)
         return RedirectResponse(
             f"/operator/catalogs?{urlencode({'result': str(result['status'])})}", status_code=303
+        )
+
+    @app.get("/operator/catalogs/{release_id}/preview", response_class=HTMLResponse)
+    async def preview_catalog_release_route(
+        request: Request, release_id: str, group_by: str = "category_path", columns: int = 2
+    ) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            if columns not in {1, 2, 3}:
+                raise ValueError("La cantidad de columnas no es válida.")
+            if group_by not in {"category_path", "brand", "internal_reference_original"}:
+                raise ValueError("Agrupación no permitida.")
+            preview = await run_in_threadpool(
+                gateway.preview_catalog_release,
+                _uuid(release_id, "release_id"), group_by=group_by, sample_limit=24,
+            )
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            return _error(environment, 400, "Vista previa no disponible", str(exc), session=session_or_redirect)
+        except Exception:
+            return _error(environment, 503, "Vista previa no disponible", "No se pudo leer el release publicado.", session=session_or_redirect)
+        return _render(
+            environment, "operator_catalog_preview.html",
+            preview=preview, columns=columns, session=session_or_redirect,
+            version=OPERATOR_VERSION,
         )
 
     @app.post("/operator/catalogs/{release_id}/publish")

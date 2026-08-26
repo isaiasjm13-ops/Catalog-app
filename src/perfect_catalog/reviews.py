@@ -879,6 +879,16 @@ class DatabaseReviewGateway:
             release_id, snapshot_sha256, actor, reason, self._config, self._password
         )
 
+    def preview_catalog_release(
+        self, release_id: uuid.UUID, *, group_by: str, sample_limit: int = 24,
+    ) -> dict[str, Any]:
+        from .catalog_export_job import preview_catalog_release
+
+        return preview_catalog_release(
+            release_id, self._config, self._password,
+            group_by=group_by, sample_limit=sample_limit,
+        )
+
     def plans(self, *, limit: int = 100) -> list[dict[str, Any]]:
         return list_review_plans(self._config, self._password, limit=limit)
 

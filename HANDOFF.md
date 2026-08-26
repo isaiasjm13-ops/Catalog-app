@@ -11,11 +11,13 @@
 - Cada ejecución recibe UUID y directorio generado por el servidor. Las descargas autenticadas sólo
   admiten archivos enumerados por el manifiesto; rutas y nombres arbitrarios quedan rechazados.
 - Historial local de exportaciones reconstruido desde manifiestos, sin depender de estado mutable web.
+- Vista previa editorial de sólo lectura con agrupación y 1-3 columnas; valida el checksum completo,
+  calcula conteos globales y limita el HTML a 24 fichas para escala de 25,000+ referencias.
 
 ### Pendiente siguiente
 
 1. Reiniciar el revisor y probar la pantalla con un plan/release empresarial real.
-2. Añadir previsualización HTML antes de generar archivos y filtros/agrupaciones multinivel.
+2. Añadir filtros/agrupaciones multinivel y selección manual de productos.
 3. Diseñar adaptadores de plantilla InDesign T4/T2/T1/TABLE/SEPARATOR y reporte de preflight.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)

@@ -216,6 +216,19 @@ class SyntheticReviewGateway:
         self.release_changes.append({"operation": "publish", "release_id": release_id, "actor": actor, "reason": reason})
         return {"status": "published", "release_id": str(release_id)}
 
+    def preview_catalog_release(
+        self, release_id: uuid.UUID, *, group_by: str, sample_limit: int = 24,
+    ) -> dict[str, Any]:
+        return {
+            "release": {"release_id": str(release_id), "version": "2026.08", "status": "published",
+                        "snapshot_sha256": "c" * 64, "item_count": 12},
+            "group_by": group_by, "total_count": 12, "sample_count": 1,
+            "groups": [{"label": "Motor <seguro>", "count": 12, "products": [{
+                "internal_reference_original": "NK-001", "name_original": "Empaque <script>",
+                "applications": ["Toyota Corolla"],
+            }]}],
+        }
+
     def export_catalog(
         self, release_id: uuid.UUID, output_root: Path,
         *, formats: tuple[str, ...], export_config: dict[str, Any],
@@ -463,6 +476,21 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(published.headers["location"], "/operator/catalogs?result=published")
         self.assertEqual(draft["status"], "published")
         self.assertEqual([item["operation"] for item in self.gateway.release_changes], ["build", "publish"])
+
+    async def test_catalog_preview_is_read_only_limited_and_escaped(self) -> None:
+        await self.login()
+        response = await self.client.get(
+            f"/operator/catalogs/{RELEASE_ID}/preview?group_by=category_path&columns=3"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Muestra 1 de 12 productos", response.text)
+        self.assertIn("columns-3", response.text)
+        self.assertIn("Motor &lt;seguro&gt;", response.text)
+        self.assertNotIn("<script>", response.text)
+        invalid = await self.client.get(
+            f"/operator/catalogs/{RELEASE_ID}/preview?group_by=unknown&columns=2"
+        )
+        self.assertEqual(invalid.status_code, 400)
 
     async def test_decision_requires_same_origin_and_exact_csrf(self) -> None:
         await self.login()

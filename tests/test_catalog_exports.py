@@ -9,6 +9,7 @@ from pathlib import Path
 from perfect_catalog.catalog_exports import export_rows_from_release, generate_catalog_pdf, generate_catalog_pptx
 from perfect_catalog.catalog_export_job import (
     build_catalog_bundle,
+    build_catalog_preview,
     list_operator_catalog_exports,
     resolve_catalog_download,
 )
@@ -121,3 +122,13 @@ class CatalogExportTests(unittest.TestCase):
                 resolve_catalog_download(root, release["catalog_release_id"], export_id, "private.txt")
             with self.assertRaises(ValueError):
                 resolve_catalog_download(root, release["catalog_release_id"], export_id, "../private.txt")
+
+    def test_preview_revalidates_release_and_limits_rendered_products(self) -> None:
+        release, items = fixture_release()
+        preview = build_catalog_preview(release, items, group_by="category_path", sample_limit=1)
+        self.assertEqual(preview["total_count"], 1)
+        self.assertEqual(preview["sample_count"], 1)
+        self.assertEqual(preview["groups"][0]["count"], 1)
+        release["snapshot_sha256"] = "0" * 64
+        with self.assertRaisesRegex(ValueError, "snapshot_sha256"):
+            build_catalog_preview(release, items)
