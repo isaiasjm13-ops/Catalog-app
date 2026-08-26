@@ -1,5 +1,31 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
+
+### Resultado de esta sesión
+
+- Login operador corregido para Edge, Chrome y clientes integrados: cookie de challenge con alcance
+  `/operator`, parseo estricto, compatibilidad segura Origin/Referer+Sec-Fetch-Site y diagnósticos
+  separados para origen, challenge, código y límite de intentos, sin revelar ni registrar el código.
+- Prueba HTTP real levanta Uvicorn en `127.0.0.1` y valida GET, cookie HttpOnly, CSRF, POST y redirección
+  303 a `/operator`. El flujo TCP fue verificado; no había navegador integrado conectado para una
+  comprobación visual automatizada.
+- Añadido restablecimiento interactivo de contraseña para `perfect_catalog_app` mediante
+  `RESTABLECER-CONTRASENA-REVISOR.cmd`; no conserva credenciales en archivos, argumentos o variables.
+- Nuevo `export-catalog`: sólo acepta releases `published`, revalida todos sus hashes y genera PDF,
+  PPTX, snapshot `perfect-catalog.indesign-snapshot.v1` y manifiesto SHA-256 sin sobrescribir destinos.
+- Primer puente InDesign en `indesign/ImportPerfectCatalog.jsx`: abre el snapshot, valida publicación,
+  crea portada y fichas editables, conserva UUID/checksum dentro del INDD y reporta desbordamientos.
+- Suite local: 173 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas por credenciales.
+
+### Pendiente siguiente
+
+1. Confirmar visualmente el login y ejecutar las 6 integraciones tras restablecer la contraseña local.
+2. Aplicar migraciones `0008` y `0009` en orden sobre `perfect_catalog_dev`.
+3. Probar un release empresarial publicado con `export-catalog` y abrir el JSON generado en InDesign.
+4. Sustituir la maqueta básica JSX por adaptadores de plantilla T4, T2, T1, TABLE y SEPARATOR, con
+   resolución revisada de imágenes/fuentes y reporte persistente de preflight.
+
 ## Sesión Actual: Índice no destructivo de imágenes (2026-08-26)
 
 ### Resultado de esta sesión
