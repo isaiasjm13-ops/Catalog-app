@@ -238,6 +238,24 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .export-composer summary { color: var(--forest); cursor: pointer; font-size: 12px; font-weight: 800; }
 .export-composer form { display: grid; gap: 13px; margin-top: 16px; padding: 18px; border-radius: 14px; background: #f3f6f1; }
 .export-composer label { display: grid; gap: 6px; }
+.composer-section { min-width: 0; display: grid; gap: 13px; margin: 0; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.68); }
+.composer-section legend { padding: 0 8px; color: var(--forest); font-size: 10px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+.choice-field { display: grid; gap: 6px; }
+.choice-field > span { color: #4f5a54; font-size: 12px; font-weight: 700; }
+.density-choices, .profile-choices, .theme-choices { display: grid; gap: 8px; }
+.density-choices { grid-template-columns: repeat(3, 1fr); }
+.profile-choices, .theme-choices { grid-template-columns: repeat(4, 1fr); }
+.density-choices label, .profile-choices label, .theme-choices label { position: relative; display: grid; gap: 3px; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: white; cursor: pointer; }
+.density-choices input, .profile-choices input, .theme-choices input { position: absolute; opacity: 0; pointer-events: none; }
+.density-choices label:has(input:checked), .profile-choices label:has(input:checked), .theme-choices label:has(input:checked) { border-color: var(--forest); box-shadow: 0 0 0 2px rgba(12,91,72,.12); }
+.density-choices b, .profile-choices b, .theme-choices b { color: var(--ink); font-size: 12px; }
+.density-choices small, .profile-choices small, .theme-choices small { color: var(--muted); font-size: 9px; }
+.theme-choices label { grid-template-columns: 22px 1fr; align-items: center; }
+.theme-choices i { width: 20px; height: 34px; border-radius: 6px; background: #0c5b48; }
+.theme-choices .theme-industrial i { background: #c34a21; }
+.theme-choices .theme-midnight i { background: #2e63c7; }
+.theme-choices .theme-classic i { background: #8a6a2f; }
+.theme-choices span { min-width: 0; }
 .composer-row, .format-grid { display: grid; gap: 10px; }
 .composer-row { grid-template-columns: 1fr 120px; }
 .format-grid { grid-template-columns: repeat(3, 1fr); }
@@ -356,6 +374,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .upload-form label:nth-of-type(3), .upload-form .confirm-field, .upload-form button { grid-column: auto; }
   .intake-row { grid-template-columns: 48px 1fr; }
   .composer-row, .format-grid { grid-template-columns: 1fr; }
+  .profile-choices, .theme-choices { grid-template-columns: repeat(2, 1fr); }
+  .density-choices { grid-template-columns: 1fr; }
   .preview-launcher, .preview-toolbar form { grid-template-columns: 1fr; }
   .preview-toolbar { display: grid; }
   .preview-products.columns-2, .preview-products.columns-3 { grid-template-columns: 1fr; }

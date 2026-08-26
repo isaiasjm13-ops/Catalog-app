@@ -534,6 +534,9 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         page = await self.client.get("/operator/catalogs")
         self.assertIn("Estado del estudio editorial", page.text)
         self.assertIn("Entregables con integridad comprobada", page.text)
+        self.assertIn("01 · Estructura del contenido", page.text)
+        self.assertIn('name="theme" value="industrial" aria-label="Industrial · repuestos"', page.text)
+        self.assertIn('type="radio" name="template_profile" value="TABLE"', page.text)
         fields = {
             "csrf_token": hidden_value(page.text, "csrf_token"),
             "title": "Catálogo web", "subtitle": "", "group_by": "category_path",

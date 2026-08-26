@@ -90,7 +90,9 @@
             <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
             <label><span>Título</span><input name="title" maxlength="120" value="Catálogo {{ release.version }}" required></label>
             <label><span>Subtítulo</span><input name="subtitle" maxlength="180" value="Perfect Trading · {{ release.item_count }} productos"></label>
-            <div class="composer-row">
+            <fieldset class="composer-section">
+              <legend>01 · Estructura del contenido</legend>
+              <div class="composer-row">
               <label><span>Agrupar por</span>
                 <select name="group_by">
                   <option value="category_path">Categoría</option>
@@ -98,22 +100,34 @@
                   <option value="internal_reference_original">Referencia</option>
                 </select>
               </label>
-              <label><span>Columnas</span><select name="columns"><option>1</option><option selected>2</option><option>3</option></select></label>
-            </div>
+              <div class="choice-field"><span>Densidad</span><div class="density-choices"><label><input type="radio" name="columns" value="1"><b>T1</b><small>Editorial</small></label><label><input type="radio" name="columns" value="2" checked><b>T2</b><small>Equilibrada</small></label><label><input type="radio" name="columns" value="3"><b>T3</b><small>Compacta</small></label></div></div>
+              </div>
             <div class="composer-row">
               <label><span>Subagrupar por</span><select name="group_by_secondary"><option value="">Sin segundo nivel</option><option value="category_path">Categoría</option><option value="brand">Marca</option><option value="internal_reference_original">Referencia</option></select></label>
               <label><span>Filtrar campo</span><select name="filter_field"><option value="all">Todos</option><option value="category_path">Categoría</option><option value="brand">Marca</option><option value="internal_reference_original">Referencia</option><option value="name_original">Nombre</option></select></label>
             </div>
             <label><span>Texto de filtro opcional</span><input name="filter_query" maxlength="120" placeholder="Ej. Toyota, motor o NK-001"></label>
             <label><span>Selección manual de referencias (opcional)</span><textarea name="selected_references" maxlength="20000" placeholder="Una referencia por línea, o separadas por coma"></textarea><small>Si se completa, sólo se exportan coincidencias exactas del release. Los errores de escritura detienen la exportación.</small></label>
-            <label><span>Tema editorial</span><select name="theme"><option value="forest">Bosque · corporativo</option><option value="industrial">Industrial · repuestos</option><option value="midnight">Medianoche · tecnológico</option><option value="classic">Clásico · premium</option></select></label>
+            </fieldset>
+            <fieldset class="composer-section">
+              <legend>02 · Dirección visual</legend>
+              <div class="theme-choices">
+                <label class="theme-forest"><input type="radio" name="theme" value="forest" aria-label="Bosque · corporativo" checked><i></i><span><b>Bosque</b><small>Corporativo</small></span></label>
+                <label class="theme-industrial"><input type="radio" name="theme" value="industrial" aria-label="Industrial · repuestos"><i></i><span><b>Industrial</b><small>Repuestos</small></span></label>
+                <label class="theme-midnight"><input type="radio" name="theme" value="midnight" aria-label="Medianoche · tecnológico"><i></i><span><b>Medianoche</b><small>Tecnológico</small></span></label>
+                <label class="theme-classic"><input type="radio" name="theme" value="classic" aria-label="Clásico · premium"><i></i><span><b>Clásico</b><small>Premium</small></span></label>
+              </div>
+            </fieldset>
+            <fieldset class="composer-section">
+              <legend>03 · Entregables</legend>
             <div class="format-grid">
               <label><span>Catálogo web HTML</span><select name="format_html"><option value="yes">Generar</option><option value="no">Omitir</option></select></label>
               <label><span>PDF digital</span><select name="format_pdf"><option value="yes">Generar</option><option value="no">Omitir</option></select></label>
               <label><span>PowerPoint</span><select name="format_pptx"><option value="yes">Generar</option><option value="no">Omitir</option></select></label>
               <label><span>InDesign JSON</span><select name="format_indesign_json"><option value="yes">Generar</option><option value="no">Omitir</option></select></label>
             </div>
-            <label><span>Plantilla de producto InDesign</span><select name="template_profile">{% for profile in indesign_templates %}<option value="{{ profile }}">{{ profile }}{% if profile == 'T4' %} · 4 fichas por página{% elif profile == 'T2' %} · 2 fichas por página{% elif profile == 'T1' %} · 1 ficha por página{% else %} · tabla compacta{% endif %}</option>{% endfor %}</select></label>
+            <div class="choice-field"><span>Plantilla de producto InDesign</span><div class="profile-choices">{% for profile in indesign_templates %}<label><input type="radio" name="template_profile" value="{{ profile }}"{% if profile == 'T4' %} checked{% endif %}><b>{{ profile }}</b><small>{% if profile == 'T4' %}4 fichas{% elif profile == 'T2' %}2 fichas{% elif profile == 'T1' %}1 ficha{% else %}Tabla{% endif %}</small></label>{% endfor %}</div></div>
+            </fieldset>
             <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo la exportación de esta versión publicada exacta.</span></label>
             <button type="submit" class="primary-button">Generar entregables</button>
           </form>

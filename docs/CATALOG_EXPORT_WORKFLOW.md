@@ -12,6 +12,10 @@ La pantalla permite, en orden:
 5. elegir título, subtítulo, columnas, perfil InDesign y formatos;
 6. generar y descargar HTML/ZIP digital, PDF, PPTX, snapshot/paquete InDesign y manifiesto.
 
+El compositor presenta estas decisiones en tres etapas: estructura del contenido, dirección visual
+y entregables. Los presets de tema, densidad y perfil InDesign son controles HTML nativos y funcionan
+sin JavaScript; el servidor sigue validando cada valor contra listas cerradas.
+
 La vista previa vuelve a verificar el release completo, calcula el total de todos los grupos y
 renderiza como máximo 24 fichas para mantener una respuesta ágil con catálogos grandes. No crea
 archivos ni altera datos.

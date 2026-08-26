@@ -106,6 +106,8 @@
   manifiesto. Descargar el propio manifiesto verifica antes el bundle completo, incluidos sus ZIP.
 - La pantalla Catálogos incorpora un tablero de producción en tres etapas —fuente, composición y
   biblioteca— con métricas de versiones, publicaciones y ediciones, más estados visuales de integridad.
+- El compositor se divide en estructura, dirección visual y entregables. Temas, densidad y perfiles
+  InDesign usan tarjetas radio nativas, accesibles y compatibles con CSP estricta sin JavaScript.
 - Suite local actual: 202 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
