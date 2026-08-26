@@ -7,7 +7,11 @@ import zipfile
 from pathlib import Path
 
 from perfect_catalog.catalog_exports import export_rows_from_release, generate_catalog_pdf, generate_catalog_pptx
-from perfect_catalog.catalog_export_job import build_catalog_bundle
+from perfect_catalog.catalog_export_job import (
+    build_catalog_bundle,
+    list_operator_catalog_exports,
+    resolve_catalog_download,
+)
 from perfect_catalog.cli import build_parser
 from perfect_catalog.releases import RELEASE_HASH_ALGORITHM, SNAPSHOT_SCHEMA_VERSION, product_snapshot_sha256, release_snapshot_sha256
 
@@ -97,3 +101,23 @@ class CatalogExportTests(unittest.TestCase):
             (output / "user-file.txt").write_text("preservar", encoding="utf-8")
             with self.assertRaisesRegex(FileExistsError, "no está vacío"):
                 build_catalog_bundle(release, items, output)
+
+    def test_operator_history_and_downloads_are_manifest_scoped(self) -> None:
+        release, items = fixture_release()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            export_id = uuid.uuid4()
+            output = root / str(release["catalog_release_id"]) / str(export_id)
+            result = build_catalog_bundle(release, items, output, formats=("indesign-json",))
+            history = list_operator_catalog_exports(root)
+            self.assertEqual(len(history), 1)
+            self.assertEqual(history[0]["export_id"], str(export_id))
+            filename = result["files"][0]["filename"]
+            self.assertEqual(
+                resolve_catalog_download(root, release["catalog_release_id"], export_id, filename),
+                (output / filename).resolve(),
+            )
+            with self.assertRaises(PermissionError):
+                resolve_catalog_download(root, release["catalog_release_id"], export_id, "private.txt")
+            with self.assertRaises(ValueError):
+                resolve_catalog_download(root, release["catalog_release_id"], export_id, "../private.txt")

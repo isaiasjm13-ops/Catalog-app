@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 import uvicorn
 import psycopg
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 from starlette.concurrency import run_in_threadpool
@@ -29,6 +29,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import DatabaseConfig, prompt_password
+from .catalog_export_job import (
+    SUPPORTED_FORMATS,
+    list_operator_catalog_exports,
+    resolve_catalog_download,
+)
 from .intake import (
     INTAKE_KINDS,
     MAX_UPLOAD_REQUEST_BYTES,
@@ -93,6 +98,22 @@ class ReviewGateway(Protocol):
     def promote_intake(
         self, submission_id: uuid.UUID, intake_root: Path, output_dir: Path,
         actor: str, reason: str, max_rows: int,
+    ) -> dict[str, Any]: ...
+
+    def catalog_releases(self, *, limit: int = 100) -> list[dict[str, Any]]: ...
+
+    def export_catalog(
+        self, release_id: uuid.UUID, output_root: Path,
+        *, formats: tuple[str, ...], export_config: dict[str, Any],
+    ) -> dict[str, Any]: ...
+
+    def build_catalog_release(
+        self, plan_id: uuid.UUID, fingerprint: str, version: str,
+        actor: str, reason: str, brand: str,
+    ) -> dict[str, Any]: ...
+
+    def publish_catalog_release(
+        self, release_id: uuid.UUID, snapshot_sha256: str, actor: str, reason: str,
     ) -> dict[str, Any]: ...
 
 
@@ -351,10 +372,12 @@ def create_operator_app(
     *,
     intake_root: Path | None = None,
     promotion_output_dir: Path | None = None,
+    catalog_output_dir: Path | None = None,
 ) -> FastAPI:
     environment = _templates()
     resolved_intake_root = intake_root or Path("data/intake")
     resolved_promotion_output = promotion_output_dir or Path("data/exports/imports")
+    resolved_catalog_output = catalog_output_dir or Path("data/exports/catalogs")
     intake_service = SecureIntakeService(resolved_intake_root, gateway)
 
     @asynccontextmanager
@@ -620,6 +643,184 @@ def create_operator_app(
             session=session_or_redirect,
             version=OPERATOR_VERSION,
         )
+
+    @app.get("/operator/catalogs", response_class=HTMLResponse)
+    async def catalogs_page(request: Request) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            releases = await run_in_threadpool(gateway.catalog_releases, limit=100)
+            plans = await run_in_threadpool(gateway.plans, limit=100)
+            exports = await run_in_threadpool(
+                list_operator_catalog_exports, resolved_catalog_output, limit=100
+            )
+        except Exception:
+            return _error(
+                environment, 503, "Catálogos no disponibles",
+                "No se pudieron leer publicaciones o exportaciones. Revisa la consola del servidor.",
+                session=session_or_redirect,
+            )
+        message = {
+            "created": "Catálogo generado y verificado. Ya puedes descargar sus entregables.",
+            "built": "Borrador inmutable construido. Revisa su checksum antes de publicarlo.",
+            "already_built": "El borrador exacto ya existía; no se duplicó.",
+            "published": "Release publicado. Ya está habilitado para exportación.",
+            "already_published": "El release exacto ya estaba publicado.",
+        }.get(request.query_params.get("result"))
+        return _render(
+            environment,
+            "operator_catalogs.html",
+            releases=releases,
+            plans=plans,
+            exports=exports,
+            formats=SUPPORTED_FORMATS,
+            message=message,
+            session=session_or_redirect,
+            version=OPERATOR_VERSION,
+        )
+
+    @app.post("/operator/catalogs/releases")
+    async def build_catalog_release_route(request: Request) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "plan_id", "fingerprint", "version", "brand", "reason", "confirm"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
+                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if form["confirm"] != "yes":
+                raise ValueError("Debes confirmar la construcción del borrador inmutable.")
+            reason = _require_text(form["reason"], "reason")
+            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
+                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
+            brand = _require_text(form["brand"], "brand")
+            if len(brand) > 120:
+                raise ValueError("brand no puede superar 120 caracteres.")
+            result = await run_in_threadpool(
+                gateway.build_catalog_release,
+                _uuid(form["plan_id"], "plan_id"),
+                form["fingerprint"], form["version"], session.actor, reason, brand,
+            )
+        except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
+            return _error(environment, 409, "Release no construido", str(exc), session=session)
+        except Exception:
+            return _error(environment, 503, "Construcción no disponible", "No se creó el release. Revisa la consola del servidor.", session=session)
+        return RedirectResponse(
+            f"/operator/catalogs?{urlencode({'result': str(result['status'])})}", status_code=303
+        )
+
+    @app.post("/operator/catalogs/{release_id}/publish")
+    async def publish_catalog_release_route(request: Request, release_id: str) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "snapshot_sha256", "reason", "confirm"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
+                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if form["confirm"] != "yes":
+                raise ValueError("Debes confirmar la publicación del checksum exacto.")
+            reason = _require_text(form["reason"], "reason")
+            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
+                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
+            result = await run_in_threadpool(
+                gateway.publish_catalog_release,
+                _uuid(release_id, "release_id"), form["snapshot_sha256"], session.actor, reason,
+            )
+        except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
+            return _error(environment, 409, "Release no publicado", str(exc), session=session)
+        except Exception:
+            return _error(environment, 503, "Publicación no disponible", "No se publicó el release. Revisa la consola del servidor.", session=session)
+        return RedirectResponse(
+            f"/operator/catalogs?{urlencode({'result': str(result['status'])})}", status_code=303
+        )
+
+    @app.post("/operator/catalogs/{release_id}/exports")
+    async def create_catalog_export(request: Request, release_id: str) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            allowed_fields = {
+                "csrf_token", "title", "subtitle", "group_by", "columns",
+                "format_pdf", "format_pptx", "format_indesign_json", "confirm",
+            }
+            if set(form) != allowed_fields:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if not _same_origin(request) or not hmac.compare_digest(
+                form.get("csrf_token", ""), session.csrf_token
+            ):
+                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if form["confirm"] != "yes":
+                raise ValueError("Debes confirmar la exportación del release publicado.")
+            title = _require_text(form["title"], "title")
+            subtitle = form["subtitle"].strip()
+            group_by = form["group_by"].strip()
+            if len(title) > 120 or len(subtitle) > 180:
+                raise ValueError("Título o subtítulo demasiado largo.")
+            if group_by not in {"category_path", "brand", "internal_reference_original"}:
+                raise ValueError("Agrupación no permitida.")
+            columns = int(form["columns"])
+            if columns not in {1, 2, 3}:
+                raise ValueError("La cantidad de columnas no es válida.")
+            selected_formats = tuple(
+                output_format for field, output_format in (
+                    ("format_pdf", "pdf"),
+                    ("format_pptx", "pptx"),
+                    ("format_indesign_json", "indesign-json"),
+                ) if form[field] == "yes"
+            )
+            if not selected_formats:
+                raise ValueError("Selecciona al menos un formato.")
+            parsed_release_id = _uuid(release_id, "release_id")
+            await run_in_threadpool(
+                gateway.export_catalog,
+                parsed_release_id,
+                resolved_catalog_output,
+                formats=selected_formats,
+                export_config={
+                    "title": title,
+                    "subtitle": subtitle,
+                    "group_by": group_by,
+                    "columns_per_row": columns,
+                },
+            )
+        except (ValueError, RuntimeError, PermissionError, FileExistsError) as exc:
+            return _error(environment, 409, "Exportación no creada", str(exc), session=session)
+        except Exception:
+            return _error(
+                environment, 503, "Exportación no disponible",
+                "No se generaron entregables. Revisa la consola del servidor operador.", session=session,
+            )
+        return RedirectResponse("/operator/catalogs?result=created", status_code=303)
+
+    @app.get("/operator/catalogs/{release_id}/exports/{export_id}/{filename}")
+    async def download_catalog_export(
+        request: Request, release_id: str, export_id: str, filename: str
+    ) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            target = await run_in_threadpool(
+                resolve_catalog_download,
+                resolved_catalog_output,
+                _uuid(release_id, "release_id"),
+                _uuid(export_id, "export_id"),
+                filename,
+            )
+        except (ValueError, PermissionError, FileNotFoundError):
+            return _error(environment, 404, "Archivo no encontrado", "La descarga no pertenece a una exportación válida.", session=session_or_redirect)
+        return FileResponse(target, filename=target.name, media_type="application/octet-stream")
 
     @app.post("/operator/intake")
     async def submit_intake(request: Request) -> Response:
@@ -899,6 +1100,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--db-port", dest="port_db", type=int, default=None)
     parser.add_argument("--intake-dir", default="data/intake")
     parser.add_argument("--promotion-output-dir", default="data/exports/imports")
+    parser.add_argument("--catalog-output-dir", default="data/exports/catalogs")
     parser.add_argument("--prompt-password", action="store_true")
     parser.add_argument("--prompt-operator", action="store_true")
     parser.add_argument("--prompt-access-code", action="store_true")
@@ -956,6 +1158,7 @@ def main(argv: list[str] | None = None) -> int:
             authenticator,
             intake_root=Path(args.intake_dir),
             promotion_output_dir=Path(args.promotion_output_dir),
+            catalog_output_dir=Path(args.catalog_output_dir),
         ),
         host=args.host,
         port=args.port,

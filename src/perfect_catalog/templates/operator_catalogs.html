@@ -1,0 +1,134 @@
+{% extends "operator_base.html" %}
+{% block title %}Catálogos{% endblock %}
+{% block content %}
+<section class="page-heading catalog-heading">
+  <div>
+    <span class="kicker">Estudio de publicaciones</span>
+    <h1>Crear catálogos</h1>
+    <p>Genera entregables digitales e InDesign desde una versión publicada e inmutable. Cada archivo conserva el checksum exacto de su fuente.</p>
+  </div>
+  <div class="safety-chip"><span>●</span> Releases verificados</div>
+</section>
+
+{% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+
+<details class="release-builder">
+  <summary><span><strong>Construir nueva versión</strong><small>Desde un plan aplicado con todas sus identidades resueltas</small></span><b>＋</b></summary>
+  <div class="builder-content">
+    {% if plans %}
+    {% for plan in plans %}
+    <form method="post" action="/operator/catalogs/releases" class="builder-form">
+      <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+      <input type="hidden" name="plan_id" value="{{ plan.import_plan_id }}">
+      <input type="hidden" name="fingerprint" value="{{ plan.approval_fingerprint_sha256 }}">
+      <div class="builder-plan">
+        <strong>{{ plan.original_name }}</strong>
+        <span>{{ plan.candidate_count }} identidades · {{ plan.pending_count }} pendientes</span>
+      </div>
+      <label><span>Versión nueva</span><input name="version" maxlength="80" placeholder="2026.08-natsuki" required></label>
+      <label><span>Marca</span><input name="brand" maxlength="120" value="NATSUKI" required></label>
+      <label class="builder-reason"><span>Motivo auditable</span><input name="reason" minlength="4" maxlength="500" placeholder="Primera edición revisada" required></label>
+      <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Congelar este plan como borrador inmutable.</span></label>
+      <button class="secondary-button" type="submit" {% if plan.pending_count or plan.inconsistent_count %}disabled title="Resuelve primero la cola de revisión"{% endif %}>Construir borrador</button>
+    </form>
+    {% endfor %}
+    {% else %}<p>No hay planes aplicados disponibles.</p>{% endif %}
+  </div>
+</details>
+
+<section class="catalog-workspace">
+  <div>
+    <div class="section-heading">
+      <div><span class="kicker">01 · Selección</span><h2>Publicaciones disponibles</h2></div>
+      <span>{{ releases|length }} versiones</span>
+    </div>
+    {% if releases %}
+    <div class="release-list">
+      {% for release in releases %}
+      <article class="release-card status-{{ release.status }}">
+        <div class="release-summary">
+          <div>
+            <span class="release-version">{{ release.version }}</span>
+            <h3>{{ release.item_count }} productos</h3>
+          </div>
+          <span class="state-pill {% if release.status == 'published' %}complete{% else %}pending{% endif %}">{{ release.status }}</span>
+        </div>
+        <dl class="release-proof">
+          <div><dt>Release</dt><dd><code>{{ release.catalog_release_id }}</code></dd></div>
+          <div><dt>Snapshot</dt><dd><code>{{ release.snapshot_sha256[:20] }}…</code></dd></div>
+          <div><dt>Publicado por</dt><dd>{{ release.published_by or 'Sin publicar' }}</dd></div>
+        </dl>
+        {% if release.status == 'published' %}
+        <details class="export-composer">
+          <summary>Configurar exportación</summary>
+          <form method="post" action="/operator/catalogs/{{ release.catalog_release_id }}/exports">
+            <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+            <label><span>Título</span><input name="title" maxlength="120" value="Catálogo {{ release.version }}" required></label>
+            <label><span>Subtítulo</span><input name="subtitle" maxlength="180" value="Perfect Trading · {{ release.item_count }} productos"></label>
+            <div class="composer-row">
+              <label><span>Agrupar por</span>
+                <select name="group_by">
+                  <option value="category_path">Categoría</option>
+                  <option value="brand">Marca</option>
+                  <option value="internal_reference_original">Referencia</option>
+                </select>
+              </label>
+              <label><span>Columnas</span><select name="columns"><option>1</option><option selected>2</option><option>3</option></select></label>
+            </div>
+            <div class="format-grid">
+              <label><span>PDF digital</span><select name="format_pdf"><option value="yes">Generar</option><option value="no">Omitir</option></select></label>
+              <label><span>PowerPoint</span><select name="format_pptx"><option value="yes">Generar</option><option value="no">Omitir</option></select></label>
+              <label><span>InDesign JSON</span><select name="format_indesign_json"><option value="yes">Generar</option><option value="no">Omitir</option></select></label>
+            </div>
+            <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo la exportación de esta versión publicada exacta.</span></label>
+            <button type="submit" class="primary-button">Generar entregables</button>
+          </form>
+        </details>
+        {% else %}
+        <div class="draft-note">Este borrador no puede exportarse hasta completar su publicación controlada.</div>
+        {% if release.status == 'draft' %}
+        <details class="publish-composer">
+          <summary>Revisar checksum y publicar</summary>
+          <form method="post" action="/operator/catalogs/{{ release.catalog_release_id }}/publish">
+            <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+            <input type="hidden" name="snapshot_sha256" value="{{ release.snapshot_sha256 }}">
+            <code>{{ release.snapshot_sha256 }}</code>
+            <label><span>Motivo auditable</span><textarea name="reason" minlength="4" maxlength="500" required></textarea></label>
+            <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo la publicación de este UUID y checksum exactos.</span></label>
+            <button type="submit" class="primary-button">Publicar versión</button>
+          </form>
+        </details>
+        {% endif %}
+        {% endif %}
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <section class="empty-state compact"><h2>No hay releases</h2><p>Primero debe construirse y publicarse una versión desde un plan completamente revisado.</p></section>
+    {% endif %}
+  </div>
+
+  <aside class="delivery-panel">
+    <span class="kicker">02 · Entregables</span>
+    <h2>Exportaciones recientes</h2>
+    <p>Las descargas sólo están disponibles dentro de esta sesión protegida.</p>
+    {% if exports %}
+    <div class="delivery-list">
+      {% for export in exports %}
+      <article>
+        <div><strong>{{ export.release.version }}</strong><small>{{ export.release.item_count }} productos</small></div>
+        <ul>
+          {% for file in export.files %}
+          <li><a href="/operator/catalogs/{{ export.release_id }}/exports/{{ export.export_id }}/{{ file.filename }}">{{ file.format }}</a><span>{{ file.bytes }} B</span></li>
+          {% endfor %}
+          <li><a href="/operator/catalogs/{{ export.release_id }}/exports/{{ export.export_id }}/{{ export.manifest }}">manifiesto</a><span>SHA-256</span></li>
+        </ul>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="delivery-empty">Todavía no hay entregables generados.</div>
+    {% endif %}
+  </aside>
+</section>
+{% endblock %}

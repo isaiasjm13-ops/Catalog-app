@@ -1,5 +1,20 @@
 # Exportación de catálogos publicados
 
+## Desde la consola visual
+
+Con `INICIAR-REVISOR.cmd` activo, abre `http://127.0.0.1:8081/operator/catalogs`.
+La pantalla permite, en orden:
+
+1. construir un borrador inmutable desde un plan aplicado y completamente revisado;
+2. revisar UUID/checksum y publicar individualmente el borrador;
+3. elegir título, subtítulo, agrupación, columnas y formatos;
+4. generar y descargar PDF, PPTX, snapshot InDesign y manifiesto.
+
+Los archivos quedan bajo `data/exports/catalogs/<release-uuid>/<export-uuid>/`. El navegador
+no decide rutas y sólo puede descargar nombres incluidos en el manifiesto de esa exportación.
+
+## Desde línea de comandos
+
 El comando `export-catalog` genera entregables únicamente desde un release con estado
 `published`. Antes de escribir, vuelve a validar los hashes de cada producto y el checksum
 global del release.

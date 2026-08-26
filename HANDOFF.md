@@ -1,5 +1,23 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Sesión actual: Estudio visual de catálogos (2026-08-26)
+
+### Resultado de esta sesión
+
+- Nueva navegación `Catálogos` en la consola operador con listado de planes, releases y entregables.
+- Construcción individual de borradores y publicación por checksum exacto desde formularios con sesión,
+  Origin, CSRF, confirmación y actor derivado de la sesión; no existen acciones masivas.
+- Configuración visual de título, subtítulo, agrupación, 1-3 columnas y formatos PDF/PPTX/InDesign JSON.
+- Cada ejecución recibe UUID y directorio generado por el servidor. Las descargas autenticadas sólo
+  admiten archivos enumerados por el manifiesto; rutas y nombres arbitrarios quedan rechazados.
+- Historial local de exportaciones reconstruido desde manifiestos, sin depender de estado mutable web.
+
+### Pendiente siguiente
+
+1. Reiniciar el revisor y probar la pantalla con un plan/release empresarial real.
+2. Añadir previsualización HTML antes de generar archivos y filtros/agrupaciones multinivel.
+3. Diseñar adaptadores de plantilla InDesign T4/T2/T1/TABLE/SEPARATOR y reporte de preflight.
+
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
 
 ### Resultado de esta sesión

@@ -195,10 +195,73 @@ dd { margin: 0; font-size: 12px; }
 .promotion-action .confirm-field input { width: 16px; min-height: 16px; }
 .promotion-action > a { margin-left: 10px; color: var(--forest); font-weight: 700; }
 
+.catalog-heading h1 { max-width: 780px; }
+.release-builder { margin: 0 0 24px; border: 1px solid rgba(12, 91, 72, .15); border-radius: 18px; background: rgba(255,255,255,.7); box-shadow: var(--shadow); overflow: hidden; }
+.release-builder > summary { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; cursor: pointer; list-style: none; }
+.release-builder > summary::-webkit-details-marker { display: none; }
+.release-builder summary strong, .release-builder summary small { display: block; }
+.release-builder summary small { margin-top: 4px; color: var(--muted); font-size: 11px; }
+.release-builder summary b { color: var(--forest); font-size: 22px; }
+.builder-content { display: grid; gap: 10px; padding: 0 20px 20px; }
+.builder-form { display: grid; grid-template-columns: minmax(190px, 1fr) 170px 130px minmax(200px, 1fr); gap: 10px; align-items: end; padding: 14px; border-radius: 13px; background: #f3f6f1; }
+.builder-form label { display: grid; gap: 5px; }
+.builder-form .confirm-field { grid-column: 2 / 4; display: grid; grid-template-columns: auto 1fr; align-items: center; color: var(--muted); font-size: 10px; }
+.builder-form .confirm-field input { width: 16px; min-height: 16px; }
+.builder-plan strong, .builder-plan span { display: block; }
+.builder-plan span { margin-top: 5px; color: var(--muted); font-size: 10px; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+.catalog-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, .42fr); gap: 24px; align-items: start; }
+.section-heading { display: flex; justify-content: space-between; align-items: end; margin-bottom: 14px; }
+.section-heading h2 { margin-bottom: 0; }
+.section-heading > span { color: var(--muted); font-size: 11px; }
+.release-list { display: grid; gap: 14px; }
+.release-card { position: relative; padding: 24px; border: 1px solid rgba(12, 91, 72, .13); border-radius: 18px; background: var(--card); box-shadow: var(--shadow); overflow: hidden; }
+.release-card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 5px; background: var(--amber); }
+.release-card.status-published::before { background: #48a46f; }
+.release-summary { display: flex; justify-content: space-between; gap: 20px; align-items: start; }
+.release-version { color: var(--forest); font: 800 12px "Cascadia Code", Consolas, monospace; text-transform: uppercase; letter-spacing: .08em; }
+.release-summary h3 { margin: 7px 0 0; font: 500 25px Georgia, serif; }
+.release-proof { display: grid; gap: 7px; margin: 20px 0; }
+.release-proof div { display: grid; grid-template-columns: 105px 1fr; gap: 12px; }
+.release-proof dd { overflow-wrap: anywhere; }
+.export-composer { border-top: 1px solid var(--line); padding-top: 16px; }
+.export-composer summary { color: var(--forest); cursor: pointer; font-size: 12px; font-weight: 800; }
+.export-composer form { display: grid; gap: 13px; margin-top: 16px; padding: 18px; border-radius: 14px; background: #f3f6f1; }
+.export-composer label { display: grid; gap: 6px; }
+.composer-row, .format-grid { display: grid; gap: 10px; }
+.composer-row { grid-template-columns: 1fr 120px; }
+.format-grid { grid-template-columns: repeat(3, 1fr); }
+.export-composer .confirm-field { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 9px; color: var(--muted); font-size: 11px; }
+.export-composer .confirm-field input { width: 16px; min-height: 16px; }
+.draft-note { margin: 0; padding: 12px; border-radius: 10px; background: #fff3d8; color: #6f541b; font-size: 11px; }
+.publish-composer { margin-top: 12px; }
+.publish-composer summary { color: var(--forest); cursor: pointer; font-size: 11px; font-weight: 800; }
+.publish-composer form { display: grid; gap: 10px; margin-top: 10px; padding: 14px; border-radius: 12px; background: #f3f6f1; }
+.publish-composer code { padding: 9px; border-radius: 8px; background: white; font-size: 9px; }
+.publish-composer label { display: grid; gap: 6px; }
+.publish-composer .confirm-field { display: grid; grid-template-columns: auto 1fr; font-size: 10px; color: var(--muted); }
+.publish-composer .confirm-field input { width: 16px; min-height: 16px; }
+.delivery-panel { position: sticky; top: 20px; padding: 26px; border-radius: 20px; color: white; background: var(--forest-dark); box-shadow: 0 20px 60px rgba(7, 63, 51, .22); }
+.delivery-panel h2 { margin-bottom: 4px; }
+.delivery-panel > p, .delivery-panel .kicker { color: #b9cec5; }
+.delivery-list { display: grid; gap: 11px; margin-top: 22px; }
+.delivery-list article { padding: 15px; border: 1px solid rgba(255,255,255,.13); border-radius: 13px; background: rgba(255,255,255,.06); }
+.delivery-list strong, .delivery-list small { display: block; }
+.delivery-list small { margin-top: 3px; color: #b9cec5; font-size: 10px; }
+.delivery-list ul { display: grid; gap: 7px; padding: 12px 0 0; margin: 12px 0 0; border-top: 1px solid rgba(255,255,255,.12); list-style: none; }
+.delivery-list li { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; }
+.delivery-list a { color: var(--lime); font-weight: 700; text-transform: uppercase; }
+.delivery-list li span { color: #9fb8ae; }
+.delivery-empty { margin-top: 20px; padding: 20px; border: 1px dashed rgba(255,255,255,.2); border-radius: 13px; color: #b9cec5; font-size: 12px; text-align: center; }
+
 @media (max-width: 980px) {
   .review-card { grid-template-columns: 1fr 1fr; }
   .decision-form, .blocked-note, .resolved-note { grid-column: 1 / -1; }
   .intake-layout { grid-template-columns: 1fr; }
+  .catalog-workspace { grid-template-columns: 1fr; }
+  .builder-form { grid-template-columns: 1fr 1fr; }
+  .builder-plan, .builder-reason { grid-column: 1 / -1; }
+  .delivery-panel { position: static; }
   .intake-row { grid-template-columns: 58px 1fr 1fr; }
   .intake-details { grid-column: 2 / -1; }
 }
@@ -220,5 +283,8 @@ dd { margin: 0; font-size: 12px; }
   .upload-form { grid-template-columns: 1fr; }
   .upload-form label:nth-of-type(3), .upload-form .confirm-field, .upload-form button { grid-column: auto; }
   .intake-row { grid-template-columns: 48px 1fr; }
+  .composer-row, .format-grid { grid-template-columns: 1fr; }
+  .builder-form { grid-template-columns: 1fr; }
+  .builder-form .confirm-field, .builder-plan, .builder-reason { grid-column: auto; }
   .intake-proof, .intake-details { grid-column: 1 / -1; }
 }

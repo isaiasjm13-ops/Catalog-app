@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import json
 import tempfile
 import unittest
 import uuid
@@ -22,6 +23,7 @@ PLAN_ID = uuid.uuid4()
 PRODUCT_ID = uuid.uuid4()
 FINGERPRINT = "a" * 64
 REVIEW_SHA256 = "b" * 64
+RELEASE_ID = uuid.uuid4()
 
 
 class SyntheticReviewGateway:
@@ -30,6 +32,15 @@ class SyntheticReviewGateway:
         self.decisions: list[dict[str, Any]] = []
         self.intake_records: list[dict[str, Any]] = []
         self.promotions: list[dict[str, Any]] = []
+        self.catalog_exports: list[dict[str, Any]] = []
+        self.release_changes: list[dict[str, Any]] = []
+        self.release_data = [{
+            "catalog_release_id": str(RELEASE_ID),
+            "brand_id": str(uuid.uuid4()), "version": "2026.08", "status": "published",
+            "snapshot_sha256": "c" * 64, "created_at": "2026-08-26T00:00:00Z",
+            "created_by": "builder", "published_at": "2026-08-26T01:00:00Z",
+            "published_by": "publisher", "item_count": 12,
+        }]
         self.plan_data = {
             "import_plan_id": str(PLAN_ID),
             "approval_fingerprint_sha256": FINGERPRINT,
@@ -174,6 +185,61 @@ class SyntheticReviewGateway:
             "offset": offset,
         }
 
+    def catalog_releases(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        return self.release_data[:limit]
+
+    def build_catalog_release(
+        self, plan_id: uuid.UUID, fingerprint: str, version: str,
+        actor: str, reason: str, brand: str,
+    ) -> dict[str, Any]:
+        release_id = uuid.uuid4()
+        change = {"operation": "build", "plan_id": plan_id, "fingerprint": fingerprint,
+                  "version": version, "actor": actor, "reason": reason, "brand": brand,
+                  "release_id": release_id}
+        self.release_changes.append(change)
+        self.release_data.insert(0, {
+            "catalog_release_id": str(release_id), "brand_id": str(uuid.uuid4()),
+            "version": version, "status": "draft", "snapshot_sha256": "e" * 64,
+            "created_at": "2026-08-26T02:00:00Z", "created_by": actor,
+            "published_at": None, "published_by": None, "item_count": 1,
+        })
+        return {"status": "built", "release_id": str(release_id)}
+
+    def publish_catalog_release(
+        self, release_id: uuid.UUID, snapshot_sha256: str, actor: str, reason: str,
+    ) -> dict[str, Any]:
+        release = next(item for item in self.release_data if item["catalog_release_id"] == str(release_id))
+        if release["snapshot_sha256"] != snapshot_sha256:
+            raise PermissionError("checksum incorrecto")
+        release["status"] = "published"
+        release["published_by"] = actor
+        self.release_changes.append({"operation": "publish", "release_id": release_id, "actor": actor, "reason": reason})
+        return {"status": "published", "release_id": str(release_id)}
+
+    def export_catalog(
+        self, release_id: uuid.UUID, output_root: Path,
+        *, formats: tuple[str, ...], export_config: dict[str, Any],
+    ) -> dict[str, Any]:
+        export_id = uuid.uuid4()
+        directory = output_root / str(release_id) / str(export_id)
+        directory.mkdir(parents=True)
+        files = []
+        for output_format in formats:
+            filename = f"catalog.{output_format.replace('indesign-json', 'indesign.json')}"
+            content = f"synthetic-{output_format}".encode()
+            (directory / filename).write_bytes(content)
+            files.append({"format": output_format, "filename": filename, "bytes": len(content), "sha256": "d" * 64})
+        manifest_name = "catalog.manifest.json"
+        manifest = {
+            "schema": "perfect-catalog.export-manifest.v1",
+            "release": {"release_id": str(release_id), "version": "2026.08", "item_count": 12},
+            "files": files,
+        }
+        (directory / manifest_name).write_text(json.dumps(manifest), encoding="utf-8")
+        result = {**manifest, "export_id": str(export_id), "manifest": manifest_name}
+        self.catalog_exports.append({"config": export_config, "formats": formats, **result})
+        return result
+
 
 def hidden_value(html: str, name: str) -> str:
     match = re.search(
@@ -233,6 +299,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
                     self.gateway,
                     self.auth,
                     intake_root=Path(self.temporary.name),
+                    catalog_output_dir=Path(self.temporary.name) / "catalogs",
                 )
             ),
             base_url="http://testserver",
@@ -316,6 +383,86 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Empaque &lt;script&gt;incorrecto", queue.text)
         self.assertIn(REVIEW_SHA256, queue.text)
         self.assertNotIn("<script>incorrecto</script>", queue.text)
+
+    async def test_catalog_workspace_exports_and_downloads_manifest_files(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/catalogs")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("2026.08", page.text)
+        self.assertIn("12 productos", page.text)
+        response = await self.client.post(
+            f"/operator/catalogs/{RELEASE_ID}/exports",
+            data={
+                "csrf_token": hidden_value(page.text, "csrf_token"),
+                "title": "Catálogo web",
+                "subtitle": "Edición segura",
+                "group_by": "category_path",
+                "columns": "2",
+                "format_pdf": "yes",
+                "format_pptx": "no",
+                "format_indesign_json": "yes",
+                "confirm": "yes",
+            },
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/operator/catalogs?result=created")
+        self.assertEqual(self.gateway.catalog_exports[0]["formats"], ("pdf", "indesign-json"))
+        export_id = self.gateway.catalog_exports[0]["export_id"]
+        download = await self.client.get(
+            f"/operator/catalogs/{RELEASE_ID}/exports/{export_id}/catalog.pdf"
+        )
+        self.assertEqual(download.status_code, 200)
+        self.assertEqual(download.content, b"synthetic-pdf")
+        denied = await self.client.get(
+            f"/operator/catalogs/{RELEASE_ID}/exports/{export_id}/secret.txt"
+        )
+        self.assertEqual(denied.status_code, 404)
+
+    async def test_catalog_export_requires_origin_csrf_and_exact_fields(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/catalogs")
+        fields = {
+            "csrf_token": hidden_value(page.text, "csrf_token"),
+            "title": "Catálogo web", "subtitle": "", "group_by": "category_path",
+            "columns": "2", "format_pdf": "yes", "format_pptx": "yes",
+            "format_indesign_json": "yes", "confirm": "yes",
+        }
+        no_origin = await self.client.post(f"/operator/catalogs/{RELEASE_ID}/exports", data=fields)
+        self.assertEqual(no_origin.status_code, 403)
+        bad_csrf = await self.client.post(
+            f"/operator/catalogs/{RELEASE_ID}/exports",
+            data={**fields, "csrf_token": "wrong"}, headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(bad_csrf.status_code, 403)
+        self.assertFalse(self.gateway.catalog_exports)
+
+    async def test_catalog_release_build_and_publish_are_individual_csrf_posts(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/catalogs")
+        csrf = hidden_value(page.text, "csrf_token")
+        built = await self.client.post(
+            "/operator/catalogs/releases",
+            data={
+                "csrf_token": csrf, "plan_id": str(PLAN_ID), "fingerprint": FINGERPRINT,
+                "version": "2026.09", "brand": "NATSUKI", "reason": "Edición revisada",
+                "confirm": "yes",
+            }, headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(built.status_code, 303)
+        self.assertEqual(built.headers["location"], "/operator/catalogs?result=built")
+        draft = self.gateway.release_data[0]
+        published = await self.client.post(
+            f"/operator/catalogs/{draft['catalog_release_id']}/publish",
+            data={
+                "csrf_token": csrf, "snapshot_sha256": draft["snapshot_sha256"],
+                "reason": "Checksum revisado", "confirm": "yes",
+            }, headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(published.status_code, 303)
+        self.assertEqual(published.headers["location"], "/operator/catalogs?result=published")
+        self.assertEqual(draft["status"], "published")
+        self.assertEqual([item["operation"] for item in self.gateway.release_changes], ["build", "publish"])
 
     async def test_decision_requires_same_origin_and_exact_csrf(self) -> None:
         await self.login()

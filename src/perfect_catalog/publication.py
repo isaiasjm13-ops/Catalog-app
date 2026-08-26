@@ -625,6 +625,31 @@ def load_published_release(
     return release, items
 
 
+def list_catalog_releases(
+    config: DatabaseConfig, password: str, *, limit: int = 100
+) -> list[dict[str, Any]]:
+    if limit < 1 or limit > 500:
+        raise ValueError("limit debe estar entre 1 y 500.")
+    with psycopg.connect(**config.connection_kwargs(password)) as connection:
+        with connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                """
+                SELECT r.catalog_release_id, r.brand_id, r.version, r.status,
+                       r.snapshot_sha256, r.created_at, r.created_by,
+                       r.published_at, r.published_by,
+                       count(i.catalog_release_item_id) AS item_count
+                FROM perfect_catalog.catalog_release AS r
+                LEFT JOIN perfect_catalog.catalog_release_item AS i
+                  ON i.catalog_release_id = r.catalog_release_id
+                GROUP BY r.catalog_release_id
+                ORDER BY r.created_at DESC, r.catalog_release_id DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+
 def _verify_source_plan_for_release(
     connection: Connection[Any], release: dict[str, Any]
 ) -> dict[str, Any]:

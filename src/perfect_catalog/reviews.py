@@ -843,6 +843,42 @@ class DatabaseReviewGateway:
     def close(self) -> None:
         self._password = ""
 
+    def catalog_releases(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        from .publication import list_catalog_releases
+
+        return list_catalog_releases(self._config, self._password, limit=limit)
+
+    def export_catalog(
+        self, release_id: uuid.UUID, output_root: Path,
+        *, formats: tuple[str, ...], export_config: dict[str, Any],
+    ) -> dict[str, Any]:
+        from .catalog_export_job import create_operator_catalog_export
+
+        return create_operator_catalog_export(
+            release_id, self._config, self._password, output_root,
+            formats=formats, config=export_config,
+        )
+
+    def build_catalog_release(
+        self, plan_id: uuid.UUID, fingerprint: str, version: str,
+        actor: str, reason: str, brand: str,
+    ) -> dict[str, Any]:
+        from .publication import build_release
+
+        return build_release(
+            plan_id, fingerprint, version, actor, reason,
+            self._config, self._password, brand_name=brand,
+        )
+
+    def publish_catalog_release(
+        self, release_id: uuid.UUID, snapshot_sha256: str, actor: str, reason: str,
+    ) -> dict[str, Any]:
+        from .publication import publish_release
+
+        return publish_release(
+            release_id, snapshot_sha256, actor, reason, self._config, self._password
+        )
+
     def plans(self, *, limit: int = 100) -> list[dict[str, Any]]:
         return list_review_plans(self._config, self._password, limit=limit)
 

@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import uuid
 from pathlib import Path
 from typing import Any, Iterable
@@ -123,3 +124,92 @@ def export_catalog_release(
 ) -> dict[str, Any]:
     release, items = load_published_release(release_id, database, password)
     return build_catalog_bundle(release, items, output_dir, formats=formats, config=config)
+
+
+def create_operator_catalog_export(
+    release_id: uuid.UUID,
+    database: DatabaseConfig,
+    password: str,
+    output_root: Path,
+    *,
+    formats: Iterable[str],
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    export_id = uuid.uuid4()
+    root = output_root.resolve()
+    temporary = root / f".tmp-{export_id}"
+    destination = root / str(release_id) / str(export_id)
+    if destination.exists() or temporary.exists():
+        raise FileExistsError("La identidad de exportación ya existe.")
+    try:
+        result = export_catalog_release(
+            release_id, database, password, temporary,
+            formats=formats, config=config,
+        )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary.replace(destination)
+    except Exception:
+        if temporary.is_dir() and temporary.parent == root:
+            shutil.rmtree(temporary)
+        raise
+    return {
+        **result,
+        "export_id": str(export_id),
+        "output_dir": str(destination),
+    }
+
+
+def resolve_catalog_download(
+    output_root: Path,
+    release_id: uuid.UUID,
+    export_id: uuid.UUID,
+    filename: str,
+) -> Path:
+    if not filename or filename != Path(filename).name or len(filename) > 180:
+        raise ValueError("Nombre de descarga inválido.")
+    directory = output_root.resolve() / str(release_id) / str(export_id)
+    manifests = list(directory.glob("*.manifest.json")) if directory.is_dir() else []
+    if len(manifests) != 1:
+        raise FileNotFoundError("La exportación no tiene un manifiesto único.")
+    manifest = json.loads(manifests[0].read_text(encoding="utf-8"))
+    allowed = {manifests[0].name}
+    allowed.update(str(item["filename"]) for item in manifest.get("files", []))
+    if filename not in allowed:
+        raise PermissionError("El archivo no pertenece al manifiesto de exportación.")
+    target = directory / filename
+    if not target.is_file() or target.parent.resolve() != directory.resolve():
+        raise FileNotFoundError("El archivo exportado no existe.")
+    return target
+
+
+def list_operator_catalog_exports(output_root: Path, *, limit: int = 100) -> list[dict[str, Any]]:
+    if limit < 1 or limit > 500:
+        raise ValueError("limit debe estar entre 1 y 500.")
+    root = output_root.resolve()
+    if not root.is_dir():
+        return []
+    results: list[dict[str, Any]] = []
+    for manifest_path in sorted(root.glob("*/*/*.manifest.json"), reverse=True):
+        try:
+            release_id = uuid.UUID(manifest_path.parent.parent.name)
+            export_id = uuid.UUID(manifest_path.parent.name)
+            if manifest_path.resolve().parent.parent.parent != root:
+                continue
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if manifest.get("schema") != EXPORT_MANIFEST_SCHEMA:
+                continue
+            files = list(manifest.get("files") or [])
+            if any(not isinstance(item, dict) or "filename" not in item for item in files):
+                continue
+            results.append({
+                "release_id": str(release_id),
+                "export_id": str(export_id),
+                "manifest": manifest_path.name,
+                "release": manifest.get("release") or {},
+                "files": files,
+            })
+        except (ValueError, OSError, json.JSONDecodeError):
+            continue
+        if len(results) >= limit:
+            break
+    return results
