@@ -65,6 +65,8 @@ Comprueba esquema/release, lista exacta del directorio, bytes y SHA-256 de cada 
 abre los ZIP digital e InDesign, rechaza rutas inseguras, duplicadas o cifradas, limita el tamaño
 descomprimido y vuelve a comprobar que todas las imágenes manifestadas estén dentro de cada paquete.
 Un resultado válido devuelve `perfect-catalog.export-verification.v1` con estado `verified`.
+La misma comprobación se ejecuta automáticamente antes de que una exportación nueva sea entregada
+por CLI o movida desde el directorio temporal al historial de la consola operador.
 
 ## Contrato InDesign v1
 

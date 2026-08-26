@@ -99,6 +99,9 @@
 - Toda exportación InDesign genera además `*.datamerge.csv` y lo incluye como
   `catalog.datamerge.csv` en el paquete. Usa UTF-8 BOM, quoting CSV, listas unidas con `;`, campo
   relativo `@image` y neutralización de fórmulas para apertura segura en hojas de cálculo.
+- La construcción de cualquier bundle ejecuta automáticamente `verify_catalog_bundle` después de
+  escribir el manifiesto. Sólo retorna/mueve la exportación si archivos, hashes, ZIP e imágenes dan
+  estado `verified`; CLI y operador reciben esa evidencia en el resultado.
 - Suite local actual: 198 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)

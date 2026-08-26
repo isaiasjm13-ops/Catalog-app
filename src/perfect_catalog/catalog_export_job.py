@@ -308,7 +308,11 @@ def build_catalog_bundle(
     }
     manifest_name = f"{stem}.manifest.json"
     _write_new(output_dir / manifest_name, _json_bytes(manifest))
-    return {**manifest, "output_dir": str(output_dir), "manifest": manifest_name}
+    verification = verify_catalog_bundle(output_dir / manifest_name)
+    return {
+        **manifest, "output_dir": str(output_dir), "manifest": manifest_name,
+        "verification": verification,
+    }
 
 
 def export_catalog_release(

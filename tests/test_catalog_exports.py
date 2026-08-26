@@ -136,6 +136,8 @@ class CatalogExportTests(unittest.TestCase):
                 config={"title": "Catálogo verificable", "columns_per_row": 2},
             )
             self.assertEqual([entry["format"] for entry in result["files"]], ["html", "digital-zip", "pdf", "pptx", "indesign-json", "indesign-csv", "indesign-package"])
+            self.assertEqual(result["verification"]["status"], "verified")
+            self.assertEqual(result["verification"]["file_count"], len(result["files"]))
             zip_entry = next(item for item in result["files"] if item["format"] == "digital-zip")
             with zipfile.ZipFile(output / zip_entry["filename"]) as digital:
                 self.assertIn("index.html", digital.namelist())
