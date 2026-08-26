@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import csv
 import uuid
 from collections import defaultdict
 from html import escape
@@ -252,3 +253,25 @@ def generate_catalog_html(
 :root{{--ink:{palette['ink']};--forest:{palette['primary']};--paper:{palette['paper']};--card:{palette['card']};--line:#d9d5c9}}*{{box-sizing:border-box}}body{{margin:0;color:var(--ink);background:var(--paper);font:15px/1.5 Arial,sans-serif}}main{{max-width:1280px;margin:auto;padding:clamp(24px,5vw,72px)}}.hero{{min-height:45vh;display:grid;align-content:end;padding:8vw 0 4vw;border-bottom:4px solid var(--ink)}}.hero small{{color:var(--forest);font-weight:800;letter-spacing:.16em;text-transform:uppercase}}h1{{max-width:900px;margin:.2em 0;font:500 clamp(44px,8vw,104px)/.9 Georgia,serif}}.hero p{{max-width:700px;font-size:18px}}section{{padding:45px 0}}section>header{{display:flex;justify-content:space-between;gap:20px;align-items:end;border-bottom:1px solid var(--line)}}h2{{font:500 clamp(27px,4vw,48px) Georgia,serif}}section>header span{{padding-bottom:1.2em;color:#65716b}}.products{{display:grid;grid-template-columns:repeat({columns},minmax(0,1fr));gap:18px;padding-top:22px}}.product{{min-width:0;padding:18px;background:var(--card);border:1px solid var(--line)}}.photo{{height:190px;margin:-18px -18px 18px;background:#f8f8f5;display:grid;place-items:center;overflow:hidden}}.photo img{{width:100%;height:100%;object-fit:contain}}code{{color:var(--forest);font-weight:800}}h3{{margin:.5em 0;font:500 22px/1.15 Georgia,serif}}.proof{{padding:24px 0;border-top:1px solid var(--line);overflow-wrap:anywhere;color:#65716b;font-size:12px}}@media(max-width:760px){{.products{{grid-template-columns:1fr}}.hero{{min-height:35vh}}}}
 </style></head><body><main><header class="hero"><small>Perfect Trading · edición {version}</small><h1>{title}</h1><p>{subtitle}</p></header>{''.join(sections)}<footer class="proof">Release SHA-256: {checksum}</footer></main></body></html>"""
     return html.encode("utf-8")
+
+
+def generate_indesign_datamerge_csv(rows: list[dict[str, Any]]) -> bytes:
+    """CSV UTF-8 BOM para Data Merge, sin fórmulas interpretables al abrirlo en hojas de cálculo."""
+    def cell(value: object) -> str:
+        if isinstance(value, (list, tuple)):
+            text = "; ".join(str(item) for item in value)
+        else:
+            text = "" if value is None else str(value)
+        return "'" + text if text.startswith(("=", "+", "-", "@")) else text
+
+    stream = io.StringIO(newline="")
+    writer = csv.writer(stream, lineterminator="\r\n")
+    writer.writerow(("reference", "name", "category", "brand", "applications", "oem_references", "@image"))
+    for row in rows:
+        writer.writerow((
+            cell(row.get("internal_reference_original")), cell(row.get("name_original")),
+            cell(row.get("category_path")), cell(row.get("brand")),
+            cell(row.get("applications")), cell(row.get("oem_references")),
+            cell(row.get("image_path")),
+        ))
+    return stream.getvalue().encode("utf-8-sig")

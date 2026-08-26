@@ -96,6 +96,9 @@
   abreviado y número de página. PPTX aplica la paleta a portada, fondos, títulos, subtítulo y fichas.
 - QA visual real del PDF industrial completado en el visor integrado: portada de dos páginas sin
   recortes, título/subtítulo centrados, color temático, márgenes y pie legibles. Artefacto QA eliminado.
+- Toda exportación InDesign genera además `*.datamerge.csv` y lo incluye como
+  `catalog.datamerge.csv` en el paquete. Usa UTF-8 BOM, quoting CSV, listas unidas con `;`, campo
+  relativo `@image` y neutralización de fórmulas para apertura segura en hojas de cálculo.
 - Suite local actual: 198 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)

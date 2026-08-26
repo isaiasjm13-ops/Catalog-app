@@ -11,7 +11,7 @@ import zipfile
 from pathlib import Path
 from typing import Any, Iterable
 
-from .catalog_exports import CATALOG_THEMES, export_rows_from_release, generate_catalog_html, generate_catalog_pdf, generate_catalog_pptx
+from .catalog_exports import CATALOG_THEMES, export_rows_from_release, generate_catalog_html, generate_catalog_pdf, generate_catalog_pptx, generate_indesign_datamerge_csv
 from .config import DatabaseConfig
 from .publication import load_published_release
 
@@ -72,7 +72,8 @@ def _digital_zip(
 
 
 def _indesign_zip(
-    snapshot_content: bytes, image_files: list[dict[str, Any]], output_dir: Path
+    snapshot_content: bytes, datamerge_content: bytes,
+    image_files: list[dict[str, Any]], output_dir: Path
 ) -> bytes:
     script_path = Path(__file__).resolve().parents[2] / "indesign" / "ImportPerfectCatalog.jsx"
     if not script_path.is_file():
@@ -84,9 +85,11 @@ def _indesign_zip(
         "3. Ejecuta ImportPerfectCatalog.jsx desde Ventana > Utilidades > Scripts.\r\n"
         "4. El script detecta catalog.indesign.json y solicita dónde guardar el INDD.\r\n"
         "5. Revisa el archivo .preflight.json generado junto al INDD.\r\n"
+        "Alternativa: usa catalog.datamerge.csv desde Ventana > Utilidades > Combinación de datos.\r\n"
     ).encode("utf-8")
     entries = [
         ("catalog.indesign.json", snapshot_content),
+        ("catalog.datamerge.csv", datamerge_content),
         ("ImportPerfectCatalog.jsx", script_path.read_bytes()),
         ("LEEME-INDESIGN.txt", instructions),
     ]
@@ -278,9 +281,13 @@ def build_catalog_bundle(
             "products": rows,
         }
         snapshot_content = _json_bytes(snapshot)
+        datamerge_content = generate_indesign_datamerge_csv(rows)
         payloads["indesign-json"] = (f"{stem}.indesign.json", snapshot_content)
+        payloads["indesign-csv"] = (f"{stem}.datamerge.csv", datamerge_content)
         payloads["indesign-package"] = (
-            f"{stem}.indesign.zip", _indesign_zip(snapshot_content, image_files, output_dir)
+            f"{stem}.indesign.zip", _indesign_zip(
+                snapshot_content, datamerge_content, image_files, output_dir
+            )
         )
 
     files: list[dict[str, Any]] = list(image_files)
@@ -428,7 +435,7 @@ def verify_catalog_bundle(manifest_path: Path) -> dict[str, Any]:
     }
     for package_format, required in (
         ("digital-zip", {"index.html"}),
-        ("indesign-package", {"catalog.indesign.json", "ImportPerfectCatalog.jsx", "LEEME-INDESIGN.txt"}),
+        ("indesign-package", {"catalog.indesign.json", "catalog.datamerge.csv", "ImportPerfectCatalog.jsx", "LEEME-INDESIGN.txt"}),
     ):
         package_name = formats.get(package_format)
         if not package_name:

@@ -42,6 +42,7 @@ Por defecto se generan:
 - PDF para distribución e impresión.
 - PPTX editable para presentación digital.
 - `*.indesign.json`, snapshot UTF-8 estable para InDesign.
+- `*.datamerge.csv`, fuente UTF-8 BOM para Data Merge con campo de imagen `@image`.
 - `*.indesign.zip`, paquete autocontenido con snapshot, imágenes, JSX e instrucciones.
 - `*.manifest.json`, con release, versión, checksum fuente y SHA-256 de cada entregable.
 
@@ -83,6 +84,11 @@ TABLE y páginas SEPARATOR sin consultar la base de datos directamente desde InD
 3. Ejecuta el `ImportPerfectCatalog.jsx` extraído. Detectará automáticamente
    `catalog.indesign.json` en la misma carpeta; instalado separadamente conserva el selector manual.
 4. Elige dónde guardar el `.indd`.
+
+Como alternativa, abre `Ventana > Utilidades > Combinación de datos` y selecciona
+`catalog.datamerge.csv`. Sus columnas son referencia, nombre, categoría, marca, aplicaciones, OEM e
+imagen relativa. El CSV usa BOM UTF-8, conserva comas mediante quoting y neutraliza prefijos de
+fórmula (`=`, `+`, `-`, `@`) en datos procedentes del snapshot.
 
 El script v1 crea portada, separadores automáticos por grupo y páginas de producto según
 el perfil seleccionado: T4, T2, T1 o TABLE. Guarda en las etiquetas del documento el UUID,

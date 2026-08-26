@@ -2,6 +2,7 @@ import io
 import json
 import hashlib
 import base64
+import csv
 import tempfile
 import unittest
 from unittest import mock
@@ -9,7 +10,7 @@ import uuid
 import zipfile
 from pathlib import Path
 
-from perfect_catalog.catalog_exports import export_rows_from_release, generate_catalog_html, generate_catalog_pdf, generate_catalog_pptx
+from perfect_catalog.catalog_exports import export_rows_from_release, generate_catalog_html, generate_catalog_pdf, generate_catalog_pptx, generate_indesign_datamerge_csv
 from perfect_catalog.catalog_export_job import (
     build_catalog_bundle,
     build_catalog_preview,
@@ -95,6 +96,22 @@ class CatalogExportTests(unittest.TestCase):
         rows[0]["name_original"] = "Empaque <desconocido> & seguro"
         self.assertTrue(generate_catalog_pdf(rows).startswith(b"%PDF-"))
 
+    def test_indesign_datamerge_csv_has_bom_quotes_lists_and_neutralizes_formulas(self) -> None:
+        content = generate_indesign_datamerge_csv([{
+            "internal_reference_original": "=DANGEROUS",
+            "name_original": "Empaque, motor",
+            "category_path": "Motor", "brand": "Natsuki",
+            "applications": ["Toyota", "Honda"], "oem_references": ["+OEM"],
+            "image_path": "image-safe.jpg",
+        }])
+        self.assertTrue(content.startswith(b"\xef\xbb\xbf"))
+        row = next(csv.DictReader(io.StringIO(content.decode("utf-8-sig"))))
+        self.assertEqual(row["reference"], "'=DANGEROUS")
+        self.assertEqual(row["name"], "Empaque, motor")
+        self.assertEqual(row["applications"], "Toyota; Honda")
+        self.assertEqual(row["oem_references"], "'+OEM")
+        self.assertEqual(row["@image"], "image-safe.jpg")
+
     def test_digital_html_is_responsive_traceable_and_escapes_snapshot_text(self) -> None:
         release, items = fixture_release()
         rows = export_rows_from_release(release, items)
@@ -118,7 +135,7 @@ class CatalogExportTests(unittest.TestCase):
                 release, items, output,
                 config={"title": "Catálogo verificable", "columns_per_row": 2},
             )
-            self.assertEqual([entry["format"] for entry in result["files"]], ["html", "digital-zip", "pdf", "pptx", "indesign-json", "indesign-package"])
+            self.assertEqual([entry["format"] for entry in result["files"]], ["html", "digital-zip", "pdf", "pptx", "indesign-json", "indesign-csv", "indesign-package"])
             zip_entry = next(item for item in result["files"] if item["format"] == "digital-zip")
             with zipfile.ZipFile(output / zip_entry["filename"]) as digital:
                 self.assertIn("index.html", digital.namelist())
@@ -136,11 +153,16 @@ class CatalogExportTests(unittest.TestCase):
             with zipfile.ZipFile(output / package_entry["filename"]) as package:
                 self.assertEqual(
                     set(package.namelist()),
-                    {"catalog.indesign.json", "ImportPerfectCatalog.jsx", "LEEME-INDESIGN.txt"},
+                    {"catalog.indesign.json", "catalog.datamerge.csv", "ImportPerfectCatalog.jsx", "LEEME-INDESIGN.txt"},
                 )
                 self.assertEqual(
                     json.loads(package.read("catalog.indesign.json")), snapshot,
                 )
+                data_merge = list(csv.DictReader(io.StringIO(
+                    package.read("catalog.datamerge.csv").decode("utf-8-sig")
+                )))
+                self.assertEqual(data_merge[0]["reference"], "NK-001")
+                self.assertIn("@image", data_merge[0])
             verification = verify_catalog_bundle(output / result["manifest"])
             self.assertEqual(verification["status"], "verified")
             self.assertEqual(verification["file_count"], len(result["files"]))
