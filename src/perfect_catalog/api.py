@@ -21,6 +21,7 @@ from .web import (
     ReleaseCatalogRepository,
     render_product,
     render_category_filters,
+    render_pagination,
     render_results,
 )
 from .config import DatabaseConfig, prompt_password
@@ -175,11 +176,19 @@ def create_app(repository: CatalogReader, *, image_root: Path = Path("data/image
         )
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
-    def catalog_page(q: str = "", category: str = "") -> str:
+    def catalog_page(
+        q: str = "", category: str = "",
+        page: int = Query(default=1, ge=1, le=10000),
+    ) -> str:
         query = q.strip()
         selected_category = category.strip()
         plan_status, total, _ = repository.plan()
-        items = repository.search(query, selected_category)
+        page_size = 48
+        page_items = repository.search(
+            query, selected_category, page_size + 1, (page - 1) * page_size
+        )
+        has_next = len(page_items) > page_size
+        items = page_items[:page_size]
         category_items = repository.categories()
         import html
 
@@ -189,8 +198,10 @@ def create_app(repository: CatalogReader, *, image_root: Path = Path("data/image
             plan_status=html.escape(plan_status),
             total=total,
             shown=len(items),
+            page=page,
             categories=render_category_filters(category_items, selected_category, query),
             results=render_results(items),
+            pagination=render_pagination(query, selected_category, page, has_next),
         )
 
     @app.get("/producto/{product_id}", response_class=HTMLResponse, include_in_schema=False)

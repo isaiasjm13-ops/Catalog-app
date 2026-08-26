@@ -78,7 +78,9 @@
 - Verificación visual real completada en navegador integrado sobre los 893 productos del piloto XLSX:
   cuadrícula de escritorio, filtro `EMPAQUES / CARTER` con 15 resultados y breakpoint móvil de 390 px
   sin desbordamiento horizontal. El servidor temporal de prueba fue detenido al finalizar.
-- Suite local actual: 200 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
+- La vitrina pública pagina en bloques de 48 productos: consulta sólo 49 filas para detectar si existe
+  una página siguiente, conserva búsqueda/categoría en ambos sentidos y valida `page` entre 1 y 10000.
+- Suite local actual: 201 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 - Suite local actual: 198 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)

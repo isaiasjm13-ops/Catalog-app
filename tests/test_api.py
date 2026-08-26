@@ -4,6 +4,7 @@ import unittest
 import uuid
 import hashlib
 import tempfile
+import copy
 from pathlib import Path
 from typing import Any
 
@@ -181,6 +182,33 @@ class CatalogApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('class="active"', catalog)
         self.assertIn("EMPAQUE SINTÉTICO ÁRBOL", (await self.client.get("/producto/2")).text)
         self.assertNotIn("Volver al catálogo", (await self.client.get("/producto/2/ficha")).text)
+
+    async def test_public_catalog_paginates_and_preserves_filters(self) -> None:
+        repository = SyntheticCatalogRepository()
+        prototype = repository.rows[0]
+        repository.rows = []
+        for index in range(55):
+            item = copy.deepcopy(prototype)
+            item["id"] = f"source-row:{index + 2}"
+            item["row"] = index + 2
+            item["data"]["internal_reference_original"] = f"REF-{index:03d}"
+            item["data"]["internal_reference_normalized"] = f"REF-{index:03d}"
+            repository.rows.append(item)
+        client = httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=create_app(repository)),
+            base_url="http://testserver",
+        )
+        try:
+            first = await client.get("/", params={"q": "REF", "category": "Todos", "page": 1})
+            self.assertEqual(first.text.count('<article class="result">'), 48)
+            self.assertIn("page=2", first.text)
+            self.assertIn("category=Todos", first.text)
+            second = await client.get("/", params={"q": "REF", "category": "Todos", "page": 2})
+            self.assertEqual(second.text.count('<article class="result">'), 7)
+            self.assertIn("page=1", second.text)
+            self.assertEqual((await client.get("/", params={"page": 0})).status_code, 422)
+        finally:
+            await client.aclose()
 
     async def test_published_uuid_is_exposed_without_source_row_identity(self) -> None:
         product_id = uuid.uuid4()

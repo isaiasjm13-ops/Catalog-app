@@ -47,6 +47,7 @@ input {{ background:var(--card); color:var(--ink); }} button {{ background:var(-
 .result-visual {{ min-height:150px; display:grid; place-items:center; position:relative; color:var(--accent-dark); background:linear-gradient(145deg,#edf4f2,#faf8ef); text-decoration:none; overflow:hidden; }} .result-visual span {{ width:54px; height:54px; display:grid; place-items:center; border:1px solid currentColor; border-radius:50%; font:700 17px Arial,sans-serif; }} .result-visual img {{ width:100%; height:190px; object-fit:contain; background:#fff; }} .result-visual.present::after {{ content:'imagen asociada'; position:absolute; right:10px; bottom:9px; padding:3px 5px; color:#fff; background:var(--accent); font:700 9px Arial,sans-serif; letter-spacing:.08em; text-transform:uppercase; }} .result-body {{ display:flex; flex:1; flex-direction:column; padding:18px; }}
 .ref {{ font:700 15px Arial,sans-serif; color:var(--accent-dark); }} .ref a {{ color:inherit; text-decoration:none; }} .name {{ min-height:2.4em; font-size:21px; line-height:1.2; margin:9px 0; }} .meta {{ color:var(--muted); font:12px/1.5 Arial,sans-serif; }} .result-footer {{ display:flex; justify-content:space-between; gap:12px; align-items:end; margin-top:auto; padding-top:18px; }} .qty {{ text-align:right; font:700 18px Arial,sans-serif; }} .qty small {{ display:block; color:var(--muted); font-size:10px; font-weight:400; }} .brand-chip {{ padding:5px 7px; color:var(--accent-dark); background:#e7efed; font:700 10px Arial,sans-serif; text-transform:uppercase; }}
 .empty {{ padding:42px 20px; color:var(--muted); text-align:center; border:1px dashed var(--line); font:15px Arial,sans-serif; }}
+.pagination {{ display:flex; justify-content:space-between; align-items:center; gap:12px; padding:28px 0 0; font:13px Arial,sans-serif; }} .pagination a {{ padding:11px 15px; color:#fff; background:var(--accent); text-decoration:none; }} .pagination .disabled {{ visibility:hidden; }}
 @media(max-width:900px) {{ .results {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} }} @media(max-width:620px) {{ header {{ display:block; }} .header-note {{ text-align:left; margin-top:16px; }} .search,.results {{ grid-template-columns:1fr; }} }}
 </style>
 </head>
@@ -54,8 +55,9 @@ input {{ background:var(--card); color:var(--ink); }} button {{ background:var(-
 <header><div><div class="eyebrow">Perfect Trading / Natsuki</div><h1>Catálogo de empaques</h1></div><div class="header-note">Consulta local de la muestra importada desde Odoo. Datos en revisión, sin cambios empresariales.</div></header>
 <form class="search" method="get"><input name="q" value="{query}" placeholder="Referencia o nombre" autofocus><input name="category" value="{category}" placeholder="Categoría contiene"><button type="submit">Buscar</button></form>
 <nav class="category-strip" aria-label="Categorías del catálogo">{categories}</nav>
-<div class="stats"><span class="stat">Plan <strong>{plan_status}</strong></span><span class="stat">Referencias <strong>{total}</strong></span><span class="stat">Resultados <strong>{shown}</strong></span><span class="stat">Fuente <strong>Odoo</strong></span></div>
+<div class="stats"><span class="stat">Plan <strong>{plan_status}</strong></span><span class="stat">Referencias <strong>{total}</strong></span><span class="stat">Resultados <strong>{shown}</strong></span><span class="stat">Página <strong>{page}</strong></span><span class="stat">Fuente <strong>Odoo</strong></span></div>
 <section class="results">{results}</section>
+{pagination}
 </main></body></html>"""
 
 
@@ -516,6 +518,23 @@ def render_category_filters(
     return "".join(links)
 
 
+def render_pagination(
+    query: str, category: str, page: int, has_next: bool
+) -> str:
+    def target(number: int) -> str:
+        return "/?" + urlencode({"q": query, "category": category, "page": number})
+
+    previous = (
+        f'<a href="{target(page - 1)}">← Anterior</a>'
+        if page > 1 else '<span class="disabled">Anterior</span>'
+    )
+    following = (
+        f'<a href="{target(page + 1)}">Siguiente →</a>'
+        if has_next else '<span class="disabled">Siguiente</span>'
+    )
+    return f'<nav class="pagination" aria-label="Páginas del catálogo">{previous}<strong>Página {page}</strong>{following}</nav>'
+
+
 def render_product(product: dict[str, Any], printable: bool = False) -> str:
     data = product["data"]
     title = html.escape(str(data.get("name_original") or "Producto Natsuki"))
@@ -569,8 +588,18 @@ def make_handler(repository: CatalogReader) -> type[BaseHTTPRequestHandler]:
                 params = parse_qs(parsed.query)
                 query = params.get("q", [""])[0].strip()
                 category = params.get("category", [""])[0].strip()
+                try:
+                    page = int(params.get("page", ["1"])[0])
+                except ValueError:
+                    page = 1
+                page = min(10000, max(1, page))
                 status, total, _ = repository.plan()
-                items = repository.search(query, category) if query or category else repository.search("", "")
+                page_size = 48
+                page_items = repository.search(
+                    query, category, page_size + 1, (page - 1) * page_size
+                )
+                has_next = len(page_items) > page_size
+                items = page_items[:page_size]
                 categories = repository.categories()
                 body = PAGE.format(
                     query=html.escape(query, quote=True),
@@ -578,8 +607,10 @@ def make_handler(repository: CatalogReader) -> type[BaseHTTPRequestHandler]:
                     plan_status=html.escape(status),
                     total=total,
                     shown=len(items),
+                    page=page,
                     categories=render_category_filters(categories, category, query),
                     results=render_results(items),
+                    pagination=render_pagination(query, category, page, has_next),
                 ).encode("utf-8")
             elif parsed.path.startswith("/producto/"):
                 parts = parsed.path.strip("/").split("/")
