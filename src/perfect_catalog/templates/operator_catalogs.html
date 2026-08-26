@@ -85,6 +85,7 @@
               <label><span>PowerPoint</span><select name="format_pptx"><option value="yes">Generar</option><option value="no">Omitir</option></select></label>
               <label><span>InDesign JSON</span><select name="format_indesign_json"><option value="yes">Generar</option><option value="no">Omitir</option></select></label>
             </div>
+            <label><span>Plantilla de producto InDesign</span><select name="template_profile">{% for profile in indesign_templates %}<option value="{{ profile }}">{{ profile }}{% if profile == 'T4' %} · 4 fichas por página{% elif profile == 'T2' %} · 2 fichas por página{% elif profile == 'T1' %} · 1 ficha por página{% else %} · tabla compacta{% endif %}</option>{% endfor %}</select></label>
             <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo la exportación de esta versión publicada exacta.</span></label>
             <button type="submit" class="primary-button">Generar entregables</button>
           </form>

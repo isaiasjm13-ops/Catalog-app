@@ -62,6 +62,11 @@ desde InDesign.
 3. Selecciona el archivo `*.indesign.json` generado por `export-catalog`.
 4. Elige dónde guardar el `.indd`.
 
-El script v1 crea portada y fichas básicas de dos columnas, guarda en las etiquetas del
-documento el UUID y checksum del release, y reporta cuadros con texto desbordado. No
-modifica imágenes originales ni conecta InDesign directamente con PostgreSQL.
+El script v1 crea portada, separadores automáticos por grupo y páginas de producto según
+el perfil seleccionado: T4, T2, T1 o TABLE. Guarda en las etiquetas del documento el UUID,
+checksum y perfil del release. Si el snapshot contiene rutas relativas seguras de imágenes,
+las coloca como enlaces sin modificar los originales.
+
+Al guardar el INDD también crea `*.preflight.json` con imágenes ausentes, índices de fichas
+con texto desbordado y fuentes no disponibles. InDesign nunca se conecta directamente a
+PostgreSQL.

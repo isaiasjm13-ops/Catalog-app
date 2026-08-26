@@ -30,6 +30,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import DatabaseConfig, prompt_password
 from .catalog_export_job import (
+    INDESIGN_TEMPLATE_PROFILES,
     SUPPORTED_FORMATS,
     list_operator_catalog_exports,
     resolve_catalog_download,
@@ -679,6 +680,7 @@ def create_operator_app(
             plans=plans,
             exports=exports,
             formats=SUPPORTED_FORMATS,
+            indesign_templates=INDESIGN_TEMPLATE_PROFILES,
             message=message,
             session=session_or_redirect,
             version=OPERATOR_VERSION,
@@ -781,7 +783,7 @@ def create_operator_app(
         try:
             form = await _parse_form(request)
             allowed_fields = {
-                "csrf_token", "title", "subtitle", "group_by", "columns",
+                "csrf_token", "title", "subtitle", "group_by", "columns", "template_profile",
                 "format_pdf", "format_pptx", "format_indesign_json", "confirm",
             }
             if set(form) != allowed_fields:
@@ -802,6 +804,9 @@ def create_operator_app(
             columns = int(form["columns"])
             if columns not in {1, 2, 3}:
                 raise ValueError("La cantidad de columnas no es válida.")
+            template_profile = form["template_profile"].upper()
+            if template_profile not in INDESIGN_TEMPLATE_PROFILES:
+                raise ValueError("Perfil InDesign no soportado.")
             selected_formats = tuple(
                 output_format for field, output_format in (
                     ("format_pdf", "pdf"),
@@ -822,6 +827,7 @@ def create_operator_app(
                     "subtitle": subtitle,
                     "group_by": group_by,
                     "columns_per_row": columns,
+                    "template_profile": template_profile,
                 },
             )
         except (ValueError, RuntimeError, PermissionError, FileExistsError) as exc:

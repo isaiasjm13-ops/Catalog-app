@@ -88,7 +88,17 @@ class CatalogExportTests(unittest.TestCase):
             snapshot_entry = next(item for item in result["files"] if item["format"] == "indesign-json")
             snapshot = json.loads((output / snapshot_entry["filename"]).read_text(encoding="utf-8"))
             self.assertEqual(snapshot["schema"], "perfect-catalog.indesign-snapshot.v1")
+            self.assertEqual(snapshot["layout"]["template_profile"], "T4")
             self.assertEqual(snapshot["products"][0]["internal_reference_original"], "NK-001")
+
+    def test_bundle_validates_indesign_template_profile(self) -> None:
+        release, items = fixture_release()
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(ValueError, "Perfil InDesign"):
+                build_catalog_bundle(
+                    release, items, Path(temporary) / "bundle",
+                    formats=("indesign-json",), config={"template_profile": "UNKNOWN"},
+                )
 
     def test_bundle_refuses_drafts_and_nonempty_destinations(self) -> None:
         release, items = fixture_release()

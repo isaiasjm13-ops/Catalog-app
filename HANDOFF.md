@@ -20,6 +20,15 @@
 2. Añadir filtros/agrupaciones multinivel y selección manual de productos.
 3. Diseñar adaptadores de plantilla InDesign T4/T2/T1/TABLE/SEPARATOR y reporte de preflight.
 
+### Avance InDesign del bloque
+
+- Selector de perfil T4/T2/T1/TABLE incorporado al snapshot y a consola/CLI; valores desconocidos
+  se rechazan antes de escribir archivos.
+- El JSX crea páginas SEPARATOR por cambio de grupo, compone la densidad elegida y conserva perfil,
+  release y checksum como etiquetas del INDD.
+- Rutas de imagen sólo se aceptan relativas y sin `..`; se enlazan sin modificar el original.
+- Cada INDD produce `perfect-catalog.indesign-preflight.v1` con imágenes faltantes, overflows y fuentes.
+
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
 
 ### Resultado de esta sesión

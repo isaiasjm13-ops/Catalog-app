@@ -16,6 +16,7 @@ from .publication import load_published_release
 INDESIGN_SNAPSHOT_SCHEMA = "perfect-catalog.indesign-snapshot.v1"
 EXPORT_MANIFEST_SCHEMA = "perfect-catalog.export-manifest.v1"
 SUPPORTED_FORMATS = ("pdf", "pptx", "indesign-json")
+INDESIGN_TEMPLATE_PROFILES = ("T4", "T2", "T1", "TABLE")
 
 
 def _safe_stem(value: object) -> str:
@@ -75,6 +76,10 @@ def build_catalog_bundle(
     materialized = list(items)
     rows = export_rows_from_release(release, materialized)
     export_config = dict(config or {})
+    template_profile = str(export_config.get("template_profile") or "T4").upper()
+    if template_profile not in INDESIGN_TEMPLATE_PROFILES:
+        raise ValueError("Perfil InDesign no soportado.")
+    export_config["template_profile"] = template_profile
     metadata = _release_metadata(release, len(rows))
     stem = _safe_stem(f"catalogo-{release['version']}-{str(release['catalog_release_id'])[:8]}")
     payloads: dict[str, tuple[str, bytes]] = {}

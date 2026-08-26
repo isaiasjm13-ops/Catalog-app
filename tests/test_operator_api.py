@@ -414,6 +414,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
                 "format_pdf": "yes",
                 "format_pptx": "no",
                 "format_indesign_json": "yes",
+                "template_profile": "T4",
                 "confirm": "yes",
             },
             headers={"Origin": "http://testserver"},
@@ -440,6 +441,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
             "title": "Catálogo web", "subtitle": "", "group_by": "category_path",
             "columns": "2", "format_pdf": "yes", "format_pptx": "yes",
             "format_indesign_json": "yes", "confirm": "yes",
+            "template_profile": "TABLE",
         }
         no_origin = await self.client.post(f"/operator/catalogs/{RELEASE_ID}/exports", data=fields)
         self.assertEqual(no_origin.status_code, 403)

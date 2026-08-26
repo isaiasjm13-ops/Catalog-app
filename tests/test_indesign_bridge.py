@@ -13,6 +13,14 @@ class InDesignBridgeTests(unittest.TestCase):
         self.assertIn('insertLabel("perfect_catalog_snapshot_sha256"', script)
         self.assertIn("card.overflows", script)
         self.assertIn("SaveOptions.NO", script)
+        for profile in ("T4", "T2", "T1", "TABLE"):
+            self.assertIn(f'profile === "{profile}"' if profile != "T4" else 'return {perPage: 4', script)
+        self.assertIn("separatorPage(document, group)", script)
+        self.assertIn("perfect-catalog.indesign-preflight.v1", script)
+        self.assertIn("missing_images", script)
+        self.assertIn("overflow_product_indexes", script)
+        self.assertIn("unavailable_fonts", script)
+        self.assertIn("imageBox.place(image)", script)
 
 
 if __name__ == "__main__":
