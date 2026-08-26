@@ -616,6 +616,16 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
             f"/operator/catalogs/{RELEASE_ID}/preview?theme=custom"
         )
         self.assertEqual(invalid_theme.status_code, 400)
+        indesign = await self.client.get(
+            f"/operator/catalogs/{RELEASE_ID}/preview?preview_target=indesign&template_profile=TABLE"
+        )
+        self.assertEqual(indesign.status_code, 200)
+        self.assertIn("target-indesign profile-TABLE", indesign.text)
+        self.assertIn("Vista InDesign TABLE", indesign.text)
+        invalid_profile = await self.client.get(
+            f"/operator/catalogs/{RELEASE_ID}/preview?preview_target=indesign&template_profile=T8"
+        )
+        self.assertEqual(invalid_profile.status_code, 400)
 
     async def test_decision_requires_same_origin_and_exact_csrf(self) -> None:
         await self.login()

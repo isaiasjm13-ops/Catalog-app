@@ -112,6 +112,8 @@
   conserva después filtros y subagrupación, evitando previsualizar Bosque por error antes de exportar.
 - Preview, HTML, PDF, PPTX e InDesign muestran ahora el mismo núcleo comercial cuando está disponible:
   referencia, nombre, categoría, marca, OEM y aplicaciones; los datos ausentes degradan sin inventarse.
+- La vista previa alterna entre destino digital e InDesign y representa T4, T2, T1 y TABLE con
+  densidades diferenciadas. Destino/perfil usan listas cerradas y los valores desconocidos devuelven 400.
 - Suite local actual: 202 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)

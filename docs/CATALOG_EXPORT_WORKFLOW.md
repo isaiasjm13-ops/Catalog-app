@@ -20,6 +20,10 @@ La ficha base mantiene paridad semántica entre vista previa, HTML, PDF, PowerPo
 referencia, nombre, categoría, marca, referencias OEM y aplicaciones. Cada campo opcional sólo aparece
 cuando pertenece al snapshot publicado; no se completan datos comerciales por inferencia.
 
+En la vista previa, `Destino` alterna entre la cuadrícula digital configurable y una simulación de
+InDesign. Esta última representa T4 en dos columnas, T2/T1 en fichas progresivamente amplias y TABLE
+como filas compactas sin imagen. Es una prueba de composición; el JSX sigue siendo quien crea el INDD.
+
 La vista previa vuelve a verificar el release completo, calcula el total de todos los grupos y
 renderiza como máximo 24 fichas para mantener una respuesta ágil con catálogos grandes. No crea
 archivos ni altera datos.

@@ -755,6 +755,7 @@ def create_operator_app(
         request: Request, release_id: str, group_by: str = "category_path",
         group_by_secondary: str = "", filter_field: str = "all",
         filter_query: str = "", columns: int = 2, theme: str = "forest",
+        preview_target: str = "digital", template_profile: str = "T4",
     ) -> Response:
         session_or_redirect = require_session(request)
         if isinstance(session_or_redirect, RedirectResponse):
@@ -764,6 +765,11 @@ def create_operator_app(
                 raise ValueError("La cantidad de columnas no es válida.")
             if theme not in CATALOG_THEMES:
                 raise ValueError("Tema editorial no soportado.")
+            if preview_target not in {"digital", "indesign"}:
+                raise ValueError("Destino de vista previa no soportado.")
+            template_profile = template_profile.upper()
+            if template_profile not in INDESIGN_TEMPLATE_PROFILES:
+                raise ValueError("Perfil InDesign no soportado.")
             if group_by not in {"category_path", "brand", "internal_reference_original"}:
                 raise ValueError("Agrupación no permitida.")
             if group_by_secondary not in {"", "category_path", "brand", "internal_reference_original"}:
@@ -785,6 +791,7 @@ def create_operator_app(
         return _render(
             environment, "operator_catalog_preview.html",
             preview=preview, columns=columns, theme=theme, themes=CATALOG_THEMES,
+            preview_target=preview_target, template_profile=template_profile,
             session=session_or_redirect,
             version=OPERATOR_VERSION,
         )
