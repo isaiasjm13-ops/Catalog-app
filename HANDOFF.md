@@ -1,5 +1,32 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Sesión Actual: Parser y exportaciones verificadas (2026-08-26)
+
+### Resultado de esta sesión
+
+- Portado selectivamente un parser puro de nombres y aplicaciones vehiculares; toda salida conserva
+  procedencia/versionado y queda en `pending_review`, sin escrituras ni publicación automática.
+- Añadida detección auxiliar de aliases de columnas, delimitadores y UTF-8/Windows-1252. No sustituye
+  el contrato Odoo ni su validación de identidad y queda preparada para el futuro flujo explícito de
+  promoción desde cuarentena.
+- Añadido adaptador de exportación que revalida definición, snapshots, hashes individuales y hash
+  agregado de un release antes de exponer filas a cualquier motor.
+- Generadores PDF y PowerPoint desacoplados con portada, agrupaciones, branding básico, OEM,
+  aplicaciones y diseños de 1-3 columnas. No consultan PostgreSQL ni datos empresariales.
+- Dependencias fijadas: `reportlab==4.4.3` y `python-pptx==1.0.2`.
+- Suite: 149 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas. Línea base anterior:
+  143 aprobadas y las mismas 6 opt-in omitidas.
+
+### Pendiente siguiente
+
+1. Diseñar la promoción explícita desde cuarentena a perfilado/dry-run e integrar allí las
+   sugerencias tabulares, sin importación automática.
+2. Añadir una acción operador separada para solicitar exportaciones de releases publicados y una
+   política de destino/nombres en `data/exports`; este bloque sólo aporta motores puros.
+3. Ampliar el diccionario del parser únicamente con fixtures revisados y definir el workflow humano
+   que convierte sugerencias en aplicaciones aprobadas.
+4. Ejecutar las 6 integraciones opt-in al disponer de la contraseña local en el flujo protegido.
+
 ## Sesión Actual: Centro web de ingreso protegido (2026-08-24)
 
 ### Resultado de esta sesión
