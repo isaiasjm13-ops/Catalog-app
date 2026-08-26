@@ -10,6 +10,7 @@ from .config import DatabaseConfig, prompt_password
 from .application import apply_approved_plan, approve_plan
 from .importer import DEFAULT_MAX_PILOT_ROWS, inspect_plan, run_dry_run
 from .intake_promotion import promote_intake_to_dry_run
+from .image_archive_index import build_image_archive_index
 from .publication import (
     archive_release,
     build_release,
@@ -61,6 +62,14 @@ def build_parser() -> argparse.ArgumentParser:
     promotion_parser.add_argument("--max-rows", type=int, default=DEFAULT_MAX_PILOT_ROWS)
     _human_evidence_arguments(promotion_parser)
     _database_arguments(promotion_parser)
+
+    image_index_parser = subparsers.add_parser(
+        "index-images", help="Indexa sin extraer un ZIP de imágenes aceptado en cuarentena."
+    )
+    image_index_parser.add_argument("submission_id", type=uuid.UUID)
+    image_index_parser.add_argument("--intake-root", type=Path, default=Path("data/intake"))
+    _human_evidence_arguments(image_index_parser)
+    _database_arguments(image_index_parser)
 
     inspect_parser = subparsers.add_parser("inspect-plan", help="Inspecciona un plan persistido.")
     inspect_parser.add_argument("plan_id", type=uuid.UUID)
@@ -147,6 +156,11 @@ def main(argv: list[str] | None = None) -> int:
             result = promote_intake_to_dry_run(
                 args.submission_id, args.intake_root, config, password, args.output_dir,
                 actor=args.actor, reason=args.reason, max_rows=args.max_rows,
+            )
+        elif args.command == "index-images":
+            result = build_image_archive_index(
+                args.submission_id, args.intake_root, config, password,
+                actor=args.actor, reason=args.reason,
             )
         elif args.command == "inspect-plan":
             result = inspect_plan(args.plan_id, config, password)
