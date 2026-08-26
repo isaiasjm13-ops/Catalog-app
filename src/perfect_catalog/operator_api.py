@@ -143,6 +143,10 @@ class ReviewGateway(Protocol):
         filter_field: str = "all", filter_query: str = "", sample_limit: int = 24,
     ) -> dict[str, Any]: ...
 
+    def catalog_preview_image(
+        self, release_id: uuid.UUID, item_number: int, image_root: Path,
+    ) -> Path: ...
+
 
 @dataclass(frozen=True)
 class OperatorSession:
@@ -780,6 +784,26 @@ def create_operator_app(
             preview=preview, columns=columns, session=session_or_redirect,
             version=OPERATOR_VERSION,
         )
+
+    @app.get("/operator/catalogs/{release_id}/preview/images/{item_number}")
+    async def catalog_preview_image_route(
+        request: Request, release_id: str, item_number: int,
+    ) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            target = await run_in_threadpool(
+                gateway.catalog_preview_image,
+                _uuid(release_id, "release_id"), item_number, resolved_image_output,
+            )
+        except (ValueError, FileNotFoundError, RuntimeError):
+            return _error(
+                environment, 404, "Imagen no disponible",
+                "La imagen no pertenece a este release o no supera su verificación.",
+                session=session_or_redirect,
+            )
+        return FileResponse(target, filename=target.name)
 
     @app.post("/operator/catalogs/{release_id}/publish")
     async def publish_catalog_release_route(request: Request, release_id: str) -> Response:

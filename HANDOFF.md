@@ -47,6 +47,8 @@
   entrega una ruta relativa segura al adaptador InDesign.
 - PDF y PPTX colocan la copia empaquetada dentro de la ficha de producto. Una imagen que no pueda
   decodificarse degrada a ficha textual y no impide producir los demás entregables.
+- La vista previa editorial muestra imágenes aprobadas mediante una ruta autenticada que vuelve a
+  validar release, pertenencia, confinamiento de ruta y SHA-256 antes de servir cada archivo.
 - Suite local actual: 195 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)

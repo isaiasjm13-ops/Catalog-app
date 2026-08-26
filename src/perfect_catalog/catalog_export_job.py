@@ -312,6 +312,8 @@ def build_catalog_preview(
     if sample_limit < 1 or sample_limit > 100:
         raise ValueError("sample_limit debe estar entre 1 y 100.")
     source_rows = export_rows_from_release(release, items)
+    for index, row in enumerate(source_rows, start=1):
+        row["preview_item"] = index
     preview_config = {
         "group_by": group_by, "group_by_secondary": group_by_secondary,
         "filter_field": filter_field, "filter_query": filter_query,
@@ -351,3 +353,27 @@ def preview_catalog_release(
         release, items, group_by=group_by, group_by_secondary=group_by_secondary,
         filter_field=filter_field, filter_query=filter_query, sample_limit=sample_limit,
     )
+
+
+def resolve_catalog_preview_image(
+    release_id: uuid.UUID, item_number: int, database: DatabaseConfig, password: str,
+    image_root: Path,
+) -> Path:
+    if item_number < 1:
+        raise ValueError("item_number debe ser positivo.")
+    release, items = load_published_release(release_id, database, password)
+    rows = export_rows_from_release(release, items)
+    if item_number > len(rows):
+        raise FileNotFoundError("El producto no pertenece al release.")
+    row = rows[item_number - 1]
+    relative = row.get("image_storage_relpath")
+    digest = str(row.get("image_sha256") or "")
+    if not relative or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise FileNotFoundError("El producto no tiene una imagen aprobada.")
+    root = image_root.resolve()
+    target = (root / str(relative)).resolve()
+    if not target.is_relative_to(root) or not target.is_file():
+        raise FileNotFoundError("La copia aprobada no está disponible.")
+    if _sha256(target.read_bytes()) != digest:
+        raise RuntimeError("La copia aprobada no coincide con el release.")
+    return target

@@ -892,6 +892,15 @@ class DatabaseReviewGateway:
             filter_field=filter_field, filter_query=filter_query, sample_limit=sample_limit,
         )
 
+    def catalog_preview_image(
+        self, release_id: uuid.UUID, item_number: int, image_root: Path,
+    ) -> Path:
+        from .catalog_export_job import resolve_catalog_preview_image
+
+        return resolve_catalog_preview_image(
+            release_id, item_number, self._config, self._password, image_root
+        )
+
     def plans(self, *, limit: int = 100) -> list[dict[str, Any]]:
         return list_review_plans(self._config, self._password, limit=limit)
 

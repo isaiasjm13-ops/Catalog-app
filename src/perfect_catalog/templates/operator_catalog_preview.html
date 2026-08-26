@@ -36,7 +36,11 @@
       <div class="preview-products columns-{{ columns }}">
         {% for product in group.products %}
         <article>
+          {% if product.get('image_storage_relpath') %}
+          <div class="preview-image has-image"><img src="/operator/catalogs/{{ preview.release.release_id }}/preview/images/{{ product.preview_item }}" alt="Imagen aprobada de {{ product.internal_reference_original or product.name_original }}" loading="lazy"></div>
+          {% else %}
           <div class="preview-image"><span>Imagen</span><small>pendiente de asociación</small></div>
+          {% endif %}
           <code>{{ product.internal_reference_original or 'Sin referencia' }}</code>
           <h3>{{ product.name_original or 'Sin nombre' }}</h3>
           <p>{{ product.applications|join('; ') if product.applications else 'Aplicaciones no indicadas' }}</p>

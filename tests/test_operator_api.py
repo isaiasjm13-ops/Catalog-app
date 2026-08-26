@@ -294,6 +294,13 @@ class SyntheticReviewGateway:
             }]}],
         }
 
+    def catalog_preview_image(
+        self, release_id: uuid.UUID, item_number: int, image_root: Path,
+    ) -> Path:
+        if item_number != 1:
+            raise FileNotFoundError
+        return Path(__file__)
+
     def export_catalog(
         self, release_id: uuid.UUID, output_root: Path,
         *, formats: tuple[str, ...], export_config: dict[str, Any],
@@ -559,6 +566,14 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("columns-3", response.text)
         self.assertIn("Motor &lt;seguro&gt;", response.text)
         self.assertNotIn("<script>", response.text)
+        image = await self.client.get(
+            f"/operator/catalogs/{RELEASE_ID}/preview/images/1"
+        )
+        self.assertEqual(image.status_code, 200)
+        missing_image = await self.client.get(
+            f"/operator/catalogs/{RELEASE_ID}/preview/images/2"
+        )
+        self.assertEqual(missing_image.status_code, 404)
         invalid = await self.client.get(
             f"/operator/catalogs/{RELEASE_ID}/preview?group_by=unknown&columns=2"
         )
