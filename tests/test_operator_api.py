@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 import json
 import tempfile
@@ -314,7 +315,12 @@ class SyntheticReviewGateway:
             filename = f"catalog.{output_format.replace('indesign-json', 'indesign.json')}"
             content = f"synthetic-{output_format}".encode()
             (directory / filename).write_bytes(content)
-            files.append({"format": output_format, "filename": filename, "bytes": len(content), "sha256": "d" * 64})
+            files.append({
+                "format": output_format,
+                "filename": filename,
+                "bytes": len(content),
+                "sha256": hashlib.sha256(content).hexdigest(),
+            })
         manifest_name = "catalog.manifest.json"
         manifest = {
             "schema": "perfect-catalog.export-manifest.v1",
@@ -512,6 +518,12 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(download.status_code, 200)
         self.assertEqual(download.content, b"synthetic-pdf")
+        pdf_path = Path(self.temporary.name) / "catalogs" / str(RELEASE_ID) / export_id / "catalog.pdf"
+        pdf_path.write_bytes(b"archivo manipulado")
+        tampered = await self.client.get(
+            f"/operator/catalogs/{RELEASE_ID}/exports/{export_id}/catalog.pdf"
+        )
+        self.assertEqual(tampered.status_code, 404)
         denied = await self.client.get(
             f"/operator/catalogs/{RELEASE_ID}/exports/{export_id}/secret.txt"
         )

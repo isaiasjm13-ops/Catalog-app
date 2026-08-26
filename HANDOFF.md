@@ -102,7 +102,9 @@
 - La construcción de cualquier bundle ejecuta automáticamente `verify_catalog_bundle` después de
   escribir el manifiesto. Sólo retorna/mueve la exportación si archivos, hashes, ZIP e imágenes dan
   estado `verified`; CLI y operador reciben esa evidencia en el resultado.
-- Suite local actual: 198 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
+- Cada descarga autenticada vuelve a comprobar que release, tamaño y SHA-256 coincidan con el
+  manifiesto. Descargar el propio manifiesto verifica antes el bundle completo, incluidos sus ZIP.
+- Suite local actual: 202 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
 

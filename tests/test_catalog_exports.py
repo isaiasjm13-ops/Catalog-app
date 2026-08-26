@@ -289,6 +289,9 @@ class CatalogExportTests(unittest.TestCase):
                 resolve_catalog_download(root, release["catalog_release_id"], export_id, filename),
                 (output / filename).resolve(),
             )
+            (output / filename).write_bytes(b"alterado")
+            with self.assertRaisesRegex(ValueError, "no coincide"):
+                resolve_catalog_download(root, release["catalog_release_id"], export_id, filename)
             with self.assertRaises(PermissionError):
                 resolve_catalog_download(root, release["catalog_release_id"], export_id, "private.txt")
             with self.assertRaises(ValueError):

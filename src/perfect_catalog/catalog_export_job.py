@@ -38,6 +38,14 @@ def _sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _write_new(path: Path, content: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
@@ -378,13 +386,31 @@ def resolve_catalog_download(
     if len(manifests) != 1:
         raise FileNotFoundError("La exportación no tiene un manifiesto único.")
     manifest = json.loads(manifests[0].read_text(encoding="utf-8"))
-    allowed = {manifests[0].name}
-    allowed.update(str(item["filename"]) for item in manifest.get("files", []))
-    if filename not in allowed:
+    if manifest.get("schema") != EXPORT_MANIFEST_SCHEMA:
+        raise ValueError("El manifiesto de exportación no es compatible.")
+    release = manifest.get("release") or {}
+    if str(release.get("release_id")) != str(release_id):
+        raise ValueError("El manifiesto no corresponde al release solicitado.")
+    entries = manifest.get("files")
+    if not isinstance(entries, list):
+        raise ValueError("El manifiesto no enumera entregables.")
+    if filename == manifests[0].name:
+        verify_catalog_bundle(manifests[0])
+        return manifests[0]
+    matches = [item for item in entries if isinstance(item, dict) and item.get("filename") == filename]
+    if len(matches) != 1:
         raise PermissionError("El archivo no pertenece al manifiesto de exportación.")
-    target = directory / filename
+    entry = matches[0]
+    target = (directory / filename).resolve()
     if not target.is_file() or target.parent.resolve() != directory.resolve():
         raise FileNotFoundError("El archivo exportado no existe.")
+    expected_digest = str(entry.get("sha256") or "")
+    if (
+        not re.fullmatch(r"[0-9a-f]{64}", expected_digest)
+        or target.stat().st_size != entry.get("bytes")
+        or _sha256_file(target) != expected_digest
+    ):
+        raise ValueError("El archivo exportado no coincide con su manifiesto.")
     return target
 
 

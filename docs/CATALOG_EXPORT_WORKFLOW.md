@@ -67,6 +67,8 @@ descomprimido y vuelve a comprobar que todas las imágenes manifestadas estén d
 Un resultado válido devuelve `perfect-catalog.export-verification.v1` con estado `verified`.
 La misma comprobación se ejecuta automáticamente antes de que una exportación nueva sea entregada
 por CLI o movida desde el directorio temporal al historial de la consola operador.
+La consola vuelve a validar tamaño y SHA-256 del entregable en cada descarga autenticada. Si se pide
+el manifiesto, revalida el bundle completo; un archivo alterado después de su creación no se sirve.
 
 ## Contrato InDesign v1
 
