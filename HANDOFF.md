@@ -81,6 +81,10 @@
 - La vitrina pública pagina en bloques de 48 productos: consulta sólo 49 filas para detectar si existe
   una página siguiente, conserva búsqueda/categoría en ambos sentidos y valida `page` entre 1 y 10000.
 - Suite local actual: 201 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
+- Cada solicitud de `indesign-json` produce además un `.indesign.zip` determinista con
+  `catalog.indesign.json`, imágenes verificadas, `ImportPerfectCatalog.jsx` e instrucciones.
+- El JSX detecta automáticamente el snapshot adyacente al ejecutarse desde el paquete; si está
+  instalado en el panel de Scripts conserva el selector de archivo. InDesign sigue sin acceder a BD.
 - Suite local actual: 198 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)

@@ -21,6 +21,8 @@ class InDesignBridgeTests(unittest.TestCase):
         self.assertIn("overflow_product_indexes", script)
         self.assertIn("unavailable_fonts", script)
         self.assertIn("imageBox.place(image)", script)
+        self.assertIn('scriptFile.parent.fsName + "/catalog.indesign.json"', script)
+        self.assertIn("adjacent.exists ? adjacent : File.openDialog", script)
 
 
 if __name__ == "__main__":

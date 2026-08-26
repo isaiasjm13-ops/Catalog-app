@@ -70,6 +70,39 @@ def _digital_zip(
     return buffer.getvalue()
 
 
+def _indesign_zip(
+    snapshot_content: bytes, image_files: list[dict[str, Any]], output_dir: Path
+) -> bytes:
+    script_path = Path(__file__).resolve().parents[2] / "indesign" / "ImportPerfectCatalog.jsx"
+    if not script_path.is_file():
+        raise RuntimeError("No está disponible el puente InDesign del proyecto.")
+    instructions = (
+        "PERFECT CATALOG - PAQUETE INDESIGN\r\n\r\n"
+        "1. Extrae todo el ZIP conservando los archivos juntos.\r\n"
+        "2. Abre Adobe InDesign.\r\n"
+        "3. Ejecuta ImportPerfectCatalog.jsx desde Ventana > Utilidades > Scripts.\r\n"
+        "4. El script detecta catalog.indesign.json y solicita dónde guardar el INDD.\r\n"
+        "5. Revisa el archivo .preflight.json generado junto al INDD.\r\n"
+    ).encode("utf-8")
+    entries = [
+        ("catalog.indesign.json", snapshot_content),
+        ("ImportPerfectCatalog.jsx", script_path.read_bytes()),
+        ("LEEME-INDESIGN.txt", instructions),
+    ]
+    entries.extend(
+        (str(item["filename"]), (output_dir / str(item["filename"])).read_bytes())
+        for item in image_files
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+        for filename, content in entries:
+            info = zipfile.ZipInfo(filename, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o100644 << 16
+            archive.writestr(info, content)
+    return buffer.getvalue()
+
+
 def _package_images(
     rows: list[dict[str, Any]], output_dir: Path, image_root: Path | None
 ) -> list[dict[str, Any]]:
@@ -243,7 +276,11 @@ def build_catalog_bundle(
             "layout": export_config,
             "products": rows,
         }
-        payloads["indesign-json"] = (f"{stem}.indesign.json", _json_bytes(snapshot))
+        snapshot_content = _json_bytes(snapshot)
+        payloads["indesign-json"] = (f"{stem}.indesign.json", snapshot_content)
+        payloads["indesign-package"] = (
+            f"{stem}.indesign.zip", _indesign_zip(snapshot_content, image_files, output_dir)
+        )
 
     files: list[dict[str, Any]] = list(image_files)
     for export_format, (filename, content) in payloads.items():

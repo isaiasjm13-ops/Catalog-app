@@ -107,7 +107,7 @@ class CatalogExportTests(unittest.TestCase):
                 release, items, output,
                 config={"title": "Catálogo verificable", "columns_per_row": 2},
             )
-            self.assertEqual([entry["format"] for entry in result["files"]], ["html", "digital-zip", "pdf", "pptx", "indesign-json"])
+            self.assertEqual([entry["format"] for entry in result["files"]], ["html", "digital-zip", "pdf", "pptx", "indesign-json", "indesign-package"])
             zip_entry = next(item for item in result["files"] if item["format"] == "digital-zip")
             with zipfile.ZipFile(output / zip_entry["filename"]) as digital:
                 self.assertIn("index.html", digital.namelist())
@@ -121,6 +121,15 @@ class CatalogExportTests(unittest.TestCase):
             self.assertEqual(snapshot["schema"], "perfect-catalog.indesign-snapshot.v1")
             self.assertEqual(snapshot["layout"]["template_profile"], "T4")
             self.assertEqual(snapshot["products"][0]["internal_reference_original"], "NK-001")
+            package_entry = next(item for item in result["files"] if item["format"] == "indesign-package")
+            with zipfile.ZipFile(output / package_entry["filename"]) as package:
+                self.assertEqual(
+                    set(package.namelist()),
+                    {"catalog.indesign.json", "ImportPerfectCatalog.jsx", "LEEME-INDESIGN.txt"},
+                )
+                self.assertEqual(
+                    json.loads(package.read("catalog.indesign.json")), snapshot,
+                )
 
     def test_bundle_validates_indesign_template_profile(self) -> None:
         release, items = fixture_release()
@@ -168,6 +177,9 @@ class CatalogExportTests(unittest.TestCase):
             zip_entry = next(entry for entry in result["files"] if entry["format"] == "digital-zip")
             with zipfile.ZipFile(output / zip_entry["filename"]) as digital:
                 self.assertEqual(digital.read(image_entry["filename"]), content)
+            indesign_package = next(entry for entry in result["files"] if entry["format"] == "indesign-package")
+            with zipfile.ZipFile(output / indesign_package["filename"]) as package:
+                self.assertEqual(package.read(image_entry["filename"]), content)
 
             source.write_bytes(b"tampered")
             with self.assertRaisesRegex(RuntimeError, "SHA-256"):

@@ -120,7 +120,9 @@
             ".\nTextos desbordados: " + report.overflow_product_indexes.length + ".\n\n" + destination.fsName);
     }
     try {
-        var source = File.openDialog("Seleccionar snapshot Perfect Catalog", "Perfect Catalog JSON:*.json");
+        var scriptFile = new File($.fileName);
+        var adjacent = new File(scriptFile.parent.fsName + "/catalog.indesign.json");
+        var source = adjacent.exists ? adjacent : File.openDialog("Seleccionar snapshot Perfect Catalog", "Perfect Catalog JSON:*.json");
         if (source) render(readJson(source), source.parent);
     } catch (error) { alert("Perfect Catalog\n\nError: " + error.message); }
 }());

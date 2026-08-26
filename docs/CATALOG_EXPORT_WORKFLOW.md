@@ -10,7 +10,7 @@ La pantalla permite, en orden:
 3. abrir una vista previa HTML limitada, con agrupación y 1-3 columnas;
 4. filtrar por texto/campo y organizar hasta dos niveles de agrupación;
 5. elegir título, subtítulo, columnas, perfil InDesign y formatos;
-6. generar y descargar PDF, PPTX, snapshot InDesign y manifiesto.
+6. generar y descargar HTML/ZIP digital, PDF, PPTX, snapshot/paquete InDesign y manifiesto.
 
 La vista previa vuelve a verificar el release completo, calcula el total de todos los grupos y
 renderiza como máximo 24 fichas para mantener una respuesta ágil con catálogos grandes. No crea
@@ -38,9 +38,11 @@ perfect-catalog export-catalog RELEASE_UUID `
 
 Por defecto se generan:
 
+- HTML responsive y `.digital.zip` portable con sus imágenes.
 - PDF para distribución e impresión.
 - PPTX editable para presentación digital.
-- `*.indesign.json`, snapshot UTF-8 estable para el futuro script de InDesign.
+- `*.indesign.json`, snapshot UTF-8 estable para InDesign.
+- `*.indesign.zip`, paquete autocontenido con snapshot, imágenes, JSX e instrucciones.
 - `*.manifest.json`, con release, versión, checksum fuente y SHA-256 de cada entregable.
 
 Se puede repetir `--format pdf`, `--format pptx` o `--format indesign-json` para limitar
@@ -54,15 +56,15 @@ El snapshot usa el esquema `perfect-catalog.indesign-snapshot.v1` e incluye:
 - opciones neutrales de maquetación;
 - productos ordenados exactamente como quedaron congelados en la publicación.
 
-Este JSON es el límite entre datos y maquetación. El siguiente bloque añadirá el script
-de plantillas T4, T2, T1, TABLE y SEPARATOR, sin consultar la base de datos directamente
-desde InDesign.
+Este JSON es el límite entre datos y maquetación. El script implementa perfiles T4, T2, T1,
+TABLE y páginas SEPARATOR sin consultar la base de datos directamente desde InDesign.
 
 ## Crear el primer INDD editable
 
-1. En InDesign, abre `Ventana > Utilidades > Scripts`.
-2. Ejecuta `indesign/ImportPerfectCatalog.jsx` desde el panel de scripts.
-3. Selecciona el archivo `*.indesign.json` generado por `export-catalog`.
+1. Descarga y extrae completamente `*.indesign.zip`.
+2. En InDesign, abre `Ventana > Utilidades > Scripts`.
+3. Ejecuta el `ImportPerfectCatalog.jsx` extraído. Detectará automáticamente
+   `catalog.indesign.json` en la misma carpeta; instalado separadamente conserva el selector manual.
 4. Elige dónde guardar el `.indd`.
 
 El script v1 crea portada, separadores automáticos por grupo y páginas de producto según
@@ -75,5 +77,6 @@ con texto desbordado y fuentes no disponibles. InDesign nunca se conecta directa
 PostgreSQL.
 
 Antes de asociar fotografías, los ZIP aceptados pueden indexarse desde `Operador > Ingresos`.
-Esa acción sólo indexa nombres, rutas y hashes, y detecta colisiones; no extrae archivos ni decide
-qué fotografía corresponde a un producto. La asociación humana sigue siendo un bloque posterior.
+Esa acción sólo indexa nombres, rutas y hashes, y detecta colisiones. La cola `Imágenes` exige una
+decisión humana individual y la materialización vuelve a verificar ZIP, miembro, CRC y SHA-256;
+únicamente releases nuevos incorporan esas copias content-addressed.
