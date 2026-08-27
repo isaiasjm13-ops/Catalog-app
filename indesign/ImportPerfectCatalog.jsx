@@ -2,6 +2,7 @@
 
 (function () {
     var SCHEMA = "perfect-catalog.indesign-snapshot.v1";
+    var SCRIPT_VERSION = "1.31.0";
     var ACTIVE_TITLE_FONT = null, ACTIVE_BODY_FONT = null;
     function fail(message) { alert("Perfect Catalog\n\n" + message); throw new Error(message); }
     function parseJson(text) {
@@ -50,16 +51,27 @@
         file.encoding = "UTF-8"; if (!file.open("w")) fail("No se pudo escribir el reporte de preflight.");
         file.write(stringifyJson(payload)); file.close();
     }
+    function repairText(input) {
+        var text = String(input);
+        var replacements = {
+            "\u00c2\u00b7": "\u00b7", "\u00c2\u00a0": " ",
+            "\u00c3\u00a1": "\u00e1", "\u00c3\u00a9": "\u00e9", "\u00c3\u00ad": "\u00ed", "\u00c3\u00b3": "\u00f3", "\u00c3\u00ba": "\u00fa",
+            "\u00c3\u0081": "\u00c1", "\u00c3\u0089": "\u00c9", "\u00c3\u008d": "\u00cd", "\u00c3\u0093": "\u00d3", "\u00c3\u009a": "\u00da",
+            "\u00c3\u00b1": "\u00f1", "\u00c3\u0091": "\u00d1", "\u00c3\u00bc": "\u00fc", "\u00c3\u009c": "\u00dc"
+        };
+        for (var damaged in replacements) if (replacements.hasOwnProperty(damaged)) text = text.split(damaged).join(replacements[damaged]);
+        return text;
+    }
     function value(product, key, fallback) {
         var current = product[key];
-        if (current === null || current === undefined || current === "") return fallback;
-        if (current instanceof Array) return current.join("; ");
-        return String(current);
+        if (current === null || current === undefined || current === "") return repairText(fallback);
+        if (current instanceof Array) return repairText(current.join("; "));
+        return repairText(current);
     }
     function frame(page, bounds, contents, pointSize, bold, style) {
         var box = page.textFrames.add({geometricBounds: bounds, contents: contents});
         box.textFramePreferences.insetSpacing = [8, 8, 8, 8]; box.texts[0].pointSize = Math.max(12, pointSize);
-        box.texts[0].leading = box.texts[0].pointSize * 1.8;
+        box.texts[0].leading = box.texts[0].pointSize * (style && style.leading ? style.leading : 1.8);
         var selectedFont = bold ? ACTIVE_TITLE_FONT : ACTIVE_BODY_FONT;
         if (selectedFont && selectedFont.isValid) box.texts[0].appliedFont = selectedFont;
         if (bold) { try { box.texts[0].fontStyle = "Bold"; } catch (ignored) {} }
@@ -67,6 +79,15 @@
             if (style.fill) box.fillColor = style.fill;
             if (style.stroke) { box.strokeColor = style.stroke; box.strokeWeight = style.strokeWeight || 0.75; }
             if (style.text) box.texts[0].fillColor = style.text;
+        }
+        return box;
+    }
+    function fitFrame(box, preferredSize, minimumSize, leadingRatio) {
+        var size = preferredSize;
+        while (box.overflows && size > minimumSize) {
+            size -= 1;
+            box.texts[0].pointSize = size;
+            box.texts[0].leading = size * leadingRatio;
         }
         return box;
     }
@@ -122,9 +143,10 @@
         var page = document.pages.add();
         var background = page.rectangles.add({geometricBounds: page.bounds, fillColor: theme.paper, strokeWeight: 0});
         background.sendToBack();
-        page.rectangles.add({geometricBounds: [235, 55, 247, 245], fillColor: theme.secondary, strokeWeight: 0});
-        frame(page, [260, 55, 335, 430], String(label), 30, true, {text: theme.primary});
-        frame(page, [350, 55, 390, 540], "Separador de secci\u00f3n \u00b7 Perfect Trading", 11, false, {text: theme.ink});
+        page.rectangles.add({geometricBounds: [190, 55, 205, 305], fillColor: theme.secondary, strokeWeight: 0});
+        var heading = frame(page, [225, 55, 385, 540], repairText(label), 30, true, {text: theme.primary, leading: 1.15});
+        fitFrame(heading, 30, 18, 1.15);
+        frame(page, [405, 55, 455, 540], "Separador de secci\u00f3n \u00b7 Perfect Trading", 12, false, {text: theme.ink, leading: 1.4});
     }
     function vehicleMakeMark(page, baseFolder, visual, makeName) {
         var source = visual && visual.vehicle_makes && visual.vehicle_makes[String(makeName)];
@@ -218,6 +240,7 @@
         document.insertLabel("perfect_catalog_snapshot_sha256", snapshot.release.snapshot_sha256);
         document.insertLabel("perfect_catalog_template_profile", profile);
         document.insertLabel("perfect_catalog_theme", themeName);
+        document.insertLabel("perfect_catalog_importer_version", SCRIPT_VERSION);
         var report = {schema: "perfect-catalog.indesign-preflight.v1", release_id: snapshot.release.release_id,
             snapshot_sha256: snapshot.release.snapshot_sha256, template_profile: profile, theme: themeName,
             product_count: snapshot.products.length, linked_image_count: 0, missing_images: [],
@@ -228,8 +251,8 @@
         ACTIVE_BODY_FONT = fontByName(bodyFamily, "Regular");
         if (!ACTIVE_TITLE_FONT) report.unavailable_fonts.push(titleFamily + " Bold");
         if (!ACTIVE_BODY_FONT) report.unavailable_fonts.push(bodyFamily + " Regular");
-        var title = (snapshot.layout && snapshot.layout.title) || "Cat\u00e1logo de productos";
-        var subtitle = (snapshot.layout && snapshot.layout.subtitle) || snapshot.release.version;
+        var title = repairText((snapshot.layout && snapshot.layout.title) || "Cat\u00e1logo de productos");
+        var subtitle = repairText((snapshot.layout && snapshot.layout.subtitle) || snapshot.release.version);
         var coverBackground = document.pages[0].rectangles.add({geometricBounds: document.pages[0].bounds, fillColor: theme.paper, strokeWeight: 0});
         coverBackground.sendToBack();
         frame(document.pages[0], [160, 55, 245, 540], title, 30, true, {text: theme.primary});
@@ -261,7 +284,7 @@
         } catch (fontError) { report.unavailable_fonts.push("No se pudo consultar: " + fontError.message); }
         var reportFile = new File(destination.fsName.replace(/\.indd$/i, "") + ".preflight.json");
         writeJson(reportFile, report);
-        alert("Cat\u00e1logo creado: " + snapshot.products.length + " productos.\nIm\u00e1genes faltantes: " + report.missing_images.length +
+        alert("Perfect Catalog Importer v" + SCRIPT_VERSION + "\n\nCat\u00e1logo creado: " + snapshot.products.length + " productos.\nIm\u00e1genes faltantes: " + report.missing_images.length +
             ".\nFichas ampliadas automaticamente: " + promotedCount + ".\nTextos desbordados: " + report.overflow_product_indexes.length + ".\n\n" + destination.fsName);
     }
     try {

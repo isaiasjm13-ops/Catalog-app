@@ -59,6 +59,12 @@ class InDesignBridgeTests(unittest.TestCase):
         self.assertIn("score > 120", script)
         self.assertIn("var imageHeight = image ? definition.imageHeight : 0", script)
         self.assertIn("Fichas ampliadas automaticamente", script)
+        self.assertIn('var SCRIPT_VERSION = "1.31.0"', script)
+        self.assertIn('insertLabel("perfect_catalog_importer_version"', script)
+        self.assertIn("function repairText", script)
+        self.assertIn('"\\u00c2\\u00b7": "\\u00b7"', script)
+        self.assertIn("function fitFrame", script)
+        self.assertIn("fitFrame(heading, 30, 18, 1.15)", script)
         self.assertNotRegex(script, r"[^\x00-\x7F]")
 
 

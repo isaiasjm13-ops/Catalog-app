@@ -1,5 +1,20 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: importador InDesign v1.31 y separadores robustos
+
+- Corregido el mojibake heredado en snapshots (`Â·`, vocales acentuadas, `ñ` y `ü`) antes de
+  componer títulos, aplicaciones y demás datos editoriales.
+- Los separadores amplían el área del título, usan interlineado compacto y ajustan el tamaño entre
+  30 y 18 pt únicamente si el texto todavía desborda. El texto de las fichas conserva el mínimo de
+  12 pt y su interlineado 1.8.
+- El documento guarda la etiqueta `perfect_catalog_importer_version=1.31.0` y el aviso final muestra
+  `Perfect Catalog Importer v1.31.0`. Esto permite detectar inmediatamente si se ejecutó una copia
+  antigua del JSX.
+- Diagnóstico de la prueba manual: el paquete
+  `catalogo-2026.27.08-cf8b9ffe.indesign` contiene un `ImportPerfectCatalog.jsx` anterior (16 KB),
+  distinto al vigente del proyecto (19 KB), y su JSON sí contiene valores heredados como `Â·`.
+  Hay que generar de nuevo el paquete InDesign o sustituir su JSX por el actual antes de probar.
+
 ## Bloque 2026-08-27: composición adaptativa InDesign v1.30
 
 - Se diagnosticó el snapshot real de 337 productos: perfil T4, 256 imágenes presentes, 81 ausentes,
