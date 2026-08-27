@@ -591,6 +591,9 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         dashboard = await self.client.get("/operator")
         self.assertEqual(dashboard.status_code, 200)
         self.assertIn("muestra &lt;script&gt;", dashboard.text)
+        self.assertIn("Continuar donde quedaste", dashboard.text)
+        self.assertIn("Continuar revisión", dashboard.text)
+        self.assertIn('<progress class="plan-progress"', dashboard.text)
         self.assertNotIn("<script>alert(1)</script>", dashboard.text)
         self.assertEqual(dashboard.headers["cache-control"], "no-store")
         self.assertEqual(dashboard.headers["referrer-policy"], "same-origin")
@@ -599,6 +602,27 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Empaque &lt;script&gt;incorrecto", queue.text)
         self.assertIn(REVIEW_SHA256, queue.text)
         self.assertNotIn("<script>incorrecto</script>", queue.text)
+
+    async def test_dashboard_guides_resolved_plan_to_catalog_design(self) -> None:
+        await self.login()
+        self.gateway.plan_data.update({
+            "pending_count": 0, "approved_count": 1, "rejected_count": 0,
+        })
+        dashboard = await self.client.get("/operator")
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertIn("Construir la siguiente versión", dashboard.text)
+        self.assertIn('href="/operator/catalogs"', dashboard.text)
+        self.assertIn("Diseñar catálogo", dashboard.text)
+
+    async def test_dashboard_failure_has_safe_correlated_diagnostic(self) -> None:
+        await self.login()
+        self.gateway.plans = mock.Mock(side_effect=RuntimeError("sensitive database detail"))
+        with self.assertLogs("perfect_catalog.operator_api", level="ERROR") as captured:
+            response = await self.client.get("/operator")
+        self.assertEqual(response.status_code, 503)
+        self.assertRegex(response.text, r"Diagnóstico: [0-9a-f]{12}")
+        self.assertNotIn("sensitive database detail", response.text)
+        self.assertIn("dashboard_read_failed", "\n".join(captured.output))
 
     async def test_bulk_review_requires_exact_confirmation_and_redirects(self) -> None:
         await self.login()
@@ -955,7 +979,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.18.0")
+        self.assertEqual(OPERATOR_VERSION, "1.19.0")
 
     async def test_company_identity_upload_requires_csrf_and_records_logo_without_exposing_it(self) -> None:
         await self.login()

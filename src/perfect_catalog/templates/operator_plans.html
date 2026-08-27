@@ -11,6 +11,24 @@
 </section>
 
 {% if plans %}
+{% set pending_plans = plans | selectattr('pending_count') | list %}
+<section class="resume-card" aria-labelledby="resume-title">
+  <div class="resume-symbol" aria-hidden="true">→</div>
+  <div>
+    <span class="kicker">Continuar donde quedaste</span>
+    {% if pending_plans %}
+    {% set next_plan = pending_plans[0] %}
+    <h2 id="resume-title">Revisar {{ next_plan.original_name }}</h2>
+    <p>Quedan <strong>{{ next_plan.pending_count }}</strong> de {{ next_plan.candidate_count }} identidades. Puedes decidir el filtro completo en lote cuando la evidencia sea uniforme.</p>
+    {% else %}
+    <h2 id="resume-title">Construir la siguiente versión</h2>
+    <p>Todos los planes visibles están resueltos. El siguiente paso es diseñar, publicar y exportar un release nuevo.</p>
+    {% endif %}
+  </div>
+  <a class="primary-button" href="{% if pending_plans %}/operator/plans/{{ pending_plans[0].import_plan_id }}?state=pending{% else %}/operator/catalogs{% endif %}">
+    {% if pending_plans %}Continuar revisión{% else %}Abrir Catálogos{% endif %}
+  </a>
+</section>
 <section class="plan-grid">
   {% for plan in plans %}
   <article class="plan-card">
@@ -30,7 +48,9 @@
       <div><dt>Aplicado por</dt><dd>{{ plan.applied_by }}</dd></div>
       <div><dt>Fingerprint</dt><dd><code>{{ plan.approval_fingerprint_sha256[:16] }}…</code></dd></div>
     </dl>
-    <a class="primary-button" href="/operator/plans/{{ plan.import_plan_id }}?state=pending">Abrir cola</a>
+    {% set resolved_count = plan.approved_count + plan.rejected_count %}
+    <progress class="plan-progress" aria-label="Progreso de revisión" value="{{ resolved_count }}" max="{{ plan.candidate_count if plan.candidate_count else 1 }}">{{ resolved_count }} de {{ plan.candidate_count }}</progress>
+    <a class="primary-button" href="{% if plan.pending_count %}/operator/plans/{{ plan.import_plan_id }}?state=pending{% else %}/operator/catalogs{% endif %}">{% if plan.pending_count %}Continuar revisión{% else %}Diseñar catálogo{% endif %}</a>
   </article>
   {% endfor %}
 </section>

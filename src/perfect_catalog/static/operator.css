@@ -96,6 +96,10 @@ button:active, .primary-button:active, .secondary-button:active { transform: tra
 .safety-chip { flex: 0 0 auto; padding: 11px 14px; border-radius: 999px; color: var(--forest); background: rgba(255,255,255,.66); border: 1px solid rgba(12, 91, 72, .16); font-size: 12px; }
 .safety-chip span { color: #42a66d; margin-right: 6px; }
 .plan-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.resume-card { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 18px; align-items: center; margin-bottom: 20px; padding: 22px 24px; border: 1px solid rgba(12,91,72,.18); border-radius: 20px; background: linear-gradient(120deg,#f0f6ed,#fff); box-shadow: var(--shadow); }
+.resume-card h2 { margin: 3px 0 5px; font-size: clamp(24px,3vw,34px); }
+.resume-card p { margin: 0; }
+.resume-symbol { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 15px; color: white; background: var(--forest); font-size: 24px; }
 .plan-card { border-radius: 20px; padding: 26px; }
 .plan-card-top { display: flex; justify-content: space-between; gap: 18px; align-items: start; }
 .file-label { color: var(--muted); font-size: 12px; }
@@ -111,6 +115,10 @@ button:active, .primary-button:active, .secondary-button:active { transform: tra
 .metric-row strong { font: 600 22px Georgia, serif; }
 .metric-row span { margin-top: 4px; color: var(--muted); font-size: 10px; text-transform: uppercase; }
 .plan-details { display: grid; gap: 9px; margin-bottom: 22px; }
+.plan-progress { width: 100%; height: 7px; margin: -5px 0 18px; overflow: hidden; border: 0; border-radius: 999px; background: #e5e9e3; accent-color: var(--forest); }
+.plan-progress::-webkit-progress-bar { background: #e5e9e3; }
+.plan-progress::-webkit-progress-value { background: var(--forest); }
+.plan-progress::-moz-progress-bar { background: var(--forest); }
 .plan-details div { display: grid; grid-template-columns: 95px 1fr; gap: 10px; }
 dt { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
 dd { margin: 0; font-size: 12px; }
@@ -455,6 +463,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .page-heading, .queue-heading { display: grid; }
   .operator-meta > span:not(.status-dot) { display: none; }
   .plan-grid { grid-template-columns: 1fr; }
+  .resume-card { grid-template-columns: auto 1fr; padding: 18px; }
+  .resume-card .primary-button { grid-column: 1 / -1; width: 100%; }
   .filter-bar { grid-template-columns: 1fr; }
   .review-card { grid-template-columns: 1fr; gap: 18px; }
   .image-candidate-card { grid-template-columns: 1fr; }

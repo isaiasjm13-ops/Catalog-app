@@ -53,7 +53,7 @@ from .importer import DEFAULT_MAX_PILOT_ROWS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.18.0"
+OPERATOR_VERSION = "1.19.0"
 LOGGER = logging.getLogger(__name__)
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
@@ -448,6 +448,28 @@ def _error(
     return response
 
 
+def _unexpected_error(
+    environment: Environment,
+    title: str,
+    public_detail: str,
+    operation: str,
+    exc: Exception,
+    *,
+    session: OperatorSession | None = None,
+) -> HTMLResponse:
+    """Correlaciona un fallo inesperado sin exponer SQL, rutas, credenciales ni datos internos."""
+    diagnostic_id = secrets.token_hex(6)
+    LOGGER.exception(
+        "%s diagnostic_id=%s error_type=%s sqlstate=%s",
+        operation, diagnostic_id, type(exc).__name__, getattr(exc, "sqlstate", None),
+    )
+    return _error(
+        environment, 503, title,
+        f"{public_detail} Diagnóstico: {diagnostic_id}.",
+        session=session,
+    )
+
+
 def create_operator_app(
     gateway: ReviewGateway,
     authenticator: OperatorAuthenticator,
@@ -624,13 +646,11 @@ def create_operator_app(
             return session_or_redirect
         try:
             plans = await run_in_threadpool(gateway.plans, limit=100)
-        except Exception:
-            return _error(
-                environment,
-                503,
-                "PostgreSQL no disponible",
+        except Exception as exc:
+            return _unexpected_error(
+                environment, "PostgreSQL no disponible",
                 "No se pudo leer la cola. Revisa la consola del servidor operador.",
-                session=session_or_redirect,
+                "dashboard_read_failed", exc, session=session_or_redirect,
             )
         return _render(
             environment,
@@ -669,14 +689,11 @@ def create_operator_app(
                 str(exc),
                 session=session_or_redirect,
             )
-        except Exception:
-            return _error(
-                environment,
-                503,
-                "PostgreSQL no disponible",
-                "No se pudo leer el historial de ingresos. "
-                "Revisa la consola del servidor operador.",
-                session=session_or_redirect,
+        except Exception as exc:
+            return _unexpected_error(
+                environment, "PostgreSQL no disponible",
+                "No se pudo leer el historial de ingresos. Revisa la consola del servidor operador.",
+                "intake_history_read_failed", exc, session=session_or_redirect,
             )
         for submission in submissions["items"]:
             submission["size_label"] = _human_size(submission["size_bytes"])
@@ -746,11 +763,11 @@ def create_operator_app(
             preflight_receipts = await run_in_threadpool(
                 list_indesign_preflight_receipts, resolved_catalog_output, limit=500
             )
-        except Exception:
-            return _error(
-                environment, 503, "Catálogos no disponibles",
+        except Exception as exc:
+            return _unexpected_error(
+                environment, "Catálogos no disponibles",
                 "No se pudieron leer publicaciones o exportaciones. Revisa la consola del servidor.",
-                session=session_or_redirect,
+                "catalog_workspace_read_failed", exc, session=session_or_redirect,
             )
         message = {
             "created": "Catálogo generado y verificado. Ya puedes descargar sus entregables.",
@@ -788,11 +805,11 @@ def create_operator_app(
         try:
             profiles = await run_in_threadpool(gateway.brand_profiles)
             identities = await run_in_threadpool(gateway.visual_identities)
-        except Exception:
-            return _error(
-                environment, 503, "Marcas no disponibles",
+        except Exception as exc:
+            return _unexpected_error(
+                environment, "Marcas no disponibles",
                 "Ejecuta ACTUALIZAR-SISTEMA.cmd o revisa PostgreSQL.",
-                session=session_or_redirect,
+                "brand_workspace_read_failed", exc, session=session_or_redirect,
             )
         message = {"created": "Marca creada. Ya está disponible como perfil visual.", "identity_created": "Logo y colores guardados como una nueva revisión auditada."}.get(request.query_params.get("result"))
         return _render(

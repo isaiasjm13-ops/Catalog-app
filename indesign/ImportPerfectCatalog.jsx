@@ -2,6 +2,7 @@
 
 (function () {
     var SCHEMA = "perfect-catalog.indesign-snapshot.v1";
+    var ACTIVE_TITLE_FONT = null, ACTIVE_BODY_FONT = null;
     function fail(message) { alert("Perfect Catalog\n\n" + message); throw new Error(message); }
     function readJson(file) {
         file.encoding = "UTF-8"; if (!file.open("r")) fail("No se pudo abrir el snapshot.");
@@ -24,6 +25,8 @@
         var box = page.textFrames.add({geometricBounds: bounds, contents: contents});
         box.textFramePreferences.insetSpacing = [8, 8, 8, 8]; box.texts[0].pointSize = Math.max(12, pointSize);
         box.texts[0].leading = box.texts[0].pointSize * 1.8;
+        var selectedFont = bold ? ACTIVE_TITLE_FONT : ACTIVE_BODY_FONT;
+        if (selectedFont && selectedFont.isValid) box.texts[0].appliedFont = selectedFont;
         if (bold) { try { box.texts[0].fontStyle = "Bold"; } catch (ignored) {} }
         if (style) {
             if (style.fill) box.fillColor = style.fill;
@@ -31,6 +34,10 @@
             if (style.text) box.texts[0].fillColor = style.text;
         }
         return box;
+    }
+    function fontByName(family, style) {
+        var font = app.fonts.itemByName(String(family) + "\t" + String(style));
+        return font && font.isValid ? font : null;
     }
     function documentColor(document, name, values) {
         var color = document.colors.itemByName(name);
@@ -158,6 +165,12 @@
             snapshot_sha256: snapshot.release.snapshot_sha256, template_profile: profile, theme: themeName,
             product_count: snapshot.products.length, linked_image_count: 0, missing_images: [],
             overflow_product_indexes: [], unavailable_fonts: [], group_count: 0, page_count: 0};
+        var titleFamily = (visual && visual.title_font_family) || "Barlow Condensed";
+        var bodyFamily = (visual && visual.body_font_family) || "DM Sans";
+        ACTIVE_TITLE_FONT = fontByName(titleFamily, "Bold");
+        ACTIVE_BODY_FONT = fontByName(bodyFamily, "Regular");
+        if (!ACTIVE_TITLE_FONT) report.unavailable_fonts.push(titleFamily + " Bold");
+        if (!ACTIVE_BODY_FONT) report.unavailable_fonts.push(bodyFamily + " Regular");
         var title = (snapshot.layout && snapshot.layout.title) || "Catálogo de productos";
         var subtitle = (snapshot.layout && snapshot.layout.subtitle) || snapshot.release.version;
         var coverBackground = document.pages[0].rectangles.add({geometricBounds: document.pages[0].bounds, fillColor: theme.paper, strokeWeight: 0});

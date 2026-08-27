@@ -1,5 +1,22 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: continuidad operativa e InDesign tipográfico v1.19
+
+- La portada de Revisión ofrece ahora **Continuar donde quedaste**. Prioriza el primer plan con
+  identidades pendientes y abre directamente su cola; cuando todos están resueltos conduce a
+  Catálogos para construir la siguiente versión. Cada plan muestra progreso nativo accesible y una
+  acción contextual: continuar revisión o diseñar catálogo.
+- El componente es responsive, utiliza controles nativos compatibles con la CSP estricta y no
+  aprueba, publica ni modifica datos automáticamente.
+- Las lecturas principales de Revisión, Ingresos, Catálogos y Marcas generan ahora un identificador
+  correlacionado de 12 caracteres ante fallos inesperados. El navegador no recibe SQL, rutas,
+  credenciales ni el detalle interno; la consola conserva tipo de error y SQLSTATE para diagnóstico.
+- `ImportPerfectCatalog.jsx` aplica las familias congeladas en el perfil del release: títulos en el
+  peso Bold y cuerpo en Regular. Si InDesign no encuentra cualquiera de ellas, la añade al reporte
+  `unavailable_fonts` en vez de sustituirla silenciosamente sin evidencia.
+- Verificación: 32 pruebas focalizadas y 254 pruebas completas pasan; 6 integraciones PostgreSQL se
+  omiten sin credenciales. Sigue pendiente validar visualmente un paquete real dentro de InDesign.
+
 ## Bloque 2026-08-27: búsqueda móvil y offline v1.18
 
 - El HTML ligero y el autónomo incorporan un buscador interno fijo al desplazarse. Filtra en tiempo

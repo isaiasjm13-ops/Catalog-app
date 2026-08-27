@@ -40,6 +40,11 @@ class InDesignBridgeTests(unittest.TestCase):
         self.assertIn('documentBleedTopOffset = "3mm"', script)
         self.assertIn("MeasurementUnits.POINTS", script)
         self.assertIn('insertLabel("perfect_catalog_page_format", "A4-portrait")', script)
+        self.assertIn('visual.title_font_family', script)
+        self.assertIn('visual.body_font_family', script)
+        self.assertIn('fontByName(titleFamily, "Bold")', script)
+        self.assertIn('fontByName(bodyFamily, "Regular")', script)
+        self.assertIn('box.texts[0].appliedFont = selectedFont', script)
 
 
 if __name__ == "__main__":
