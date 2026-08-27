@@ -116,6 +116,8 @@ La selección de productos también puede hacerse visualmente: el buscador pagin
 categoría, aplicaciones, motor y miniatura, y transfiere las casillas al contrato exacto de referencias.
 En **Marcas**, los formularios ofrecen una vista previa local de portada, ficha y marca de agua antes
 de guardar, además de comprobar contraste 4.5:1 entre texto/fondo y color principal/fondo.
+El selector visual admite ordenar las referencias elegidas. Para HTML también pueden ocultarse
+categoría, marca, OEM, aplicaciones o motor; el mismo ajuste aparece en la vista previa y el borrador.
 
 La misma pantalla permite asociar un logo independiente a cada marca vehicular aprobada. Este
 activo aparece únicamente junto al nombre de la marca del vehículo cuando el catálogo se agrupa

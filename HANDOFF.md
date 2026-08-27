@@ -1,5 +1,21 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: orden editorial y campos HTML v1.28
+
+- El selector visual incorpora una bandeja de referencias elegidas con acciones accesibles para
+  subir, bajar o quitar. El orden de `selected_references` pasa a ser autoritativo y se conserva en
+  preview, exportaciones y evidencia del manifiesto; sin selección explícita se mantiene el orden
+  inmutable del release.
+- El compositor permite mostrar u ocultar categoría, marca de producto, OEM, aplicaciones y motor
+  en el catálogo HTML. La vista previa recibe los mismos controles y el borrador local los conserva.
+- La generación HTML omite por completo etiquetas y contenedores desactivados, también dentro de la
+  ficha ampliada porque esta reutiliza el contenido visible de la tarjeta. Los demás formatos no
+  cambian su contrato en este bloque.
+- El límite estructural del parser web sube de 20 a 32 campos manteniendo cuerpo máximo, campos
+  exactos, rechazo de duplicados, CSRF y origen. No requiere migración.
+- Verificación: sintaxis JavaScript, 58 pruebas focalizadas y 259 pruebas completas pasan; 6
+  integraciones PostgreSQL se omiten sin credenciales.
+
 ## Bloque 2026-08-27: previsualización de identidad de marca v1.27
 
 - Los formularios de identidad madre, marca nueva y revisión de marca muestran una composición

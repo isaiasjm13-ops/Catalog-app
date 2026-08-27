@@ -114,7 +114,14 @@
               <label><span>Filtrar campo</span><select name="filter_field"><option value="all">Todos</option><option value="category_path">Categoría</option><option value="vehicle_make">Marca vehicular</option><option value="brand">Marca de producto</option><option value="internal_reference_original">Referencia</option><option value="name_original">Nombre</option></select></label>
             </div>
             <label><span>Texto de filtro opcional</span><input name="filter_query" maxlength="120" placeholder="Ej. Toyota, motor o NK-001"></label>
-            <label><span>Selección manual de referencias (opcional)</span><textarea name="selected_references" maxlength="20000" placeholder="Una referencia por línea, o separadas por coma"></textarea><small>Si se completa, sólo se exportan coincidencias exactas del release. Los errores de escritura detienen la exportación.</small></label>
+            <label><span>Selección manual de referencias (opcional)</span><textarea name="selected_references" maxlength="20000" placeholder="Una referencia por línea, o separadas por coma"></textarea><small>Si se completa, el orden escrito será el orden editorial de los productos.</small></label>
+            <div class="choice-field"><span>Campos visibles en HTML</span><div class="field-visibility-grid">
+              <label><span>Categoría</span><select name="show_category"><option value="yes">Mostrar</option><option value="no">Ocultar</option></select></label>
+              <label><span>Marca</span><select name="show_brand"><option value="yes">Mostrar</option><option value="no">Ocultar</option></select></label>
+              <label><span>OEM</span><select name="show_oem"><option value="yes">Mostrar</option><option value="no">Ocultar</option></select></label>
+              <label><span>Aplicaciones</span><select name="show_applications"><option value="yes">Mostrar</option><option value="no">Ocultar</option></select></label>
+              <label><span>Motor</span><select name="show_engine"><option value="yes">Mostrar</option><option value="no">Ocultar</option></select></label>
+            </div></div>
             </fieldset>
             <fieldset class="composer-section brand-direction-note">
               <legend>02 · Dirección visual de marca</legend>

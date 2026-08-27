@@ -720,6 +720,8 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
                 "filter_field": "all",
                 "filter_query": "",
                 "selected_references": "NK-001\nNK-002",
+                "show_category": "yes", "show_brand": "no", "show_oem": "yes",
+                "show_applications": "yes", "show_engine": "no",
                 "theme": "industrial",
                 "columns": "2",
                 "format_html": "yes",
@@ -739,6 +741,8 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
             self.gateway.catalog_exports[0]["config"]["selected_references"],
             "NK-001\nNK-002",
         )
+        self.assertFalse(self.gateway.catalog_exports[0]["config"]["show_brand"])
+        self.assertFalse(self.gateway.catalog_exports[0]["config"]["show_engine"])
         export_id = self.gateway.catalog_exports[0]["export_id"]
         download = await self.client.get(
             f"/operator/catalogs/{RELEASE_ID}/exports/{export_id}/catalog.pdf"
@@ -779,11 +783,16 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Borrador recuperado", script.text)
         self.assertIn("Elegir productos visualmente", script.text)
         self.assertIn("/products", script.text)
+        self.assertIn("Orden editorial seleccionado", script.text)
+        self.assertIn("renderOrder", script.text)
+        self.assertIn('name="show_applications"', page.text)
         fields = {
             "csrf_token": hidden_value(page.text, "csrf_token"),
             "title": "Catálogo web", "subtitle": "", "group_by": "category_path",
             "group_by_secondary": "", "filter_field": "all", "filter_query": "",
             "selected_references": "",
+            "show_category": "yes", "show_brand": "yes", "show_oem": "yes",
+            "show_applications": "yes", "show_engine": "yes",
             "theme": "forest",
             "columns": "2", "format_pdf": "yes", "format_pptx": "yes",
             "format_html": "yes",
@@ -933,6 +942,13 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
             f"/operator/catalogs/{RELEASE_ID}/preview?preview_target=indesign&template_profile=T8"
         )
         self.assertEqual(invalid_profile.status_code, 400)
+        hidden_fields = await self.client.get(
+            f"/operator/catalogs/{RELEASE_ID}/preview?show_brand=no&show_oem=no&show_applications=no"
+        )
+        self.assertEqual(hidden_fields.status_code, 200)
+        self.assertNotIn("Motor · Natsuki", hidden_fields.text)
+        self.assertNotIn("<b>OEM:</b>", hidden_fields.text)
+        self.assertNotIn("<b>Aplicaciones:</b>", hidden_fields.text)
 
     async def test_catalog_product_picker_is_authenticated_searchable_and_paged(self) -> None:
         denied = await self.client.get(f"/operator/catalogs/{RELEASE_ID}/products")
@@ -1016,7 +1032,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.27.0")
+        self.assertEqual(OPERATOR_VERSION, "1.28.0")
 
     async def test_company_identity_upload_requires_csrf_and_records_logo_without_exposing_it(self) -> None:
         await self.login()

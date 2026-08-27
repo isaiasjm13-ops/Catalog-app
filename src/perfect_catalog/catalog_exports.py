@@ -516,6 +516,11 @@ def generate_catalog_html(
         rows, str(config.get("group_by") or "category_path"),
         str(config["group_by_secondary"]) if config.get("group_by_secondary") else None,
     )
+    show_category = bool(config.get("show_category", True))
+    show_brand = bool(config.get("show_brand", True))
+    show_oem = bool(config.get("show_oem", True))
+    show_applications = bool(config.get("show_applications", True))
+    show_engine = bool(config.get("show_engine", True))
     navigation: list[str] = []
     for section_index, (section, section_rows) in enumerate(grouped_rows, 1):
         section_id = f"seccion-{section_index:02d}"
@@ -553,16 +558,18 @@ def generate_catalog_html(
             category = escape(str(row.get("category_path") or ""))
             brand = escape(str(row.get("brand") or ""))
             oem = escape(", ".join(map(str, row.get("oem_references") or [])))
+            visible_category = category if show_category else ""
+            visible_brand = brand if show_brand else ""
             specifications = (
-                (f'<div><dt>OEM</dt><dd>{oem}</dd></div>' if oem else "")
-                + (f'<div><dt>Aplicaciones</dt><dd>{applications}</dd></div>' if applications else "")
-                + (f'<div><dt>Motor</dt><dd>{engines}</dd></div>' if engines else "")
+                (f'<div><dt>OEM</dt><dd>{oem}</dd></div>' if oem and show_oem else "")
+                + (f'<div><dt>Aplicaciones</dt><dd>{applications}</dd></div>' if applications and show_applications else "")
+                + (f'<div><dt>Motor</dt><dd>{engines}</dd></div>' if engines and show_engine else "")
             )
             cards.append(
                 '<article class="product">' + image
                 + f'<code>{escape(str(row.get("internal_reference_original") or "Sin referencia"))}</code>'
                 + f'<h3>{escape(str(row.get("name_original") or "Sin nombre"))}</h3>'
-                + (f'<p class="meta">{category}{" · " if category and brand else ""}{brand}</p>' if category or brand else "")
+                + (f'<p class="meta">{visible_category}{" · " if visible_category and visible_brand else ""}{visible_brand}</p>' if visible_category or visible_brand else "")
                 + (f'<dl class="specifications">{specifications}</dl>' if specifications else "") + "</article>"
             )
         section_logo = vehicle_logo_source(section) if str(config.get("group_by") or "") == "vehicle_make" else ""

@@ -3,7 +3,8 @@
 
   var previewFields = [
     "title", "subtitle", "group_by", "group_by_secondary", "filter_field",
-    "filter_query", "selected_references", "theme", "columns", "template_profile"
+    "filter_query", "selected_references", "theme", "columns", "template_profile",
+    "show_category", "show_brand", "show_oem", "show_applications", "show_engine"
   ];
   var draftFields = previewFields.concat([
     "format_html", "format_html_standalone", "format_pdf", "format_pptx",
@@ -108,16 +109,41 @@
 
     var dialog = document.createElement("dialog");
     dialog.className = "product-picker";
-    dialog.innerHTML = '<header><div><strong>Elegir productos</strong><small>Busca y marca referencias del release publicado.</small></div><button type="button" class="product-picker-close" aria-label="Cerrar">×</button></header><form method="dialog" class="product-picker-search"><input type="search" maxlength="120" placeholder="Referencia, producto, categoría, aplicación o motor" aria-label="Buscar productos"><button type="submit" class="secondary-button">Buscar</button></form><p class="product-picker-status" role="status" aria-live="polite"></p><div class="product-picker-grid"></div><footer><button type="button" class="secondary-button product-picker-all">Usar todos</button><div><button type="button" class="secondary-button product-picker-prev">Anterior</button><button type="button" class="secondary-button product-picker-next">Siguiente</button></div><button type="button" class="primary-button product-picker-apply">Aplicar selección</button></footer>';
+    dialog.innerHTML = '<header><div><strong>Elegir productos</strong><small>Busca, marca y ordena referencias del release publicado.</small></div><button type="button" class="product-picker-close" aria-label="Cerrar">×</button></header><form method="dialog" class="product-picker-search"><input type="search" maxlength="120" placeholder="Referencia, producto, categoría, aplicación o motor" aria-label="Buscar productos"><button type="submit" class="secondary-button">Buscar</button></form><p class="product-picker-status" role="status" aria-live="polite"></p><details class="product-picker-order"><summary>Orden editorial seleccionado</summary><ol></ol></details><div class="product-picker-grid"></div><footer><button type="button" class="secondary-button product-picker-all">Usar todos</button><div><button type="button" class="secondary-button product-picker-prev">Anterior</button><button type="button" class="secondary-button product-picker-next">Siguiente</button></div><button type="button" class="primary-button product-picker-apply">Aplicar selección</button></footer>';
     document.body.appendChild(dialog);
     var search = dialog.querySelector("input"), grid = dialog.querySelector(".product-picker-grid");
     var status = dialog.querySelector(".product-picker-status"), offset = 0, limit = 24, total = 0;
     var chosen = new Map();
+    var orderList = dialog.querySelector(".product-picker-order ol");
+
+    function renderOrder() {
+      var entries = Array.from(chosen.entries());
+      orderList.replaceChildren.apply(orderList, entries.map(function (entry, index) {
+        var item = document.createElement("li");
+        var text = document.createElement("code"); text.textContent = entry[1]; item.appendChild(text);
+        [["↑", -1, "Subir"], ["↓", 1, "Bajar"]].forEach(function (action) {
+          var button = document.createElement("button"); button.type = "button"; button.textContent = action[0];
+          button.setAttribute("aria-label", action[2] + " " + entry[1]);
+          button.disabled = index + action[1] < 0 || index + action[1] >= entries.length;
+          button.addEventListener("click", function () {
+            var target = index + action[1], reordered = entries.slice(), current = reordered[index];
+            reordered[index] = reordered[target]; reordered[target] = current; chosen.clear();
+            reordered.forEach(function (value) { chosen.set(value[0], value[1]); }); renderOrder();
+          }); item.appendChild(button);
+        });
+        var remove = document.createElement("button"); remove.type = "button"; remove.textContent = "×";
+        remove.setAttribute("aria-label", "Quitar " + entry[1]);
+        remove.addEventListener("click", function () { chosen.delete(entry[0]); renderOrder(); load(); });
+        item.appendChild(remove); return item;
+      }));
+      dialog.querySelector(".product-picker-order").hidden = entries.length === 0;
+    }
 
     function readTextarea() {
       chosen.clear();
       String(textarea.value || "").split(/[\n,;]+/).map(function (value) { return value.trim(); })
         .filter(Boolean).forEach(function (value) { chosen.set(value.toLocaleUpperCase("es"), value); });
+      renderOrder();
     }
 
     function productCard(product) {
@@ -127,6 +153,7 @@
       checkbox.addEventListener("change", function () {
         var key = product.reference.toLocaleUpperCase("es");
         if (checkbox.checked) chosen.set(key, product.reference); else chosen.delete(key);
+        renderOrder();
         status.textContent = chosen.size ? chosen.size + " productos seleccionados" : "Todos los productos se incluirán";
       });
       label.appendChild(checkbox);
@@ -168,7 +195,7 @@
     dialog.querySelector(".product-picker-search").addEventListener("submit", function (event) { event.preventDefault(); offset = 0; load(); });
     dialog.querySelector(".product-picker-prev").addEventListener("click", function () { offset = Math.max(0, offset - limit); load(); });
     dialog.querySelector(".product-picker-next").addEventListener("click", function () { offset += limit; load(); });
-    dialog.querySelector(".product-picker-all").addEventListener("click", function () { chosen.clear(); textarea.value = ""; textarea.dispatchEvent(new Event("input", {bubbles: true})); dialog.close(); });
+    dialog.querySelector(".product-picker-all").addEventListener("click", function () { chosen.clear(); renderOrder(); textarea.value = ""; textarea.dispatchEvent(new Event("input", {bubbles: true})); dialog.close(); });
     dialog.querySelector(".product-picker-apply").addEventListener("click", function () { textarea.value = Array.from(chosen.values()).join("\n"); textarea.dispatchEvent(new Event("input", {bubbles: true})); dialog.close(); });
     dialog.addEventListener("click", function (event) { if (event.target === dialog) dialog.close(); });
   }

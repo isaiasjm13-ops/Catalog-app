@@ -53,7 +53,7 @@ from .importer import DEFAULT_MAX_PILOT_ROWS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.27.0"
+OPERATOR_VERSION = "1.28.0"
 LOGGER = logging.getLogger(__name__)
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
@@ -409,7 +409,7 @@ async def _parse_form(request: Request) -> dict[str, str]:
     values = parse_qs(
         body.decode("utf-8", errors="strict"),
         keep_blank_values=True,
-        max_num_fields=20,
+        max_num_fields=32,
     )
     if any(len(items) != 1 for items in values.values()):
         raise ValueError("El formulario contiene campos duplicados.")
@@ -982,6 +982,8 @@ def create_operator_app(
         filter_query: str = "", columns: int = 2, theme: str = "forest",
         preview_target: str = "digital", template_profile: str = "T4",
         title: str = "", subtitle: str = "", selected_references: str = "",
+        show_category: bool = True, show_brand: bool = True, show_oem: bool = True,
+        show_applications: bool = True, show_engine: bool = True,
     ) -> Response:
         session_or_redirect = require_session(request)
         if isinstance(session_or_redirect, RedirectResponse):
@@ -1028,6 +1030,8 @@ def create_operator_app(
             preview_target=preview_target, template_profile=template_profile,
             layout_estimate=layout_estimate,
             title=title, subtitle=subtitle,
+            show_category=show_category, show_brand=show_brand, show_oem=show_oem,
+            show_applications=show_applications, show_engine=show_engine,
             session=session_or_redirect,
             version=OPERATOR_VERSION,
         )
@@ -1093,6 +1097,7 @@ def create_operator_app(
                 "csrf_token", "title", "subtitle", "group_by", "group_by_secondary",
                 "filter_field", "filter_query", "columns", "template_profile",
                 "selected_references", "theme",
+                "show_category", "show_brand", "show_oem", "show_applications", "show_engine",
                 "format_html", "format_html_standalone", "format_pdf", "format_pptx", "format_indesign_json", "confirm",
             }
             if set(form) != allowed_fields:
@@ -1122,6 +1127,11 @@ def create_operator_app(
             selected_references = form["selected_references"].strip()
             if len(selected_references) > 20000:
                 raise ValueError("La lista manual de referencias es demasiado larga.")
+            visibility = {}
+            for field in ("show_category", "show_brand", "show_oem", "show_applications", "show_engine"):
+                if form[field] not in {"yes", "no"}:
+                    raise ValueError("La visibilidad de campos no es válida.")
+                visibility[field] = form[field] == "yes"
             columns = int(form["columns"])
             if columns not in {1, 2, 3}:
                 raise ValueError("La cantidad de columnas no es válida.")
@@ -1161,6 +1171,7 @@ def create_operator_app(
                     "columns_per_row": columns,
                     "template_profile": template_profile,
                     "theme": theme,
+                    **visibility,
                 },
             )
         except (ValueError, RuntimeError, PermissionError, FileExistsError) as exc:

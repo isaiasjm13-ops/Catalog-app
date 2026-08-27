@@ -484,6 +484,10 @@ def _selection(rows: list[dict[str, Any]], config: dict[str, Any]) -> tuple[list
             row for row in selected
             if str(row.get("internal_reference_original") or "").strip().casefold() in reference_keys
         ]
+        reference_order = {reference.casefold(): index for index, reference in enumerate(references)}
+        selected.sort(key=lambda row: reference_order[
+            str(row.get("internal_reference_original") or "").strip().casefold()
+        ])
     if not selected:
         raise ValueError("El filtro no selecciona ningún producto.")
     config.update({

@@ -18,6 +18,7 @@ from perfect_catalog.catalog_exports import (
 from perfect_catalog.catalog_export_job import (
     build_catalog_bundle,
     build_catalog_preview,
+    _selection,
     estimate_indesign_layout,
     record_indesign_preflight,
     list_operator_catalog_exports,
@@ -146,6 +147,16 @@ class CatalogExportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "snapshot_sha256"):
             export_rows_from_release(release, items)
 
+    def test_manual_reference_selection_preserves_editorial_order(self) -> None:
+        rows = [
+            {"internal_reference_original": "A", "category_path": "Motor"},
+            {"internal_reference_original": "B", "category_path": "Motor"},
+            {"internal_reference_original": "C", "category_path": "Motor"},
+        ]
+        selected, evidence = _selection(rows, {"selected_references": "C\nA"})
+        self.assertEqual([row["internal_reference_original"] for row in selected], ["C", "A"])
+        self.assertEqual(evidence["selected_references"], ["C", "A"])
+
     def test_generated_pdf_and_pptx_are_valid_containers_with_content(self) -> None:
         release, items = fixture_release()
         rows = export_rows_from_release(release, items)
@@ -260,6 +271,10 @@ class CatalogExportTests(unittest.TestCase):
         self.assertIn("Motor / Empaques", html)
         self.assertIn("Toyota Corolla 2014", html)
         self.assertIn("OEM-123", html)
+        compact = generate_catalog_html(rows, {"visual_profile": visual, "show_brand": False, "show_oem": False, "show_engine": False}).decode("utf-8")
+        self.assertNotIn("<dt>OEM</dt>", compact)
+        self.assertNotIn("<dt>Motor</dt>", compact)
+        self.assertNotIn("Motor / Empaques · Natsuki", compact)
         self.assertTrue(generate_catalog_pdf(rows, {"template_profile": "T1", "visual_profile": visual}).startswith(b"%PDF-"))
         pptx = generate_catalog_pptx(rows, {"template_profile": "T1", "visual_profile": visual})
         with zipfile.ZipFile(io.BytesIO(pptx)) as presentation:
