@@ -53,7 +53,7 @@ from .importer import DEFAULT_MAX_PILOT_ROWS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.9.0"
+OPERATOR_VERSION = "1.10.0"
 LOGGER = logging.getLogger(__name__)
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
@@ -142,6 +142,10 @@ class ReviewGateway(Protocol):
     def decide_image_candidate(
         self, candidate_id: uuid.UUID, evidence_sha256: str, decision: str,
         actor: str, reason: str,
+    ) -> dict[str, Any]: ...
+
+    def decide_image_candidates_bulk(
+        self, expected_count: int, decision: str, actor: str, reason: str,
     ) -> dict[str, Any]: ...
 
     def materialize_approved_image(
@@ -1280,6 +1284,8 @@ def create_operator_app(
             "rejected": "Candidato de imagen rechazado; la evidencia permanece conservada.",
             "already_approved": "La aprobación exacta ya existía.",
             "already_rejected": "El rechazo exacto ya existía.",
+            "bulk_approved": "Asociaciones pendientes aprobadas en lote; cada hash quedó registrado.",
+            "bulk_rejected": "Asociaciones pendientes rechazadas en lote; la evidencia permanece intacta.",
             "materialized": "Imagen verificada y copiada al almacenamiento content-addressed.",
             "already_materialized": "La imagen aprobada ya estaba materializada.",
         }.get(request.query_params.get("result"))
@@ -1343,6 +1349,37 @@ def create_operator_app(
             return _error(environment, 409, "Decisión no aplicada", str(exc), session=session)
         except Exception:
             return _error(environment, 503, "Decisión no disponible", "No se guardó la decisión. Revisa la consola.", session=session)
+        return RedirectResponse(
+            f"/operator/images?{urlencode({'result': str(result['status'])})}", status_code=303
+        )
+
+    @app.post("/operator/images/candidates/bulk-decision")
+    async def decide_image_candidates_bulk_route(request: Request) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "expected_count", "decision", "reason", "confirm"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
+                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            reason = _require_text(form["reason"], "reason")
+            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
+                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
+            decision = form["decision"]
+            if decision not in {"approved", "rejected"} or form["confirm"] != decision:
+                raise ValueError("La confirmación explícita no coincide con la decisión por lote.")
+            expected_count = int(form["expected_count"])
+            result = await run_in_threadpool(
+                gateway.decide_image_candidates_bulk,
+                expected_count, decision, session.actor, reason,
+            )
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            return _error(environment, 409, "Lote no aplicado", str(exc), session=session)
+        except Exception:
+            return _error(environment, 503, "Decisión no disponible", "No se guardó el lote. Revisa la consola.", session=session)
         return RedirectResponse(
             f"/operator/images?{urlencode({'result': str(result['status'])})}", status_code=303
         )

@@ -1,5 +1,15 @@
 # Revisión de candidatos imagen-producto
 
+## Validación por lote
+
+La consola permite aprobar o rechazar en una transacción hasta 500 asociaciones pendientes. El
+formulario envía el conteo visto por el operador; el servidor vuelve a bloquear y consultar el
+conjunto pendiente completo, exige que el conteo coincida y copia el `evidence_sha256` individual en
+cada decisión. Si aparece o desaparece un candidato, el lote entero se revierte y obliga a recargar.
+
+La decisión por lote no extrae, copia ni publica imágenes. La materialización content-addressed de
+las asociaciones aprobadas continúa como una operación posterior y verificable.
+
 La migración `0010` separa tres hechos que no deben confundirse:
 
 1. una imagen fue indexada dentro de un ZIP en cuarentena;

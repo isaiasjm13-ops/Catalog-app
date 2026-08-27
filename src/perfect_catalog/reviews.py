@@ -1175,6 +1175,15 @@ class DatabaseReviewGateway:
             self._config, self._password,
         )
 
+    def decide_image_candidates_bulk(
+        self, expected_count: int, decision: str, actor: str, reason: str,
+    ) -> dict[str, Any]:
+        from .image_match_review import decide_image_candidates_bulk
+
+        return decide_image_candidates_bulk(
+            expected_count, decision, actor, reason, self._config, self._password
+        )
+
     def materialize_approved_image(
         self, candidate_id: uuid.UUID, evidence_sha256: str,
         intake_root: Path, image_root: Path, actor: str, reason: str,

@@ -113,7 +113,8 @@ def list_image_candidates(
                        c.product_template_id, c.product_variant_id,
                        d.decision, d.decided_by, d.decided_at,
                        m.approved_image_materialization_id, m.storage_relpath,
-                       count(*) OVER () AS filtered_count
+                       count(*) OVER () AS filtered_count,
+                       count(*) FILTER (WHERE d.image_product_decision_id IS NULL) OVER () AS pending_count
                 FROM perfect_catalog.image_product_candidate AS c
                 JOIN perfect_catalog.image_archive_entry AS e ON e.image_archive_entry_id=c.image_archive_entry_id
                 JOIN perfect_catalog.product_reference AS r ON r.product_reference_id=c.product_reference_id
@@ -127,9 +128,12 @@ def list_image_candidates(
             )
             rows = [dict(row) for row in cursor.fetchall()]
     count = int(rows[0].pop("filtered_count")) if rows else 0
+    pending_count = int(rows[0].pop("pending_count")) if rows else 0
     for row in rows[1:]:
         row.pop("filtered_count", None)
-    return {"items": rows, "filtered_count": count, "limit": limit, "offset": offset}
+        row.pop("pending_count", None)
+    return {"items": rows, "filtered_count": count, "pending_count": pending_count,
+            "limit": limit, "offset": offset}
 
 
 def decide_image_candidate(
@@ -171,3 +175,52 @@ def decide_image_candidate(
                 (uuid.uuid4(), candidate_id, decision, evidence_sha256, actor, reason, datetime.now(UTC)),
             )
     return {"status": decision}
+
+
+def decide_image_candidates_bulk(
+    expected_count: int, decision: str, actor: str, reason: str,
+    config: DatabaseConfig, password: str, *, max_items: int = 500,
+) -> dict[str, Any]:
+    """Decide el conjunto pendiente exacto en una transacción; nunca materializa archivos."""
+    actor, reason = _actor(actor), _reason(reason)
+    if decision not in {"approved", "rejected"}:
+        raise ValueError("Decisión de imagen inválida.")
+    if not 1 <= expected_count <= max_items:
+        raise ValueError(f"expected_count debe estar entre 1 y {max_items}.")
+    with psycopg.connect(**config.connection_kwargs(password)) as connection:
+        connection.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+        with connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                """
+                SELECT c.image_product_candidate_id, c.evidence_sha256
+                FROM perfect_catalog.image_product_candidate AS c
+                LEFT JOIN perfect_catalog.image_product_decision AS d
+                  ON d.image_product_candidate_id=c.image_product_candidate_id
+                WHERE d.image_product_decision_id IS NULL
+                ORDER BY c.generated_at, c.image_product_candidate_id
+                LIMIT %s
+                FOR UPDATE OF c
+                """,
+                (max_items + 1,),
+            )
+            candidates = [dict(row) for row in cursor.fetchall()]
+            if len(candidates) != expected_count:
+                raise PermissionError(
+                    "La cantidad pendiente cambió; recarga antes de decidir el lote."
+                )
+            now = datetime.now(UTC)
+            for candidate in candidates:
+                cursor.execute(
+                    """
+                    INSERT INTO perfect_catalog.image_product_decision (
+                        image_product_decision_id, image_product_candidate_id, decision,
+                        candidate_evidence_sha256, decided_by, reason, decided_at
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s)
+                    """,
+                    (uuid.uuid4(), candidate["image_product_candidate_id"], decision,
+                     candidate["evidence_sha256"], actor, reason, now),
+                )
+    return {
+        "status": "bulk_approved" if decision == "approved" else "bulk_rejected",
+        "count": expected_count,
+    }

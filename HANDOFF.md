@@ -1,5 +1,15 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: validación de imágenes por lote
+
+- Consola operador v1.10 añade aprobación/rechazo atómico de hasta 500 asociaciones imagen–referencia
+  pendientes. Reconsulta y bloquea el conjunto completo, compara el conteo esperado y conserva el
+  hash individual de cada candidato en su decisión; cualquier cambio revierte todo el lote.
+- La interfaz muestra el conteo pendiente y exige motivo más confirmación específica para aprobar o
+  rechazar. La revisión individual permanece disponible para excepciones.
+- El lote sólo decide asociaciones: no extrae, materializa ni publica fotografías.
+- Suite: 226 pruebas correctas, 6 integraciones PostgreSQL omitidas sin contraseña.
+
 ## Bloque 2026-08-27: aplicaciones vehiculares de extremo a extremo
 
 - Corregido el corte principal: `name_enrichment` ya no se pierde al aplicar. Los planes nuevos

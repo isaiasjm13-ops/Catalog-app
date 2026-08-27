@@ -244,7 +244,9 @@ class SyntheticReviewGateway:
 
     def image_candidates(self, *, limit: int = 100, offset: int = 0) -> dict[str, Any]:
         return {"items": self.image_candidate_data[offset:offset + limit],
-                "filtered_count": len(self.image_candidate_data), "limit": limit, "offset": offset}
+                "filtered_count": len(self.image_candidate_data),
+                "pending_count": sum(item["decision"] is None for item in self.image_candidate_data),
+                "limit": limit, "offset": offset}
 
     def decide_image_candidate(
         self, candidate_id: uuid.UUID, evidence_sha256: str, decision: str,
@@ -255,6 +257,17 @@ class SyntheticReviewGateway:
             raise PermissionError("evidencia incorrecta")
         candidate.update({"decision": decision, "decided_by": actor, "decided_at": "2026-08-26"})
         return {"status": decision}
+
+    def decide_image_candidates_bulk(
+        self, expected_count: int, decision: str, actor: str, reason: str,
+    ) -> dict[str, Any]:
+        pending = [item for item in self.image_candidate_data if item["decision"] is None]
+        if len(pending) != expected_count:
+            raise PermissionError("cantidad pendiente cambió")
+        for candidate in pending:
+            candidate.update({"decision": decision, "decided_by": actor, "decided_at": "2026-08-27"})
+        return {"status": "bulk_approved" if decision == "approved" else "bulk_rejected",
+                "count": expected_count}
 
     def materialize_approved_image(
         self, candidate_id: uuid.UUID, evidence_sha256: str,
@@ -907,7 +920,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.9.0")
+        self.assertEqual(OPERATOR_VERSION, "1.10.0")
 
     async def test_promotion_requires_individual_post_origin_csrf_and_confirmation(self) -> None:
         await self.login()
@@ -1029,6 +1042,22 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(materialized.status_code, 303)
         self.assertIn("result=materialized", materialized.headers["location"])
         self.assertTrue(candidate["storage_relpath"].startswith("objects/"))
+
+    async def test_image_candidates_can_be_approved_as_exact_pending_batch(self) -> None:
+        await self.login()
+        self.gateway.generate_image_candidates(uuid.uuid4(), "web-reviewer", "Cruce exacto")
+        page = await self.client.get("/operator/images")
+        self.assertIn("Validar en lote · 1 asociaciones pendientes", page.text)
+        response = await self.client.post(
+            "/operator/images/candidates/bulk-decision",
+            data={"csrf_token": hidden_value(page.text, "csrf_token"), "expected_count": "1",
+                  "decision": "approved", "reason": "Referencias e imágenes verificadas",
+                  "confirm": "approved"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("result=bulk_approved", response.headers["location"])
+        self.assertEqual(self.gateway.image_candidate_data[0]["decision"], "approved")
 
     async def test_intake_requires_auth_origin_csrf_and_confirmation(self) -> None:
         unauthenticated = await self.client.get("/operator/intake")

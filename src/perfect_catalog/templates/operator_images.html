@@ -6,6 +6,25 @@
   <div class="safety-chip"><span>●</span> Revisión humana obligatoria</div>
 </section>
 {% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+{% if candidates.pending_count and candidates.pending_count <= 500 %}
+<details class="bulk-review-panel">
+  <summary>Validar en lote · {{ candidates.pending_count }} asociaciones pendientes</summary>
+  <form method="post" action="/operator/images/candidates/bulk-decision">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+    <input type="hidden" name="expected_count" value="{{ candidates.pending_count }}">
+    <label><span>Motivo común</span><textarea name="reason" minlength="4" maxlength="500" required placeholder="Ej. Nombres de archivo y referencias exactas verificados"></textarea></label>
+    <p>El servidor volverá a comprobar el conjunto y conservará el SHA-256 individual de cada asociación.</p>
+    <div class="bulk-actions">
+      <label class="confirm-field"><input type="radio" name="confirm" value="rejected" required><span>Confirmo rechazar todas las pendientes.</span></label>
+      <button class="reject-button" type="submit" name="decision" value="rejected">Rechazar {{ candidates.pending_count }}</button>
+      <label class="confirm-field"><input type="radio" name="confirm" value="approved" required><span>Confirmo aprobar todas las pendientes.</span></label>
+      <button class="approve-button" type="submit" name="decision" value="approved">Aprobar {{ candidates.pending_count }}</button>
+    </div>
+  </form>
+</details>
+{% elif candidates.pending_count > 500 %}
+<div class="blocked-note">Hay {{ candidates.pending_count }} asociaciones pendientes. El lote seguro admite hasta 500.</div>
+{% endif %}
 {% if candidates["items"] %}
 <div class="image-candidate-list">
   {% for candidate in candidates["items"] %}
