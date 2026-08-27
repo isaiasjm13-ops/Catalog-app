@@ -216,20 +216,20 @@ class CatalogExportTests(unittest.TestCase):
     def test_standalone_html_embeds_approved_image_as_data_uri(self) -> None:
         release, items = fixture_release()
         rows = export_rows_from_release(release, items)
-        image_bytes = base64.b64decode(
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII="
-        )
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / "approved.png").write_bytes(image_bytes)
+            PILImage.new("RGB", (1600, 400), "red").save(root / "approved.png")
             rows[0].update({
                 "image_path": "approved.png", "image_media_type": "image/png",
             })
             content = generate_catalog_html(
                 rows, release=release, bundle_dir=root, embed_images=True,
             ).decode("utf-8")
-        self.assertIn("data:image/png;base64,", content)
+        self.assertIn("data:image/jpeg;base64,", content)
         self.assertNotIn('src="approved.png"', content)
+        encoded = content.split("data:image/jpeg;base64,", 1)[1].split('"', 1)[0]
+        with PILImage.open(io.BytesIO(base64.b64decode(encoded))) as embedded:
+            self.assertEqual(embedded.size, (1200, 300))
 
     def test_visual_profile_overrides_palette_embeds_brand_and_minimum_type(self) -> None:
         release, items = fixture_release()
@@ -318,7 +318,9 @@ class CatalogExportTests(unittest.TestCase):
 
     def test_bundle_packages_only_sha_verified_approved_images(self) -> None:
         release, items = fixture_release()
-        content = b"synthetic-approved-image"
+        image_buffer = io.BytesIO()
+        PILImage.new("RGB", (120, 60), "blue").save(image_buffer, format="JPEG")
+        content = image_buffer.getvalue()
         digest = hashlib.sha256(content).hexdigest()
         data = items[0]["snapshot_data"]
         data.update({

@@ -40,6 +40,9 @@
 - El compositor ofrece **HTML autónomo** como entregable opcional. Incrusta las copias aprobadas como
   URI `data:` Base64 dentro de un único `.html`, conserva el HTML ligero como opción predeterminada
   y advierte que la variante autónoma puede pesar mucho y cargar todas las imágenes al abrirse.
+- El HTML autónomo no incrusta ya el archivo original completo: crea en memoria una copia JPEG de
+  pantalla limitada a 1200×900 px y calidad 82, respetando orientación y proporción. El original
+  aprobado permanece intacto; CSS mantiene la fotografía completa, centrada y sin recorte.
 
 ## Bloque 2026-08-27: perfiles de marca v1
 

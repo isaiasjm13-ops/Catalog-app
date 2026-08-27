@@ -455,12 +455,12 @@ def generate_catalog_html(
                         raise FileNotFoundError(
                             f"No se puede incrustar la imagen segura {source!r}."
                         )
-                    media_type = str(row.get("image_media_type") or "image/jpeg")
-                    if not media_type.startswith("image/"):
-                        raise ValueError("El recurso incrustado no declara un tipo de imagen.")
+                    optimized = _optimized_raster(
+                        image_path, 1200, 900, quality=82,
+                    )
                     source = (
-                        f"data:{media_type};base64,"
-                        + base64.b64encode(image_path.read_bytes()).decode("ascii")
+                        "data:image/jpeg;base64,"
+                        + base64.b64encode(optimized.read()).decode("ascii")
                     )
                 image = (
                     f'<div class="photo"><img src="{escape(source, quote=True)}" '
