@@ -668,3 +668,4 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 - Sistema: P0 portada, S separador automático, T4 (4 fichas), T2 (2), T1 (1) y TABLE (10 filas legibles a 12 pt). El ZIP InDesign incluye logo y `Document fonts`.
 - QA visual: PDF Natsuki T2 renderizado a PNG e inspeccionado en portada y página de producto.
 - Suite completa: 237 pruebas aprobadas y 6 omitidas de PostgreSQL opt-in.
+- Corrección operativa: el lanzador 0014 detecta si falta `brand_profile`, aplica primero 0013 con la misma sesión de `psql` y omite de forma segura cualquiera de las dos migraciones que ya esté instalada.
