@@ -207,6 +207,7 @@ class CatalogExportTests(unittest.TestCase):
         self.assertIn(str(release["snapshot_sha256"]), content)
         self.assertIn('src="image-safe.png"', content)
         self.assertIn('loading="lazy" decoding="async"', content)
+        self.assertIn(".photo img{display:block;width:100%;height:100%;object-fit:contain;object-position:center center}", content)
         self.assertIn("--forest:#C34A21", content)
         self.assertNotIn("<script>", content)
         self.assertIn("Motor / Empaques · Natsuki", content)

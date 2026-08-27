@@ -744,3 +744,10 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 - QA: HTML renderizado en Edge a 1440x1200 e inspeccionado sin recortes ni solapamientos. Edge headless no renderizó su visor PDF y Poppler no está instalado; la generación y estructura PDF sí quedaron cubiertas por pruebas automatizadas.
 - Referencias aplicadas: WCAG 2.2 (foco, tamaño de objetivo, movimiento y estructura) y guías oficiales de Adobe sobre PDF etiquetado, orden de lectura, texto alternativo, metadatos, marcadores y compresión.
 - Suite completa: 252 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
+
+## 2026-08-27 - Corrección definitiva de encaje de imágenes 1.16.1
+
+- La imagen del HTML digital y autónomo ocupa una caja explícita al 100% y usa `object-fit: contain` con centrado; el navegador ya no puede resolver `auto/max-height` de forma que termine ocultando extremos.
+- Se reprodujo el caso con una imagen horizontal de 1600x900 marcada en sus cuatro bordes y se renderizó localmente en Edge. El original y la copia optimizada conservan su relación de aspecto y no se recortan.
+- Los HTML ya exportados no se modifican retroactivamente: es necesario generar un entregable nuevo para recibir el CSS 1.16.1.
+- Suite completa: 252 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
