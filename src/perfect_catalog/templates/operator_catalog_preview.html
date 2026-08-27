@@ -50,9 +50,10 @@
           {% endif %}
           <code>{{ product.internal_reference_original or 'Sin referencia' }}</code>
           <h3>{{ product.name_original or 'Sin nombre' }}</h3>
-          {% if product.get('category_path') or product.get('brand') %}<p class="preview-meta">{{ product.get('category_path') or 'Sin categoría' }}{% if product.get('brand') %} · {{ product.get('brand') }}{% endif %}</p>{% endif %}
+          {% if product.get('piece_type') or product.get('category_path') or product.get('brand') %}<p class="preview-meta">{{ product.get('piece_type') or product.get('category_path') or 'Sin tipo' }}{% if product.get('brand') %} · {{ product.get('brand') }}{% endif %}</p>{% endif %}
           {% if product.get('oem_references') %}<p><b>OEM:</b> {{ product.get('oem_references')|join(', ') }}</p>{% endif %}
           <p><b>Aplicaciones:</b> {{ product.get('applications')|join('; ') if product.get('applications') else 'No indicadas' }}</p>
+          {% if product.get('engine_types') %}<p><b>Motor:</b> {{ product.get('engine_types')|join(', ') }}</p>{% endif %}
         </article>
         {% endfor %}
       </div>

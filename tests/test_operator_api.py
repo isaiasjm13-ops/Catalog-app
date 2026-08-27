@@ -941,7 +941,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.13.0")
+        self.assertEqual(OPERATOR_VERSION, "1.14.0")
 
     async def test_promotion_requires_individual_post_origin_csrf_and_confirmation(self) -> None:
         await self.login()
@@ -1090,6 +1090,24 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(materialized.status_code, 303)
         self.assertIn("result=bulk_materialized", materialized.headers["location"])
         self.assertIsNotNone(self.gateway.image_candidate_data[0]["approved_image_materialization_id"])
+
+    async def test_exact_image_preparation_combines_approval_and_materialization(self) -> None:
+        await self.login()
+        self.gateway.generate_image_candidates(uuid.uuid4(), "web-reviewer", "Cruce exacto")
+        page = await self.client.get("/operator/images")
+        self.assertIn("Preparar coincidencias exactas · 1", page.text)
+        response = await self.client.post(
+            "/operator/images/candidates/prepare-exact",
+            data={"csrf_token": hidden_value(page.text, "csrf_token"),
+                  "pending_count": "1", "approved_count": "0",
+                  "reason": "Cruce exacto listo para catálogo", "confirm": "yes"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("result=exact_images_ready", response.headers["location"])
+        candidate = self.gateway.image_candidate_data[0]
+        self.assertEqual(candidate["decision"], "approved")
+        self.assertIsNotNone(candidate["approved_image_materialization_id"])
 
     async def test_intake_requires_auth_origin_csrf_and_confirmation(self) -> None:
         unauthenticated = await self.client.get("/operator/intake")

@@ -61,12 +61,14 @@
     {% if releases %}
     <div class="release-list">
       {% for release in releases %}
+      {% set image_item_count = release.get('image_item_count', release.item_count) %}
       <article class="release-card status-{{ release.status }}">
         <div class="release-card-label">Edición maestra</div>
         <div class="release-summary">
           <div>
             <span class="release-version">{{ release.version }}</span>
             <h3>{{ release.item_count }} productos</h3>
+            <p><strong>{{ image_item_count }}</strong> con imagen · <strong>{{ release.item_count - image_item_count }}</strong> sin imagen</p>
           </div>
           <span class="state-pill {% if release.status == 'published' %}complete{% else %}pending{% endif %}">{{ release.status }}</span>
         </div>
@@ -76,6 +78,9 @@
           <div><dt>Publicado por</dt><dd>{{ release.published_by or 'Sin publicar' }}</dd></div>
         </dl>
         {% if release.status == 'published' %}
+        {% if image_item_count == 0 %}
+        <div class="blocked-note"><strong>Release sin imágenes.</strong> Este snapshot se congeló antes de materializarlas. Materializa las asociaciones y construye una versión nueva.</div>
+        {% else %}
         <form class="preview-launcher" method="get" action="/operator/catalogs/{{ release.catalog_release_id }}/preview">
           <label><span>Vista previa</span><select name="group_by"><option value="category_path">Por categoría</option><option value="vehicle_make">Por marca vehicular</option><option value="brand">Por marca de producto</option><option value="internal_reference_original">Por referencia</option></select></label>
           <input type="hidden" name="group_by_secondary" value="">
@@ -138,6 +143,7 @@
             <button type="submit" class="primary-button">Generar entregables</button>
           </form>
         </details>
+        {% endif %}
         {% else %}
         <div class="draft-note">Este borrador no puede exportarse hasta completar su publicación controlada.</div>
         {% if release.status == 'draft' %}

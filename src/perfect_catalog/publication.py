@@ -74,6 +74,12 @@ def snapshot_from_record(record: dict[str, Any]) -> dict[str, Any]:
         str(item.get("make") or "").strip()
         for item in application_details if str(item.get("make") or "").strip()
     })
+    engine_types = sorted({
+        str(engine).strip()
+        for item in application_details
+        for engine in (item.get("engines") or [])
+        if str(engine).strip()
+    })
     applications: list[str] = []
     for item in application_details:
         label = " ".join(filter(None, (
@@ -112,6 +118,9 @@ def snapshot_from_record(record: dict[str, Any]) -> dict[str, Any]:
         "template_name_original": template_name,
         "variant_name": variant_name or None,
         "category_path": record.get("category_path"),
+        "piece_type": (
+            str(record.get("category_path") or "").split("/")[-1].strip() or None
+        ),
         "quantity_available": None,
         "uom_original": None,
         "currency": None,
@@ -124,6 +133,7 @@ def snapshot_from_record(record: dict[str, Any]) -> dict[str, Any]:
         "vehicle_make": vehicle_makes[0] if len(vehicle_makes) == 1 else None,
         "applications": applications,
         "application_details": application_details,
+        "engine_types": engine_types,
         "family": None,
         "source_active": record.get("source_active"),
         "source_updated_at": json_compatible(record.get("source_updated_at")),
@@ -509,6 +519,9 @@ def _build_release_in_connection(
     brand, brand_visual = _resolve_plan_brand(connection, plan)
     records = _load_release_records(connection, brand["brand_id"])
     items = _release_items(records)
+    image_item_count = sum(
+        bool(item["snapshot_data"].get("image_storage_relpath")) for item in items
+    )
     definition = {
         "snapshot_schema_version": SNAPSHOT_SCHEMA_VERSION,
         "release_hash_algorithm": RELEASE_HASH_ALGORITHM,
@@ -528,6 +541,8 @@ def _build_release_in_connection(
         },
         "visual_profile": brand_visual,
         "item_count": len(items),
+        "image_item_count": image_item_count,
+        "missing_image_item_count": len(items) - image_item_count,
     }
     release_id = uuid.uuid5(
         RELEASE_NAMESPACE, f"{brand['brand_id']}:{version}"
@@ -719,7 +734,10 @@ def list_catalog_releases(
                 SELECT r.catalog_release_id, r.brand_id, r.version, r.status,
                        r.snapshot_sha256, r.created_at, r.created_by,
                        r.published_at, r.published_by,
-                       count(i.catalog_release_item_id) AS item_count
+                       count(i.catalog_release_item_id) AS item_count,
+                       count(i.catalog_release_item_id) FILTER (
+                         WHERE NULLIF(i.snapshot_data->>'image_storage_relpath', '') IS NOT NULL
+                       ) AS image_item_count
                 FROM perfect_catalog.catalog_release AS r
                 LEFT JOIN perfect_catalog.catalog_release_item AS i
                   ON i.catalog_release_id = r.catalog_release_id

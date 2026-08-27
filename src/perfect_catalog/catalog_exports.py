@@ -112,14 +112,16 @@ def _groups(
 
 def _detail(row: dict[str, Any]) -> str:
     parts = [escape(str(row.get("name_original") or "")), f"Ref. {escape(str(row.get('internal_reference_original') or ''))}"]
-    if row.get("category_path"):
-        parts.append("Categoría: " + escape(str(row["category_path"])))
+    if row.get("piece_type") or row.get("category_path"):
+        parts.append("Tipo: " + escape(str(row.get("piece_type") or row["category_path"])))
     if row.get("brand"):
         parts.append("Marca: " + escape(str(row["brand"])))
     if row.get("oem_references"):
         parts.append("OEM: " + escape(", ".join(map(str, row["oem_references"]))))
     if row.get("applications"):
         parts.append("Aplicaciones: " + escape("; ".join(str(value) for value in row["applications"])))
+    if row.get("engine_types"):
+        parts.append("Motor: " + escape(", ".join(map(str, row["engine_types"]))))
     return "<br/>".join(parts)
 
 
@@ -153,10 +155,12 @@ def _pdf_cell(
     contents.append(Paragraph(reference, styles["CatalogReference"]))
     contents.append(Paragraph(escape(str(row.get("name_original") or "Sin nombre")), styles["CatalogProductTitle"]))
     detail_parts: list[str] = []
-    if row.get("category_path"):
-        detail_parts.append(escape(str(row["category_path"])))
+    if row.get("piece_type") or row.get("category_path"):
+        detail_parts.append("<b>Tipo</b> · " + escape(str(row.get("piece_type") or row["category_path"])))
     if row.get("applications"):
         detail_parts.append("<b>Aplicaciones</b><br/>" + escape("; ".join(map(str, row["applications"]))))
+    if row.get("engine_types"):
+        detail_parts.append("<b>Motor</b> · " + escape(", ".join(map(str, row["engine_types"]))))
     if row.get("oem_references"):
         detail_parts.append("<b>OEM</b> · " + escape(", ".join(map(str, row["oem_references"]))))
     if detail_parts:
@@ -354,13 +358,15 @@ def generate_catalog_pptx(
                         pass
                 p = frame.paragraphs[0]; p.text = str(row.get("internal_reference_original") or ""); p.font.bold = True; p.font.size = Pt(12)
                 p = frame.add_paragraph(); p.text = str(row.get("name_original") or ""); p.font.size = Pt(12)
-                if row.get("category_path") or row.get("brand"):
-                    metadata = " · ".join(str(value) for value in (row.get("category_path"), row.get("brand")) if value)
+                if row.get("piece_type") or row.get("category_path") or row.get("brand"):
+                    metadata = " · ".join(str(value) for value in (row.get("piece_type") or row.get("category_path"), row.get("brand")) if value)
                     p = frame.add_paragraph(); p.text = metadata; p.font.size = Pt(12)
                 if row.get("oem_references"):
                     p = frame.add_paragraph(); p.text = "OEM: " + ", ".join(map(str, row["oem_references"])); p.font.size = Pt(12)
                 if row.get("applications"):
                     p = frame.add_paragraph(); p.text = "Aplicaciones: " + "; ".join(map(str, row["applications"])); p.font.size = Pt(12)
+                if row.get("engine_types"):
+                    p = frame.add_paragraph(); p.text = "Motor: " + ", ".join(map(str, row["engine_types"])); p.font.size = Pt(12)
                 for paragraph in frame.paragraphs:
                     paragraph.font.name = "DM Sans"
             if logo and _visual(config).get("corner_logo_enabled", True):
@@ -394,6 +400,7 @@ def generate_catalog_html(
                     f'alt="{escape(str(row.get("internal_reference_original") or row.get("name_original") or "Producto"), quote=True)}"></div>'
                 )
             applications = escape("; ".join(map(str, row.get("applications") or [])))
+            engines = escape(", ".join(map(str, row.get("engine_types") or [])))
             category = escape(str(row.get("category_path") or ""))
             brand = escape(str(row.get("brand") or ""))
             oem = escape(", ".join(map(str, row.get("oem_references") or [])))
@@ -403,7 +410,8 @@ def generate_catalog_html(
                 + f'<h3>{escape(str(row.get("name_original") or "Sin nombre"))}</h3>'
                 + (f'<p class="meta">{category}{" · " if category and brand else ""}{brand}</p>' if category or brand else "")
                 + (f'<p><b>OEM:</b> {oem}</p>' if oem else "")
-                + (f'<p><b>Aplicaciones:</b> {applications}</p>' if applications else "") + "</article>"
+                + (f'<p><b>Aplicaciones:</b> {applications}</p>' if applications else "")
+                + (f'<p><b>Motor:</b> {engines}</p>' if engines else "") + "</article>"
             )
         sections.append(
             f'<section><header><h2>{escape(section)}</h2><span>{len(section_rows)} productos</span></header>'
@@ -444,13 +452,13 @@ def generate_indesign_datamerge_csv(rows: list[dict[str, Any]]) -> bytes:
 
     stream = io.StringIO(newline="")
     writer = csv.writer(stream, lineterminator="\r\n")
-    writer.writerow(("reference", "name", "category", "brand", "vehicle_make", "applications", "oem_references", "@image"))
+    writer.writerow(("reference", "name", "piece_type", "category", "brand", "vehicle_make", "applications", "engine_types", "oem_references", "@image"))
     for row in rows:
         writer.writerow((
             cell(row.get("internal_reference_original")), cell(row.get("name_original")),
-            cell(row.get("category_path")), cell(row.get("brand")),
+            cell(row.get("piece_type")), cell(row.get("category_path")), cell(row.get("brand")),
             cell(row.get("vehicle_make") or row.get("vehicle_makes")),
-            cell(row.get("applications")), cell(row.get("oem_references")),
+            cell(row.get("applications")), cell(row.get("engine_types")), cell(row.get("oem_references")),
             cell(row.get("image_path")),
         ))
     return stream.getvalue().encode("utf-8-sig")

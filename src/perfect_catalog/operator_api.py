@@ -53,7 +53,7 @@ from .importer import DEFAULT_MAX_PILOT_ROWS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.13.0"
+OPERATOR_VERSION = "1.14.0"
 LOGGER = logging.getLogger(__name__)
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
@@ -1354,6 +1354,7 @@ def create_operator_app(
             "materialized": "Imagen verificada y copiada al almacenamiento content-addressed.",
             "already_materialized": "La imagen aprobada ya estaba materializada.",
             "bulk_materialized": "Imágenes aprobadas materializadas en lote. Construye una versión nueva para incluirlas.",
+            "exact_images_ready": "Coincidencias exactas aprobadas y materializadas. Ya puedes construir una versión nueva.",
         }.get(request.query_params.get("result"))
         previous_url = f"/operator/images?page={page - 1}" if page > 1 else None
         next_url = f"/operator/images?page={page + 1}" if page * limit < candidates["filtered_count"] else None
@@ -1459,6 +1460,47 @@ def create_operator_app(
         return RedirectResponse(
             f"/operator/images?{urlencode({'result': str(result['status'])})}", status_code=303
         )
+
+    @app.post("/operator/images/candidates/prepare-exact")
+    async def prepare_exact_images_route(request: Request) -> Response:
+        """Una confirmación humana: aprueba las coincidencias exactas y copia sus archivos."""
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            required = {"csrf_token", "pending_count", "approved_count", "reason", "confirm"}
+            if set(form) != required:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
+                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if form["confirm"] != "yes":
+                raise ValueError("Debes confirmar la preparación de las coincidencias exactas.")
+            reason = _require_text(form["reason"], "reason")
+            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
+                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
+            pending_count = int(form["pending_count"])
+            approved_count = int(form["approved_count"])
+            total = pending_count + approved_count
+            if not 1 <= total <= 500:
+                raise ValueError("El lote preparado debe contener entre 1 y 500 imágenes.")
+            if pending_count:
+                await run_in_threadpool(
+                    gateway.decide_image_candidates_bulk,
+                    pending_count, "approved", session.actor, reason,
+                )
+            await run_in_threadpool(
+                gateway.materialize_approved_images_bulk, total,
+                resolved_intake_root, resolved_image_output, session.actor, reason,
+            )
+        except (ValueError, RuntimeError, PermissionError, FileExistsError) as exc:
+            return _error(environment, 409, "Preparación no completada", str(exc), session=session)
+        except Exception:
+            diagnostic_id = uuid.uuid4().hex[:12]
+            LOGGER.exception("Fallo al preparar imágenes exactas; diagnostico=%s", diagnostic_id)
+            return _error(environment, 503, "Preparación no disponible", f"No se completó el lote. Diagnóstico: {diagnostic_id}.", session=session)
+        return RedirectResponse("/operator/images?result=exact_images_ready", status_code=303)
 
     @app.post("/operator/images/candidates/{candidate_id}/materialize")
     async def materialize_approved_image_route(request: Request, candidate_id: str) -> Response:

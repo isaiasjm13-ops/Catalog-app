@@ -6,8 +6,23 @@
   <div class="safety-chip"><span>●</span> Revisión humana obligatoria</div>
 </section>
 {% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
-{% if candidates.approved_unmaterialized_count and candidates.approved_unmaterialized_count <= 500 %}
+{% set exact_ready_count = candidates.pending_count + candidates.approved_unmaterialized_count %}
+{% if exact_ready_count and exact_ready_count <= 500 %}
 <details class="bulk-review-panel" open>
+  <summary>Preparar coincidencias exactas · {{ exact_ready_count }}</summary>
+  <form method="post" action="/operator/images/candidates/prepare-exact">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+    <input type="hidden" name="pending_count" value="{{ candidates.pending_count }}">
+    <input type="hidden" name="approved_count" value="{{ candidates.approved_unmaterialized_count }}">
+    <label><span>Motivo auditable</span><textarea name="reason" minlength="4" maxlength="500" required placeholder="Coincidencias exactas verificadas para el catálogo"></textarea></label>
+    <p>En una sola acción se aprobarán {{ candidates.pending_count }} coincidencias exactas pendientes y se copiarán {{ exact_ready_count }} imágenes verificando cada SHA-256.</p>
+    <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo este lote exacto; los casos ambiguos seguirán requiriendo revisión manual.</span></label>
+    <button class="primary-button" type="submit">Aprobar y materializar {{ exact_ready_count }}</button>
+  </form>
+</details>
+{% endif %}
+{% if candidates.approved_unmaterialized_count and candidates.approved_unmaterialized_count <= 500 %}
+<details class="bulk-review-panel">
   <summary>Materializar aprobadas en lote · {{ candidates.approved_unmaterialized_count }}</summary>
   <form method="post" action="/operator/images/candidates/bulk-materialize">
     <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><input type="hidden" name="expected_count" value="{{ candidates.approved_unmaterialized_count }}">

@@ -1,5 +1,22 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: preparación asistida y control de imágenes v1.14
+
+- La revisión de imágenes ofrece **Aprobar y materializar coincidencias exactas**: una sola
+  confirmación humana vuelve a contar hasta 500 candidatos, registra cada decisión y copia cada
+  archivo después de verificar su SHA-256. Ambigüedades y conflictos continúan en revisión manual.
+- Cada release nuevo congela `image_item_count` y `missing_image_item_count`. La pantalla de
+  catálogos muestra ambos conteos y deshabilita composición/exportación cuando el snapshot tiene
+  cero imágenes. La exportación operativa también lo rechaza en servidor con una explicación
+  accionable; un release inmutable antiguo debe sustituirse por una versión nueva.
+- El snapshot editorial incorpora `piece_type` y `engine_types` derivados de la categoría y de las
+  aplicaciones aprobadas. Vista previa, HTML, PDF, PPTX y Data Merge/InDesign priorizan referencia,
+  tipo de pieza, aplicaciones y motor, manteniendo fuera precio, moneda, inventario y cantidades.
+- Paso manual para comprobar los 221 objetos ya materializados: reiniciar el revisor, abrir
+  **Catálogos**, crear una versión nueva (por ejemplo `2026.27.08-r2`), publicar y exportar. El
+  release anterior conserva cero imágenes por diseño y no se modifica.
+- Verificación automatizada: 246 pruebas pasan; 6 integraciones PostgreSQL se omiten sin contraseña.
+
 ## Bloque 2026-08-27: perfiles de marca v1
 
 - Migracion forward-only `0013` crea perfiles de marca inmutables con codigo, nombre, eslogan, URL publica y paleta de cuatro colores; cada alta conserva operador y motivo. La aplicacion solo recibe `SELECT, INSERT`, sin UPDATE/DELETE.

@@ -481,6 +481,7 @@ def build_catalog_bundle(
     formats: Iterable[str] = SUPPORTED_FORMATS,
     config: dict[str, Any] | None = None,
     image_root: Path | None = None,
+    require_images: bool = False,
 ) -> dict[str, Any]:
     if release.get("status") != "published":
         raise PermissionError("Solo se puede exportar un release publicado.")
@@ -491,6 +492,11 @@ def build_catalog_bundle(
 
     materialized = list(items)
     source_rows = export_rows_from_release(release, materialized)
+    if require_images and not any(row.get("image_storage_relpath") for row in source_rows):
+        raise RuntimeError(
+            "Este release fue construido sin imágenes aprobadas. Materializa las "
+            "asociaciones y construye una versión nueva antes de exportar."
+        )
     export_config = dict(config or {})
     export_config["visual_profile"] = dict(release.get("definition", {}).get("visual_profile") or {})
     template_profile = str(export_config.get("template_profile") or "T4").upper()
@@ -576,10 +582,12 @@ def export_catalog_release(
     formats: Iterable[str] = SUPPORTED_FORMATS,
     config: dict[str, Any] | None = None,
     image_root: Path | None = None,
+    require_images: bool = False,
 ) -> dict[str, Any]:
     release, items = load_published_release(release_id, database, password)
     return build_catalog_bundle(
-        release, items, output_dir, formats=formats, config=config, image_root=image_root
+        release, items, output_dir, formats=formats, config=config, image_root=image_root,
+        require_images=require_images,
     )
 
 
@@ -602,7 +610,7 @@ def create_operator_catalog_export(
     try:
         result = export_catalog_release(
             release_id, database, password, temporary,
-            formats=formats, config=config, image_root=image_root,
+            formats=formats, config=config, image_root=image_root, require_images=True,
         )
         destination.parent.mkdir(parents=True, exist_ok=True)
         temporary.replace(destination)
