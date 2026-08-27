@@ -15,10 +15,9 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.units import cm
 from reportlab.lib.utils import ImageReader
-from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import CondPageBreak, HRFlowable, Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from .releases import release_snapshot_sha256, validate_release_definition, validate_release_items
 
@@ -94,17 +93,34 @@ def _safe_bundle_image(row: dict[str, Any], bundle_dir: Path | None) -> Path | N
     return candidate
 
 
-def _pdf_cell(row: dict[str, Any], styles: Any, bundle_dir: Path | None) -> list[Any]:
+def _pdf_cell(
+    row: dict[str, Any], styles: Any, bundle_dir: Path | None,
+    palette: dict[str, str], columns: int,
+) -> list[Any]:
     contents: list[Any] = []
     image_path = _safe_bundle_image(row, bundle_dir)
     if image_path:
         try:
             width, height = ImageReader(str(image_path)).getSize()
-            scale = min(4.2 * cm / width, 2.8 * cm / height)
-            contents.extend([Image(str(image_path), width=width * scale, height=height * scale), Spacer(1, .12 * cm)])
+            available_width = (A4[0] - 3.2 * cm) / columns
+            scale = min(available_width / width, (4.4 if columns == 1 else 3.2) * cm / height)
+            product_image = Image(str(image_path), width=width * scale, height=height * scale)
+            product_image.hAlign = "CENTER"
+            contents.extend([product_image, Spacer(1, .22 * cm)])
         except Exception:
             pass
-    contents.append(Paragraph(_detail(row), styles["BodyText"]))
+    reference = escape(str(row.get("internal_reference_original") or "Sin referencia"))
+    contents.append(Paragraph(reference, styles["CatalogReference"]))
+    contents.append(Paragraph(escape(str(row.get("name_original") or "Sin nombre")), styles["CatalogProductTitle"]))
+    detail_parts: list[str] = []
+    if row.get("category_path"):
+        detail_parts.append(escape(str(row["category_path"])))
+    if row.get("applications"):
+        detail_parts.append("<b>Aplicaciones</b><br/>" + escape("; ".join(map(str, row["applications"]))))
+    if row.get("oem_references"):
+        detail_parts.append("<b>OEM</b> · " + escape(", ".join(map(str, row["oem_references"]))))
+    if detail_parts:
+        contents.append(Paragraph("<br/>".join(detail_parts), styles["CatalogMeta"]))
     return contents
 
 
@@ -120,36 +136,96 @@ def generate_catalog_pdf(
     styles = getSampleStyleSheet()
     cover_title_style = ParagraphStyle(
         "PerfectCatalogCoverTitle", parent=styles["Title"],
-        textColor=colors.HexColor(palette["primary"]), fontName="Helvetica-Bold",
-        fontSize=32, leading=36, alignment=TA_CENTER, spaceAfter=14,
+        textColor=colors.HexColor(palette["ink"]), fontName="Helvetica-Bold",
+        fontSize=38, leading=41, alignment=0, spaceAfter=14,
     )
     cover_subtitle_style = ParagraphStyle(
         "PerfectCatalogCoverSubtitle", parent=styles["Heading2"],
         textColor=colors.HexColor(palette["ink"]), fontName="Helvetica",
-        fontSize=15, leading=20, alignment=TA_CENTER,
+        fontSize=15, leading=20, alignment=0,
     )
     section_style = ParagraphStyle(
         "PerfectCatalogSection", parent=styles["Heading1"],
-        textColor=colors.HexColor(palette["primary"]), fontName="Helvetica-Bold",
+        textColor=colors.HexColor(palette["ink"]), fontName="Helvetica-Bold",
+        fontSize=23, leading=27, spaceAfter=4,
     )
+    styles.add(ParagraphStyle(
+        "CatalogEyebrow", parent=styles["Normal"], textColor=colors.HexColor(palette["primary"]),
+        fontName="Helvetica-Bold", fontSize=8, leading=10, spaceAfter=10,
+    ))
+    styles.add(ParagraphStyle(
+        "CatalogReference", parent=styles["Normal"], textColor=colors.HexColor(palette["primary"]),
+        fontName="Helvetica-Bold", fontSize=9, leading=11, spaceAfter=5,
+    ))
+    styles.add(ParagraphStyle(
+        "CatalogProductTitle", parent=styles["Heading3"], textColor=colors.HexColor(palette["ink"]),
+        fontName="Helvetica-Bold", fontSize=11 if columns == 3 else 13,
+        leading=14 if columns == 3 else 16, spaceAfter=8,
+    ))
+    styles.add(ParagraphStyle(
+        "CatalogMeta", parent=styles["BodyText"], textColor=colors.HexColor("#56645e"),
+        fontName="Helvetica", fontSize=7.5 if columns == 3 else 8.5,
+        leading=10.5 if columns == 3 else 12,
+    ))
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, title=title, leftMargin=1.2*cm, rightMargin=1.2*cm)
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4, title=title, author="Perfect Trading",
+        subject="Catálogo verificable de productos",
+        leftMargin=1.35*cm, rightMargin=1.35*cm, topMargin=1.55*cm, bottomMargin=1.35*cm,
+    )
+    version = str(release.get("version") or "Edición de trabajo")
+    checksum = str(release.get("snapshot_sha256") or "")
+    cover_meta = Table(
+        [[Paragraph("EDICIÓN", styles["CatalogEyebrow"]), Paragraph("PRODUCTOS", styles["CatalogEyebrow"]), Paragraph("IDENTIDAD", styles["CatalogEyebrow"])],
+         [Paragraph(escape(version), styles["BodyText"]), Paragraph(str(len(rows)), styles["BodyText"]), Paragraph(escape(checksum[:16] or "Sin publicar"), styles["BodyText"]) ]],
+        colWidths=[6.2 * cm, 3.2 * cm, 7.4 * cm],
+    )
+    cover_meta.setStyle(TableStyle([
+        ("LINEABOVE", (0, 0), (-1, 0), 1, colors.HexColor(palette["primary"])),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8), ("TOPPADDING", (0, 0), (-1, -1), 8),
+    ]))
     story: list[Any] = [
-        Spacer(1, 6 * cm), Paragraph(escape(title), cover_title_style),
-        Paragraph(escape(str(config.get("subtitle") or "")), cover_subtitle_style), PageBreak(),
+        Spacer(1, 4.4 * cm), Paragraph("PERFECT TRADING · CATÁLOGO", styles["CatalogEyebrow"]),
+        Paragraph(escape(title), cover_title_style),
+        Paragraph(escape(str(config.get("subtitle") or "Selección técnica de productos")), cover_subtitle_style),
+        Spacer(1, 2.2 * cm), cover_meta, PageBreak(),
     ]
-    for section, section_rows in _groups(
+    for section_index, (section, section_rows) in enumerate(_groups(
         rows, str(config.get("group_by") or "category_path"),
         str(config["group_by_secondary"]) if config.get("group_by_secondary") else None,
-    ):
-        story.extend([Paragraph(escape(section), section_style), Spacer(1, .25*cm)])
-        cells = [_pdf_cell(row, styles, bundle_dir) for row in section_rows]
+    )):
+        if section_index:
+            story.append(CondPageBreak(7 * cm))
+        story.extend([
+            Paragraph(f"SECCIÓN {section_index + 1:02d}", styles["CatalogEyebrow"]),
+            Paragraph(escape(section), section_style),
+            Paragraph(f"{len(section_rows)} productos", styles["CatalogMeta"]),
+            HRFlowable(width="100%", thickness=1, color=colors.HexColor(palette["primary"]), spaceBefore=7, spaceAfter=12),
+        ])
+        cells = [_pdf_cell(row, styles, bundle_dir, palette, columns) for row in section_rows]
         grid = [cells[index:index+columns] for index in range(0, len(cells), columns)]
         if grid and len(grid[-1]) < columns:
             grid[-1].extend([""] * (columns-len(grid[-1])))
-        table = Table(grid, colWidths=[(A4[0]-2.4*cm)/columns]*columns, repeatRows=0)
-        table.setStyle(TableStyle([("BOX", (0,0), (-1,-1), .5, colors.HexColor(palette["primary"])), ("INNERGRID", (0,0), (-1,-1), .25, colors.lightgrey), ("VALIGN", (0,0), (-1,-1), "TOP"), ("PADDING", (0,0), (-1,-1), 8)]))
-        story.extend([table, Spacer(1, .4*cm)])
+        table = Table(grid, colWidths=[(A4[0]-2.7*cm)/columns]*columns, repeatRows=0, hAlign="LEFT")
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,-1), colors.HexColor(palette["card"])),
+            ("BOX", (0,0), (-1,-1), .45, colors.HexColor("#d7ddd9")),
+            ("INNERGRID", (0,0), (-1,-1), .35, colors.HexColor("#e3e7e4")),
+            ("LINEABOVE", (0,0), (-1,0), 2, colors.HexColor(palette["primary"])),
+            ("VALIGN", (0,0), (-1,-1), "TOP"), ("PADDING", (0,0), (-1,-1), 11),
+        ]))
+        story.extend([table, Spacer(1, .5*cm)])
+
+    def decorate_cover(canvas: Any, document: Any) -> None:
+        canvas.saveState()
+        canvas.setFillColor(colors.HexColor(palette["paper"]))
+        canvas.rect(0, 0, A4[0], A4[1], stroke=0, fill=1)
+        canvas.setFillColor(colors.HexColor(palette["primary"]))
+        canvas.rect(0, A4[1] - 1.1 * cm, A4[0], 1.1 * cm, stroke=0, fill=1)
+        canvas.circle(A4[0] - 2.4 * cm, A4[1] - 3.5 * cm, 1.25 * cm, stroke=0, fill=1)
+        canvas.restoreState()
+
     def decorate(canvas: Any, document: Any) -> None:
         canvas.saveState()
         canvas.setStrokeColor(colors.HexColor(palette["primary"]))
@@ -157,14 +233,13 @@ def generate_catalog_pdf(
         canvas.line(1.2 * cm, A4[1] - .8 * cm, A4[0] - 1.2 * cm, A4[1] - .8 * cm)
         canvas.setFillColor(colors.HexColor(palette["ink"]))
         canvas.setFont("Helvetica", 7)
-        version = str(release.get("version") or "")
-        checksum = str(release.get("snapshot_sha256") or "")[:16]
-        proof = " · ".join(value for value in (version, checksum) if value)
+        canvas.drawString(1.35 * cm, A4[1] - 1.15 * cm, title[:70])
+        proof = " · ".join(value for value in (version, checksum[:16]) if value)
         canvas.drawString(1.2 * cm, .65 * cm, proof)
         canvas.drawRightString(A4[0] - 1.2 * cm, .65 * cm, f"Página {document.page}")
         canvas.restoreState()
 
-    doc.build(story, onFirstPage=decorate, onLaterPages=decorate)
+    doc.build(story, onFirstPage=decorate_cover, onLaterPages=decorate)
     return buffer.getvalue()
 
 

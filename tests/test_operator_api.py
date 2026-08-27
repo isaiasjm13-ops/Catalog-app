@@ -920,7 +920,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.10.0")
+        self.assertEqual(OPERATOR_VERSION, "1.11.0")
 
     async def test_promotion_requires_individual_post_origin_csrf_and_confirmation(self) -> None:
         await self.login()

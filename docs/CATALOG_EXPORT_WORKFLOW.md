@@ -119,6 +119,16 @@ por CLI o movida desde el directorio temporal al historial de la consola operado
 La consola vuelve a validar tamaño y SHA-256 del entregable en cada descarga autenticada. Si se pide
 el manifiesto, revalida el bundle completo; un archivo alterado después de su creación no se sirve.
 
+## Composición PDF editorial
+
+El PDF directo comparte tema, selección y agrupaciones con la vista previa. Incluye portada con
+edición, conteo e identidad abreviada del release; secciones numeradas; fichas con referencia,
+nombre, categoría, aplicaciones, OEM e imagen aprobada; encabezado de edición, checksum abreviado,
+pie técnico y numeración de página. Las fichas omiten precios, inventario y cantidades.
+
+Esta salida es una prueba editorial reproducible. Para el arte final de imprenta se mantiene el flujo
+InDesign con preflight, perfil de color y PDF/X-4 definidos por la imprenta.
+
 ## Contrato InDesign v1
 
 El snapshot usa el esquema `perfect-catalog.indesign-snapshot.v1` e incluye:

@@ -133,6 +133,9 @@ class CatalogExportTests(unittest.TestCase):
         )
         self.assertTrue(pdf.startswith(b"%PDF-"))
         self.assertIn(b"%%EOF", pdf[-64:])
+        self.assertGreaterEqual(pdf.count(b"/Type /Page"), 3)
+        self.assertIn(b"Perfect Trading", pdf)
+        self.assertIn(b"/Title (Cat", pdf)
         pptx = generate_catalog_pptx(
             rows, {"title": "Catálogo sintético", "columns_per_row": 3, "theme": "industrial"},
             release=release,

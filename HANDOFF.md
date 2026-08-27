@@ -1,5 +1,15 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: PDF editorial v2
+
+- Rediseñada la salida PDF con portada temática, edición, conteo e identidad del release; secciones
+  numeradas; jerarquía propia para referencia, producto y datos técnicos; imágenes escaladas según
+  densidad; encabezado, checksum abreviado, pie y numeración.
+- La composición conserva temas y agrupación, muestra aplicaciones/OEM y sigue excluyendo campos
+  comerciales y operativos. Continúa siendo prueba reproducible; PDF/X-4 final queda en InDesign.
+- Verificación visual real: portada y página de fichas renderizadas a PNG sin cortes, solapamientos ni
+  problemas de margen. Consola v1.11. Suite: 226 pruebas correctas, 6 integraciones omitidas sin clave.
+
 ## Bloque 2026-08-27: validación de imágenes por lote
 
 - Consola operador v1.10 añade aprobación/rechazo atómico de hasta 500 asociaciones imagen–referencia
