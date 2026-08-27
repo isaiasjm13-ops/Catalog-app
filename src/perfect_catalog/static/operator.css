@@ -444,6 +444,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .identity-logo-preview.compact { max-width: 210px; max-height: 90px; margin-bottom: 10px; }
 .brand-profile-card .materialize-action form { display: grid; gap: 10px; }
 .brand-profile-card .brand-color-row { grid-template-columns: repeat(2,1fr); }
+.vehicle-logo-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(210px,1fr)); gap: 12px; }
+.vehicle-logo-card { padding: 18px; border: 1px solid rgba(20,30,26,.14); border-radius: 16px; background: var(--card); }
+.vehicle-logo-card h3 { margin: 6px 0 12px; }
+.vehicle-logo-card form { display: grid; gap: 10px; }
 
 @media (max-width: 980px) {
   .workflow-dashboard-grid { grid-template-columns: repeat(2,1fr); }

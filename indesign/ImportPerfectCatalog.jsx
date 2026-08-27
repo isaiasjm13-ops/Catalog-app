@@ -86,8 +86,15 @@
         var page = document.pages.add();
         var background = page.rectangles.add({geometricBounds: page.bounds, fillColor: theme.paper, strokeWeight: 0});
         background.sendToBack();
-        frame(page, [260, 55, 335, 540], String(label), 30, true, {text: theme.primary});
+        frame(page, [260, 55, 335, 430], String(label), 30, true, {text: theme.primary});
         frame(page, [350, 55, 390, 540], "Separador de sección · Perfect Trading", 11, false, {text: theme.ink});
+    }
+    function vehicleMakeMark(page, baseFolder, visual, makeName) {
+        var source = visual && visual.vehicle_makes && visual.vehicle_makes[String(makeName)];
+        var logo = source ? imageFile(baseFolder, source.packaged_logo_path) : null;
+        if (!logo) return;
+        var box = page.rectangles.add({geometricBounds: [268, 445, 322, 540], strokeWeight: 0});
+        try { box.place(logo); box.fit(FitOptions.PROPORTIONALLY); box.fit(FitOptions.CENTER_CONTENT); } catch (ignored) {}
     }
     function profileDefinition(profile) {
         if (profile === "T1") return {perPage: 1, columns: 1, rows: 1, imageHeight: 300};
@@ -185,7 +192,7 @@
         for (var index = 0; index < snapshot.products.length; index++) {
             var product = snapshot.products[index], group = value(product, groupBy, "Sin categoría");
             if (secondaryGroupBy) group += " · " + value(product, secondaryGroupBy, "Sin subgrupo");
-            if (group !== currentGroup) { separatorPage(document, group, theme); brandMark(document.pages.item(-1), baseFolder, visual, false, false); currentGroup = group; slot = definition.perPage; report.group_count++; }
+            if (group !== currentGroup) { separatorPage(document, group, theme); brandMark(document.pages.item(-1), baseFolder, visual, false, false); if (groupBy === "vehicle_make" && !secondaryGroupBy) vehicleMakeMark(document.pages.item(-1), baseFolder, visual, group); currentGroup = group; slot = definition.perPage; report.group_count++; }
             if (slot >= definition.perPage) { page = document.pages.add(); brandMark(page, baseFolder, visual, false, false); slot = 0; }
             productFrame(page, productBounds(definition, slot), product, index, definition, baseFolder, report, theme); slot++;
         }

@@ -482,6 +482,28 @@ class CatalogExportTests(unittest.TestCase):
         groups = _groups(rows, "vehicle_make")
         self.assertEqual([label for label, _ in groups], ["Toyota", "Nissan"])
 
+    def test_vehicle_make_logo_appears_only_beside_vehicle_group_heading(self) -> None:
+        rows = [{
+            "internal_reference_original": "A-1", "name_original": "Producto",
+            "vehicle_makes": ["Toyota"], "applications": ["Toyota Corolla"],
+        }]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "vehicle-logo.svg").write_text(
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M0 0h10v10z"/></svg>',
+                encoding="utf-8",
+            )
+            config = {"group_by": "vehicle_make", "visual_profile": {"vehicle_makes": {
+                "Toyota": {"packaged_logo_path": "vehicle-logo.svg"},
+            }}}
+            html = generate_catalog_html(rows, config, bundle_dir=root).decode("utf-8")
+            standalone = generate_catalog_html(
+                rows, config, bundle_dir=root, embed_images=True,
+            ).decode("utf-8")
+        self.assertIn('class="vehicle-make-logo" src="vehicle-logo.svg" alt="Logo de Toyota"', html)
+        self.assertIn('class="vehicle-make-logo" src="data:image/svg+xml;base64,', standalone)
+        self.assertEqual(html.count('class="vehicle-make-logo"'), 1)
+
     def test_manual_reference_selection_is_exact_manifested_and_rejects_typos(self) -> None:
         release, items = fixture_release()
         with tempfile.TemporaryDirectory() as temporary:

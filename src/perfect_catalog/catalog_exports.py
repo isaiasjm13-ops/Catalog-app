@@ -79,6 +79,21 @@ def _logo_path(
     return Path(str(path)) if path.is_file() else None
 
 
+def _vehicle_logo_path(
+    config: dict[str, Any], make: str, bundle_dir: Path | None,
+    *, raster_only: bool = False,
+) -> Path | None:
+    filename = str(((_visual(config).get("vehicle_makes") or {}).get(make) or {}).get("packaged_logo_path") or "")
+    if not filename or bundle_dir is None:
+        return None
+    candidate = (bundle_dir.resolve() / filename).resolve()
+    if not candidate.is_relative_to(bundle_dir.resolve()) or not candidate.is_file():
+        return None
+    if raster_only and candidate.suffix.lower() not in {".png", ".jpg", ".jpeg"}:
+        return None
+    return candidate
+
+
 def _layout(config: dict[str, Any]) -> tuple[int, int]:
     layouts = {"T4": (2, 4), "T2": (1, 2), "T1": (1, 1), "TABLE": (1, 10)}
     profile = str(config.get("template_profile") or "").upper()
@@ -299,9 +314,17 @@ def generate_catalog_pdf(
             if section_index or chunk_index:
                 story.append(PageBreak())
             continuation = " · CONTINUACIÓN" if chunk_index else ""
+            section_heading: Any = Paragraph(escape(section), section_style)
+            vehicle_logo = _vehicle_logo_path(config, section, bundle_dir, raster_only=True) if str(config.get("group_by") or "") == "vehicle_make" else None
+            if vehicle_logo:
+                section_heading = Table(
+                    [[section_heading, Image(str(vehicle_logo), width=2.4*cm, height=.85*cm, kind="proportional")]],
+                    colWidths=[14.1*cm, 2.7*cm], hAlign="LEFT",
+                )
+                section_heading.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0)]))
             story.extend([
                 Paragraph(f"SECCIÓN {section_index + 1:02d}{continuation}", styles["CatalogEyebrow"]),
-                Paragraph(escape(section), section_style),
+                section_heading,
                 Paragraph(f"{len(section_rows)} productos", styles["CatalogMeta"]),
                 HRFlowable(width="100%", thickness=1, color=colors.HexColor(palette["primary"]), spaceBefore=7, spaceAfter=12),
             ])
@@ -402,6 +425,9 @@ def generate_catalog_pptx(
             heading.text_frame.paragraphs[0].font.size = Pt(22)
             heading.text_frame.paragraphs[0].font.bold = True
             heading.text_frame.paragraphs[0].font.color.rgb = primary_rgb
+            vehicle_logo = _vehicle_logo_path(config, section, bundle_dir, raster_only=True) if str(config.get("group_by") or "") == "vehicle_make" else None
+            if vehicle_logo:
+                slide.shapes.add_picture(str(vehicle_logo), Inches(8.8), Inches(.18), width=Inches(1.2), height=Inches(.42))
             for index, row in enumerate(section_rows[start:start+per_slide]):
                 col, line = index % columns, index // columns
                 width = 12.4 / columns
@@ -463,6 +489,21 @@ def generate_catalog_html(
     subtitle = escape(str(config.get("subtitle") or ""))
     sections: list[str] = []
     lightboxes: list[str] = []
+    vehicle_visuals = (_visual(config).get("vehicle_makes") or {})
+
+    def vehicle_logo_source(make: str) -> str:
+        filename = str((vehicle_visuals.get(make) or {}).get("packaged_logo_path") or "")
+        if not filename:
+            return ""
+        if not embed_images:
+            return escape(filename, quote=True)
+        if bundle_dir is None:
+            return ""
+        target = (bundle_dir.resolve() / filename).resolve()
+        if not target.is_relative_to(bundle_dir.resolve()) or not target.is_file():
+            return ""
+        media = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(target.suffix.lower())
+        return f"data:{media};base64," + base64.b64encode(target.read_bytes()).decode("ascii") if media else ""
     grouped_rows = _groups(
         rows, str(config.get("group_by") or "category_path"),
         str(config["group_by_secondary"]) if config.get("group_by_secondary") else None,
@@ -526,9 +567,12 @@ def generate_catalog_html(
                 + (f'<p class="meta">{category}{" · " if category and brand else ""}{brand}</p>' if category or brand else "")
                 + (f'<dl class="specifications">{specifications}</dl>' if specifications else "") + "</article>"
             )
+        section_logo = vehicle_logo_source(section) if str(config.get("group_by") or "") == "vehicle_make" else ""
         sections.append(
-            f'<section id="{section_id}"><header><h2>{escape(section)}</h2><span>{len(section_rows)} productos</span></header>'
-            f'<div class="products">{"".join(cards)}</div></section>'
+            f'<section id="{section_id}"><header><h2>{escape(section)}'
+            + (f'<img class="vehicle-make-logo" src="{section_logo}" alt="Logo de {escape(section, quote=True)}">' if section_logo else "")
+            + f'</h2><span>{len(section_rows)} productos</span></header>'
+            + f'<div class="products">{"".join(cards)}</div></section>'
         )
     checksum = escape(str(release.get("snapshot_sha256") or ""))
     version = escape(str(release.get("version") or ""))
@@ -547,6 +591,7 @@ def generate_catalog_html(
 /* Visor ampliado sin JavaScript: mantiene el catálogo autónomo y portable. */
 .photo{{position:relative;color:var(--ink);text-decoration:none;cursor:zoom-in}}.zoom-hint{{position:absolute;right:12px;bottom:12px;padding:6px 10px;border-radius:999px;color:#fff;background:rgba(17,30,25,.78);font-size:12px;font-weight:800;opacity:0;transform:translateY(4px);transition:.18s ease}}.photo:hover .zoom-hint,.photo:focus-visible .zoom-hint{{opacity:1;transform:none}}.lightbox{{position:fixed;inset:0;z-index:1000;display:none;margin:0;padding:clamp(18px,4vw,48px)}}.lightbox:target{{display:grid;place-items:center}}.lightbox-backdrop{{position:absolute;inset:0;background:rgba(8,15,12,.9)}}.lightbox-dialog{{position:relative;z-index:1;display:grid;grid-template-columns:1fr auto;grid-template-rows:minmax(0,1fr) auto;gap:12px;width:min(94vw,1400px);height:min(92vh,1000px);padding:16px;border-radius:16px;background:var(--card);box-shadow:0 24px 80px rgba(0,0,0,.45)}}.lightbox-dialog img{{grid-column:1/-1;width:100%;height:100%;min-height:0;object-fit:contain;object-position:center;background:#f8f8f5}}.lightbox-dialog figcaption{{align-self:center;overflow-wrap:anywhere}}.lightbox-close{{align-self:center;min-height:44px;padding:10px 16px;border:1px solid var(--line);border-radius:999px;color:var(--ink);font-weight:800;text-decoration:none}}@media(max-width:760px){{.zoom-hint{{opacity:1;transform:none}}}}@media(prefers-reduced-motion:reduce){{.zoom-hint{{transition:none}}}}@media print{{.lightbox{{display:none!important}}}}
 .catalog-search{{position:sticky;top:0;z-index:20;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;padding:14px 0;background:color-mix(in srgb,var(--paper) 94%,transparent);backdrop-filter:blur(12px)}}.catalog-search label{{grid-column:1/-1;color:var(--forest);font-weight:800}}.catalog-search input{{width:100%;min-height:48px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit}}.catalog-search input:focus{{outline:3px solid color-mix(in srgb,var(--forest) 24%,transparent);border-color:var(--forest)}}.catalog-search button{{min-height:48px;padding:10px 16px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit;font-weight:800}}.search-status{{grid-column:1/-1;margin:0;color:var(--muted)}}[hidden]{{display:none!important}}@media(max-width:760px){{.catalog-search{{margin-inline:-10px;padding:12px 10px}}}}@media print{{.catalog-search{{display:none}}}}
+.vehicle-make-logo{{display:inline-block;width:auto;height:1.05em;max-width:3.2em;margin-left:.3em;object-fit:contain;vertical-align:-.08em}}
 </style></head><body><main><header class="hero"><small>Perfect Trading · edición {version}</small><h1>{title}</h1><p>{subtitle}</p></header><form class="catalog-search" role="search" onsubmit="return false"><label for="catalog-query">Buscar en este catálogo</label><input id="catalog-query" type="search" inputmode="search" autocomplete="off" placeholder="Referencia, pieza, vehículo, motor u OEM"><button id="catalog-clear" type="button" hidden>Limpiar</button><p id="catalog-status" class="search-status" role="status" aria-live="polite">{len(rows)} productos disponibles</p></form><nav class="contents" aria-label="Secciones del catálogo">{''.join(navigation)}</nav>{''.join(sections)}<footer class="proof">Release SHA-256: {checksum}</footer></main>{''.join(lightboxes)}<script>(()=>{{const q=document.querySelector('#catalog-query'),clear=document.querySelector('#catalog-clear'),status=document.querySelector('#catalog-status'),cards=[...document.querySelectorAll('.product')],sections=[...document.querySelectorAll('main>section')],fold=value=>value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es');for(const card of cards)card.dataset.search=fold(card.textContent);function filter(){{const term=fold(q.value.trim());let visible=0;for(const card of cards){{const match=!term||card.dataset.search.includes(term);card.hidden=!match;if(match)visible++}}for(const section of sections)section.hidden=![...section.querySelectorAll('.product')].some(card=>!card.hidden);clear.hidden=!term;status.textContent=term?`${{visible}} de ${{cards.length}} productos encontrados`:`${{cards.length}} productos disponibles`}}q.addEventListener('input',filter);clear.addEventListener('click',()=>{{q.value='';filter();q.focus()}})}})();</script></body></html>"""
     brand_css = """@font-face{font-family:'DM Sans';src:url(data:font/ttf;base64,%s)}@font-face{font-family:'Barlow Condensed';src:url(data:font/ttf;base64,%s);font-weight:700}body{font-family:'DM Sans',sans-serif;font-size:16px;line-height:1.8}h1,h2,h3{font-family:'Barlow Condensed',sans-serif;font-weight:700}.meta,.proof{font-size:16px}.brand-logo{position:absolute;right:2rem;top:2rem;width:min(260px,35vw);z-index:2}.watermark{position:absolute;right:5%%;bottom:8%%;width:55%%;opacity:.05;pointer-events:none}""" % (
         base64.b64encode(files("perfect_catalog").joinpath("assets/brands/natsuki/fonts/DMSans-Regular.ttf").read_bytes()).decode("ascii"),

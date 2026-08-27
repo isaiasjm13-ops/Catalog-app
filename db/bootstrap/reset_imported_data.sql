@@ -20,5 +20,6 @@ RESET ROLE;
 \ir apply_vehicle_application_workflow_migration.sql
 \ir apply_brand_profiles_migration.sql
 \ir apply_brand_profile_workflow_migration.sql
+\ir apply_pending_migrations.sql
 
 \echo 'Esquema limpio y actualizado.'

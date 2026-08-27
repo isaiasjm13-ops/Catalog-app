@@ -45,6 +45,9 @@ class InDesignBridgeTests(unittest.TestCase):
         self.assertIn('fontByName(titleFamily, "Bold")', script)
         self.assertIn('fontByName(bodyFamily, "Regular")', script)
         self.assertIn('box.texts[0].appliedFont = selectedFont', script)
+        self.assertIn("function vehicleMakeMark", script)
+        self.assertIn('groupBy === "vehicle_make"', script)
+        self.assertIn("visual.vehicle_makes", script)
 
 
 if __name__ == "__main__":

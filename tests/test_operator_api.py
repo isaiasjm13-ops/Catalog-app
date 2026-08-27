@@ -91,7 +91,7 @@ class SyntheticReviewGateway:
         return [{"brand_profile_id": str(uuid.uuid4()), "code": "NATSUKI", "display_name": "Natsuki", "tagline": "Trust", "primary_color": "#C60012", "secondary_color": "#202327", "ink_color": "#16191D", "paper_color": "#FFFFFF"}]
 
     def visual_identities(self) -> dict[str, Any]:
-        return {"company": None, "brands": {}}
+        return {"company": None, "brands": {}, "vehicle_makes": [], "vehicle_make_identities": {}}
 
     def create_visual_identity(self, **kwargs: Any) -> dict[str, Any]:
         self.visual_identity_records.append(kwargs)
@@ -982,7 +982,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.20.0")
+        self.assertEqual(OPERATOR_VERSION, "1.21.0")
 
     async def test_company_identity_upload_requires_csrf_and_records_logo_without_exposing_it(self) -> None:
         await self.login()
@@ -992,7 +992,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('id="contenido-principal"', page.text)
         csrf = hidden_value(page.text, "csrf_token")
         fields = {
-            "csrf_token": csrf, "scope": "company", "brand_profile_id": "",
+            "csrf_token": csrf, "scope": "company", "brand_profile_id": "", "vehicle_make_id": "",
             "display_name": "Perfect Trading International", "primary_color": "#086650",
             "secondary_color": "#C7DF54", "ink_color": "#17211D",
             "paper_color": "#FFFFFF", "reason": "Identidad corporativa aprobada",
@@ -1015,6 +1015,35 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(recorded["scope"], "company")
         self.assertEqual(recorded["filename"], "perfect.svg")
         self.assertNotIn(b"perfect.svg", accepted.content)
+
+    async def test_vehicle_make_logo_is_managed_separately_from_product_brand(self) -> None:
+        await self.login()
+        make_id = uuid.uuid4()
+        self.gateway.visual_identities = lambda: {
+            "company": None, "brands": {},
+            "vehicle_makes": [{"vehicle_make_id": str(make_id), "name": "Toyota", "normalized_name": "TOYOTA"}],
+            "vehicle_make_identities": {},
+        }
+        page = await self.client.get("/operator/brands")
+        self.assertIn("Logos de marcas vehiculares", page.text)
+        self.assertIn("Logo de Toyota", page.text)
+        response = await self.client.post(
+            "/operator/brands/identity",
+            data={
+                "csrf_token": hidden_value(page.text, "csrf_token"), "scope": "vehicle_make",
+                "brand_profile_id": "", "vehicle_make_id": str(make_id), "display_name": "Toyota",
+                "primary_color": "#17211D", "secondary_color": "#086650",
+                "ink_color": "#17211D", "paper_color": "#FFFFFF",
+                "reason": "Logo oficial Toyota verificado", "confirm": "yes",
+            },
+            files={"logo": ("toyota.svg", b'<svg xmlns="http://www.w3.org/2000/svg"/>', "image/svg+xml")},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 303)
+        recorded = self.gateway.visual_identity_records[-1]
+        self.assertEqual(recorded["scope"], "vehicle_make")
+        self.assertEqual(recorded["vehicle_make_id"], make_id)
+        self.assertIsNone(recorded["brand_profile_id"])
 
     async def test_promotion_requires_individual_post_origin_csrf_and_confirmation(self) -> None:
         await self.login()

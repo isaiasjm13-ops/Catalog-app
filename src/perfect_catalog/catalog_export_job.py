@@ -375,7 +375,11 @@ def _package_images(
 
 def _package_visual_assets(release: dict[str, Any], output_dir: Path, asset_root: Path | None) -> list[dict[str, Any]]:
     profile = release.get("definition", {}).get("visual_profile") or {}
-    sources = (("brand", profile), ("company", profile.get("company") or {}))
+    vehicle_sources = tuple(
+        (f"vehicle-{str(source.get('vehicle_make_id') or '')[:8]}", source)
+        for source in (profile.get("vehicle_makes") or {}).values()
+    )
+    sources = (("brand", profile), ("company", profile.get("company") or {})) + vehicle_sources
     entries: list[dict[str, Any]] = []
     if not any(source.get("logo_storage_relpath") or source.get("logo_relpath") for _, source in sources): return entries
     if asset_root is None: raise RuntimeError("El release contiene logos pero no se configuró brand_asset_root.")
@@ -549,7 +553,7 @@ def build_catalog_bundle(
     payloads: dict[str, tuple[str, bytes]] = {}
     if "html" in requested:
         html_name = f"{stem}.html"
-        html_content = generate_catalog_html(rows, export_config, release=metadata)
+        html_content = generate_catalog_html(rows, export_config, release=metadata, bundle_dir=output_dir)
         payloads["html"] = (html_name, html_content)
         payloads["digital-zip"] = (
             f"{stem}.digital.zip", _digital_zip(html_content, image_files, output_dir)

@@ -105,6 +105,11 @@ seguros (máximo 5 MiB). Usa PNG o JPG cuando el mismo archivo deba aparecer tam
 PowerPoint; SVG se conserva para HTML e InDesign. La identidad queda congelada al construir una
 versión nueva, por lo que un release anterior no cambia retroactivamente.
 
+La misma pantalla permite asociar un logo independiente a cada marca vehicular aprobada. Este
+activo aparece únicamente junto al nombre de la marca del vehículo cuando el catálogo se agrupa
+por ese campo; no sustituye el logo de Perfect Trading ni el de la marca del producto. Después de
+recibir esta función, ejecuta una vez `ACTUALIZAR-SISTEMA.cmd` para aplicar la migración `0016`.
+
 La misma consola incorpora un centro de ingreso en `/operator/intake`. Si el actualizador lo solicita,
 ejecuta `ACTUALIZAR-SISTEMA.cmd`. Recibe XLSX/CSV/TSV de Odoo, PDF y paquetes ZIP de imágenes o
 InDesign, calcula SHA-256 y los conserva en cuarentena sin importar ni publicar automáticamente.

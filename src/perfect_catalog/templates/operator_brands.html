@@ -12,7 +12,7 @@
   {% set company = identities.company %}
   {% if company %}<img class="identity-logo-preview" src="/operator/brands/identity/{{ company.visual_identity_revision_id }}/logo" alt="Logo actual de {{ company.display_name }}">{% endif %}
   <form method="post" enctype="multipart/form-data" action="/operator/brands/identity">
-    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><input type="hidden" name="scope" value="company"><input type="hidden" name="brand_profile_id" value="">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><input type="hidden" name="scope" value="company"><input type="hidden" name="brand_profile_id" value=""><input type="hidden" name="vehicle_make_id" value="">
     <label><span>Nombre de empresa</span><input name="display_name" value="{{ company.display_name if company else 'Perfect Trading International' }}" maxlength="120" required></label>
     <div class="brand-color-row"><label><span>Principal</span><input type="color" name="primary_color" value="{{ company.primary_color if company else '#086650' }}"></label><label><span>Secundario</span><input type="color" name="secondary_color" value="{{ company.secondary_color if company else '#C7DF54' }}"></label><label><span>Texto</span><input type="color" name="ink_color" value="{{ company.ink_color if company else '#17211D' }}"></label><label><span>Fondo</span><input type="color" name="paper_color" value="{{ company.paper_color if company else '#FFFFFF' }}"></label></div>
     <label><span>Logo Perfect</span><input type="file" name="logo" accept=".svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg" required><small>PNG o JPG recomendado para verlo también en PDF y PowerPoint; SVG conserva el vector en HTML e InDesign.</small></label>
@@ -31,7 +31,7 @@
     {% if identity %}<img class="identity-logo-preview compact" src="/operator/brands/identity/{{ identity.visual_identity_revision_id }}/logo" alt="Logo actual de {{ profile.display_name }}">{% endif %}
     <details class="materialize-action"><summary>{{ 'Actualizar logo y colores' if identity else 'Añadir logo de esta marca' }}</summary>
       <form method="post" enctype="multipart/form-data" action="/operator/brands/identity">
-        <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><input type="hidden" name="scope" value="brand"><input type="hidden" name="brand_profile_id" value="{{ profile.brand_profile_id }}"><input type="hidden" name="display_name" value="{{ profile.display_name }}">
+        <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><input type="hidden" name="scope" value="brand"><input type="hidden" name="brand_profile_id" value="{{ profile.brand_profile_id }}"><input type="hidden" name="vehicle_make_id" value=""><input type="hidden" name="display_name" value="{{ profile.display_name }}">
         <div class="brand-color-row"><label><span>Principal</span><input type="color" name="primary_color" value="{{ identity.primary_color if identity else profile.primary_color }}"></label><label><span>Secundario</span><input type="color" name="secondary_color" value="{{ identity.secondary_color if identity else profile.secondary_color }}"></label><label><span>Texto</span><input type="color" name="ink_color" value="{{ identity.ink_color if identity else profile.ink_color }}"></label><label><span>Fondo</span><input type="color" name="paper_color" value="{{ identity.paper_color if identity else profile.paper_color }}"></label></div>
         <label><span>Logo</span><input type="file" name="logo" accept=".svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg" required><small>PNG o JPG recomendado para todos los formatos.</small></label><label><span>Motivo</span><textarea name="reason" minlength="4" maxlength="500" required></textarea></label><label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo esta revisión visual.</span></label><button class="secondary-button">Guardar revisión</button>
       </form>
@@ -57,5 +57,28 @@
     <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo el código, nombre y colores de esta marca.</span></label>
     <button class="primary-button" type="submit">Crear perfil de marca</button>
   </form>
+</section>
+<section class="transition-panel brand-profile-builder">
+  <h2>Logos de marcas vehiculares</h2>
+  <p>Estos logos se reservan para aparecer junto al nombre de Toyota, Nissan, Chery u otra marca vehicular; nunca sustituyen la marca del producto ni la identidad de portada.</p>
+  <div class="vehicle-logo-grid">
+  {% for make in identities.vehicle_makes %}
+    {% set vehicle_identity = identities.vehicle_make_identities.get(make.vehicle_make_id ~ '') %}
+    <article class="vehicle-logo-card">
+      {% if vehicle_identity %}<img class="identity-logo-preview compact" src="/operator/brands/identity/{{ vehicle_identity.visual_identity_revision_id }}/logo" alt="Logo actual de {{ make.name }}">{% endif %}
+      <h3>{{ make.name }}</h3>
+      <details class="materialize-action"><summary>{{ 'Actualizar logo' if vehicle_identity else 'Añadir logo' }}</summary>
+        <form method="post" enctype="multipart/form-data" action="/operator/brands/identity">
+          <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><input type="hidden" name="scope" value="vehicle_make"><input type="hidden" name="brand_profile_id" value=""><input type="hidden" name="vehicle_make_id" value="{{ make.vehicle_make_id }}"><input type="hidden" name="display_name" value="{{ make.name }}">
+          <input type="hidden" name="primary_color" value="#17211D"><input type="hidden" name="secondary_color" value="#086650"><input type="hidden" name="ink_color" value="#17211D"><input type="hidden" name="paper_color" value="#FFFFFF">
+          <label><span>Logo de {{ make.name }}</span><input type="file" name="logo" accept=".svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg" required></label>
+          <label><span>Motivo</span><textarea name="reason" minlength="4" maxlength="500" required></textarea></label>
+          <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo que este logo corresponde a {{ make.name }}.</span></label>
+          <button class="secondary-button">Guardar logo vehicular</button>
+        </form>
+      </details>
+    </article>
+  {% else %}<p>No hay marcas vehiculares aprobadas todavía.</p>{% endfor %}
+  </div>
 </section>
 {% endblock %}

@@ -25,3 +25,12 @@ class VisualIdentityTests(unittest.TestCase):
         self.assertNotIn("DROP ", sql.upper())
         self.assertIn("GRANT SELECT, INSERT", sql)
         self.assertIn("scope IN ('company', 'brand')", sql)
+
+    def test_vehicle_make_logo_migration_keeps_one_exact_identity_target(self) -> None:
+        sql = (ROOT / "db/migrations/0016_vehicle_make_visual_identity.sql").read_text(encoding="utf-8")
+        self.assertTrue(sql.startswith("BEGIN;"))
+        self.assertTrue(sql.rstrip().endswith("COMMIT;"))
+        self.assertIn("scope IN ('company', 'brand', 'vehicle_make')", sql)
+        self.assertIn("REFERENCES perfect_catalog.vehicle_make", sql)
+        self.assertIn("scope='vehicle_make' AND brand_profile_id IS NULL AND vehicle_make_id IS NOT NULL", sql)
+        self.assertNotIn("ON DELETE CASCADE", sql)

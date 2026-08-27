@@ -65,5 +65,15 @@ SELECT (to_regclass('perfect_catalog.visual_identity_revision') IS NULL) AS need
 \ir ../migrations/0015_visual_identity_assets.sql
 \endif
 
+SELECT (NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='perfect_catalog' AND table_name='visual_identity_revision'
+      AND column_name='vehicle_make_id'
+)) AS need_0016 \gset
+\if :need_0016
+\echo 'Aplicando 0016 - logos de marcas vehiculares'
+\ir ../migrations/0016_vehicle_make_visual_identity.sql
+\endif
+
 RESET ROLE;
 \echo 'Base de datos actualizada. No hay migraciones pendientes.'

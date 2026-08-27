@@ -401,6 +401,34 @@ def _load_release_records(
     return records
 
 
+def _vehicle_make_visual_profiles(
+    connection: Connection[Any], records: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    names = sorted({
+        str(application.get("make"))
+        for record in records for application in (record.get("application_details") or [])
+        if application.get("make")
+    })
+    if not names:
+        return {}
+    with connection.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(
+            """SELECT DISTINCT ON (vm.vehicle_make_id)
+                      vm.vehicle_make_id, vm.name, vi.visual_identity_revision_id,
+                      vi.logo_storage_relpath, vi.logo_sha256, vi.logo_media_type
+               FROM perfect_catalog.vehicle_make AS vm
+               JOIN perfect_catalog.visual_identity_revision AS vi
+                 ON vi.scope='vehicle_make' AND vi.vehicle_make_id=vm.vehicle_make_id
+               WHERE vm.review_status='approved' AND vm.name = ANY(%s)
+               ORDER BY vm.vehicle_make_id, vi.created_at DESC,
+                        vi.visual_identity_revision_id DESC""",
+            (names,),
+        )
+        return {
+            str(row["name"]): json_compatible(dict(row)) for row in cursor.fetchall()
+        }
+
+
 def _release_items(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for order, record in enumerate(records, start=1):
@@ -549,6 +577,7 @@ def _build_release_in_connection(
     plan = _load_applied_plan(connection, plan_id, expected_fingerprint)
     brand, brand_visual = _resolve_plan_brand(connection, plan)
     records = _load_release_records(connection, brand["brand_id"])
+    brand_visual["vehicle_makes"] = _vehicle_make_visual_profiles(connection, records)
     items = _release_items(records)
     image_item_count = sum(
         bool(item["snapshot_data"].get("image_storage_relpath")) for item in items

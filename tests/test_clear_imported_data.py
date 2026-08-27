@@ -21,6 +21,7 @@ class ClearImportedDataScriptTests(unittest.TestCase):
             "apply_approved_image_materialization_migration.sql",
             "apply_vehicle_application_workflow_migration.sql",
             "apply_brand_profiles_migration.sql",
+            "apply_pending_migrations.sql",
         ]
         positions = [sql.index(name) for name in expected]
         self.assertEqual(positions, sorted(positions))

@@ -1,5 +1,23 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: logos de marcas vehiculares v1.21
+
+- Migración forward-only `0016` amplía las revisiones visuales con alcance `vehicle_make` y exige
+  exactamente un destino: empresa, marca de producto o marca vehicular. Conserva FK `RESTRICT`,
+  historial append-only y permisos mínimos existentes.
+- La pantalla **Marcas** enumera únicamente marcas vehiculares aprobadas y permite subir PNG, JPG o
+  SVG seguro con sesión local, mismo origen, CSRF, confirmación y motivo. Cada cambio crea una
+  revisión nueva; el archivo se guarda content-addressed y se verifica por SHA-256.
+- Los releases nuevos congelan solamente los logos vehiculares usados por sus aplicaciones. El
+  empaquetador verifica los activos y HTML/HTML autónomo, PDF, PowerPoint e InDesign los muestran
+  junto al encabezado de la marca vehicular cuando esa es la agrupación. No aparecen en portada,
+  marca de agua ni como sustituto de la marca del producto. PDF/PPTX requieren PNG/JPG; HTML e
+  InDesign también conservan SVG.
+- `ACTUALIZAR-SISTEMA.cmd` detecta `0016`. La reconstrucción controlada enlaza ahora el actualizador
+  pendiente después del esquema base, corrigiendo además la omisión previa de `0015` en esa ruta.
+- Verificación: 70 pruebas focalizadas y 257 pruebas completas pasan; 6 integraciones PostgreSQL se
+  omiten sin credenciales. Para usar la pantalla se debe ejecutar una vez `ACTUALIZAR-SISTEMA.cmd`.
+
 ## Bloque 2026-08-27: tablero global responsive v1.20
 
 - La portada del operador muestra un resumen actualizado de las cuatro etapas: archivos ingresados,
