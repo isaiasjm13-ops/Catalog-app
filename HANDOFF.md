@@ -1,5 +1,17 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: visor de imágenes del catálogo digital v1.17
+
+- Cada fotografía del HTML ligero y del HTML autónomo es ahora pulsable y abre un visor a tamaño
+  de pantalla. Tanto la miniatura como la ampliación usan encaje proporcional `contain`, por lo que
+  muestran el producto completo sin recorte ni deformación.
+- El visor funciona sin JavaScript mediante enlaces y `:target`: se cierra desde el botón visible o
+  pulsando el fondo. Conserva accesibilidad por teclado, oculta la capa al imprimir y no cambia la
+  política de seguridad ni la portabilidad del archivo autónomo.
+- Los catálogos ya generados son inmutables y deben exportarse nuevamente para incluir el visor.
+- Verificación focalizada: 53 pruebas pasan (exportación, operador y empaquetado). Suite completa:
+  252 pruebas pasan y 6 integraciones PostgreSQL se omiten sin credenciales.
+
 ## Bloque 2026-08-27: auditoría técnica y visual
 
 - Auditoría registrada en `docs/AUDIT-2026-08-27.md` con prioridades, decisiones y referencias
