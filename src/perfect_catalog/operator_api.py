@@ -36,6 +36,7 @@ from .catalog_export_job import (
     estimate_indesign_layout,
     list_indesign_preflight_receipts,
     record_indesign_preflight,
+    resolve_indesign_preflight_receipt,
     MAX_INDESIGN_PREFLIGHT_BYTES,
     list_operator_catalog_exports,
     resolve_catalog_download,
@@ -1027,6 +1028,23 @@ def create_operator_app(
         except (ValueError, PermissionError, FileNotFoundError):
             return _error(environment, 404, "Archivo no encontrado", "La descarga no pertenece a una exportación válida.", session=session_or_redirect)
         return FileResponse(target, filename=target.name, media_type="application/octet-stream")
+
+    @app.get("/operator/catalogs/{release_id}/exports/{export_id}/preflights/{receipt_id}")
+    async def download_indesign_preflight_receipt(
+        request: Request, release_id: str, export_id: str, receipt_id: str,
+    ) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            target = await run_in_threadpool(
+                resolve_indesign_preflight_receipt, resolved_catalog_output,
+                _uuid(release_id, "release_id"), _uuid(export_id, "export_id"),
+                _uuid(receipt_id, "receipt_id"),
+            )
+        except (ValueError, PermissionError, FileNotFoundError):
+            return _error(environment, 404, "Recibo no encontrado", "El preflight no pertenece a esta exportación.", session=session_or_redirect)
+        return FileResponse(target, filename=f"indesign-preflight-{receipt_id}.json", media_type="application/json")
 
     @app.post("/operator/intake")
     async def submit_intake(request: Request) -> Response:

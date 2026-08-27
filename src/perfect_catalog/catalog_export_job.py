@@ -126,6 +126,46 @@ def record_indesign_preflight(
         missing_indexes.append(index)
     if len(missing_indexes) != len(set(missing_indexes)):
         raise ValueError("El preflight contiene incidencias de imagen duplicadas.")
+    snapshot_entries = [item for item in manifest["files"] if item.get("format") == "indesign-json"]
+    if len(snapshot_entries) != 1:
+        raise ValueError("La exportación no contiene un snapshot InDesign único.")
+    snapshot = json.loads((bundle / str(snapshot_entries[0]["filename"])).read_text(encoding="utf-8"))
+    products = snapshot.get("products") if isinstance(snapshot, dict) else None
+    snapshot_layout = snapshot.get("layout") if isinstance(snapshot, dict) else None
+    if (
+        snapshot.get("schema") != INDESIGN_SNAPSHOT_SCHEMA
+        or not isinstance(products, list) or len(products) != product_count
+        or not isinstance(snapshot_layout, dict)
+    ):
+        raise ValueError("El snapshot InDesign no permite validar la paginación.")
+    group_by = str(snapshot_layout.get("group_by") or "category_path")
+    secondary = str(snapshot_layout.get("group_by_secondary") or "")
+    group_counts: dict[str, int] = {}
+    for product in products:
+        if not isinstance(product, dict):
+            raise ValueError("El snapshot InDesign contiene un producto no válido.")
+        primary_value = product.get(group_by)
+        primary = str(primary_value) if primary_value not in (None, "") else "Sin categoría"
+        label = primary
+        if secondary:
+            secondary_value = product.get(secondary)
+            secondary_label = str(secondary_value) if secondary_value not in (None, "") else "Sin subgrupo"
+            label += " · " + secondary_label
+        group_counts[label] = group_counts.get(label, 0) + 1
+    expected_layout = estimate_indesign_layout(
+        [{"count": count} for count in group_counts.values()], report["template_profile"]
+    )
+    if (
+        report["group_count"] != expected_layout["separator_pages"]
+        or report["page_count"] != expected_layout["estimated_page_count"]
+    ):
+        raise ValueError("La paginación del preflight no coincide con el snapshot InDesign.")
+    issue_counts = {
+        "missing_images": len(report["missing_images"]),
+        "overflows": len(report["overflow_product_indexes"]),
+        "unavailable_fonts": len(report["unavailable_fonts"]),
+    }
+    quality_status = "passed" if not any(issue_counts.values()) else "issues"
     receipt_id = uuid.uuid4()
     receipt = {
         "schema": INDESIGN_PREFLIGHT_RECEIPT_SCHEMA,
@@ -133,6 +173,7 @@ def record_indesign_preflight(
         "export_id": str(export_id), "actor": actor, "reason": reason,
         "received_at": datetime.now(timezone.utc).isoformat(),
         "source_bytes": len(content), "source_sha256": _sha256(content), "report": report,
+        "quality": {"status": quality_status, "issue_counts": issue_counts, "expected_layout": expected_layout},
     }
     destination = root / "_indesign_preflight" / str(release_id) / str(export_id) / f"{receipt_id}.json"
     if not destination.resolve().is_relative_to(root):
@@ -168,6 +209,28 @@ def list_indesign_preflight_receipts(output_root: Path, *, limit: int = 500) -> 
         if len(results) >= limit:
             break
     return results
+
+
+def resolve_indesign_preflight_receipt(
+    output_root: Path, release_id: uuid.UUID, export_id: uuid.UUID, receipt_id: uuid.UUID,
+) -> Path:
+    root = output_root.resolve()
+    target = root / "_indesign_preflight" / str(release_id) / str(export_id) / f"{receipt_id}.json"
+    target = target.resolve()
+    if not target.is_relative_to(root) or not target.is_file():
+        raise FileNotFoundError("El recibo de preflight no existe.")
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("El recibo de preflight no es válido.") from exc
+    if (
+        payload.get("schema") != INDESIGN_PREFLIGHT_RECEIPT_SCHEMA
+        or payload.get("release_id") != str(release_id)
+        or payload.get("export_id") != str(export_id)
+        or payload.get("receipt_id") != str(receipt_id)
+    ):
+        raise ValueError("El recibo no corresponde a la exportación solicitada.")
+    return target
 
 
 def _safe_stem(value: object) -> str:

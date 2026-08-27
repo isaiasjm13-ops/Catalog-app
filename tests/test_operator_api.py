@@ -607,9 +607,19 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(accepted.status_code, 303)
         self.assertEqual(accepted.headers["location"], "/operator/catalogs?result=preflight_recorded")
         refreshed = await self.client.get("/operator/catalogs")
-        self.assertIn("Preflight recibido", refreshed.text)
+        self.assertIn("Sin incidencias", refreshed.text)
         self.assertIn("3 páginas", refreshed.text)
         self.assertIn("0 imágenes faltantes", refreshed.text)
+        receipt_match = re.search(r'href="([^"]+/preflights/[0-9a-f-]{36})"', refreshed.text)
+        self.assertIsNotNone(receipt_match)
+        receipt = await self.client.get(receipt_match.group(1))
+        self.assertEqual(receipt.status_code, 200)
+        self.assertEqual(receipt.json()["quality"]["status"], "passed")
+        self.assertEqual(receipt.json()["quality"]["expected_layout"]["estimated_page_count"], 3)
+        missing = await self.client.get(
+            f"/operator/catalogs/{release['catalog_release_id']}/exports/{export_id}/preflights/{uuid.uuid4()}"
+        )
+        self.assertEqual(missing.status_code, 404)
 
     async def test_catalog_release_build_and_publish_are_individual_csrf_posts(self) -> None:
         await self.login()

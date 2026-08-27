@@ -170,7 +170,7 @@
       {% for export in exports %}
       <article>
         {% set preflight = preflight_by_export.get(export.export_id) %}
-        <div class="delivery-title"><div><strong>{{ export.release.version }}</strong><small>{{ export.selection.selected_item_count }} de {{ export.release.item_count }} productos{% if export.selection.filter_query %} · “{{ export.selection.filter_query }}”{% endif %}{% if export.selection.get('selected_references') %} · {{ export.selection.selected_references|length }} referencias manuales{% endif %}{% if export.layout.get('theme') %} · tema {{ export.layout.theme }}{% endif %}</small></div><span>{{ 'Preflight recibido' if preflight else 'Verificable' }}</span></div>
+        <div class="delivery-title"><div><strong>{{ export.release.version }}</strong><small>{{ export.selection.selected_item_count }} de {{ export.release.item_count }} productos{% if export.selection.filter_query %} · “{{ export.selection.filter_query }}”{% endif %}{% if export.selection.get('selected_references') %} · {{ export.selection.selected_references|length }} referencias manuales{% endif %}{% if export.layout.get('theme') %} · tema {{ export.layout.theme }}{% endif %}</small></div><span class="{% if preflight %}quality-{{ preflight.get('quality', {}).get('status', 'issues') }}{% endif %}">{{ 'Sin incidencias' if preflight and preflight.get('quality', {}).get('status') == 'passed' else ('Con incidencias' if preflight else 'Verificable') }}</span></div>
         <ul>
           {% for file in export.files %}
           <li><a href="/operator/catalogs/{{ export.release_id }}/exports/{{ export.export_id }}/{{ file.filename }}">{{ file.format }}</a><span>{{ file.bytes }} B</span></li>
@@ -179,7 +179,7 @@
         </ul>
         {% set indesign_packages = export.files | selectattr('format', 'equalto', 'indesign-package') | list %}
         {% if indesign_packages %}
-        {% if preflight %}<div class="preflight-status"><strong>{{ preflight.report.page_count }} páginas</strong><span>{{ preflight.report.missing_images|length }} imágenes faltantes · {{ preflight.report.overflow_product_indexes|length }} desbordamientos · {{ preflight.report.unavailable_fonts|length }} fuentes</span></div>{% endif %}
+        {% if preflight %}<div class="preflight-status {% if preflight.get('quality', {}).get('status') == 'issues' %}has-issues{% endif %}"><strong>{{ preflight.report.page_count }} páginas · {{ 'sin incidencias' if preflight.get('quality', {}).get('status') == 'passed' else 'requiere revisión' }}</strong><span>{{ preflight.report.missing_images|length }} imágenes faltantes · {{ preflight.report.overflow_product_indexes|length }} desbordamientos · {{ preflight.report.unavailable_fonts|length }} fuentes</span><a href="/operator/catalogs/{{ export.release_id }}/exports/{{ export.export_id }}/preflights/{{ preflight.receipt_id }}">Descargar recibo JSON</a></div>{% endif %}
         <details class="preflight-upload"><summary>{{ 'Registrar otro preflight' if preflight else 'Registrar preflight de InDesign' }}</summary>
           <form method="post" enctype="multipart/form-data" action="/operator/catalogs/{{ export.release_id }}/exports/{{ export.export_id }}/preflight">
             <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">

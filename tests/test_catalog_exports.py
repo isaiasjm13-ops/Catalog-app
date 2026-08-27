@@ -80,6 +80,8 @@ class CatalogExportTests(unittest.TestCase):
                 json.dumps(report).encode(), actor="qa", reason="Preflight ejecutado en InDesign",
             )
             self.assertEqual(receipt["schema"], "perfect-catalog.indesign-preflight-receipt.v1")
+            self.assertEqual(receipt["quality"]["status"], "issues")
+            self.assertEqual(receipt["quality"]["expected_layout"]["estimated_page_count"], 3)
             self.assertTrue(Path(receipt["path"]).is_file())
             self.assertNotIn("_indesign_preflight", {path.name for path in (root / str(release["catalog_release_id"]) / str(export_id)).iterdir()})
             report["theme"] = "classic"
@@ -87,6 +89,13 @@ class CatalogExportTests(unittest.TestCase):
                 record_indesign_preflight(
                     root, release["catalog_release_id"], export_id,
                     json.dumps(report).encode(), actor="qa", reason="Tema incorrecto",
+                )
+            report["theme"] = "forest"
+            report["page_count"] = 4
+            with self.assertRaisesRegex(ValueError, "paginación.*no coincide"):
+                record_indesign_preflight(
+                    root, release["catalog_release_id"], export_id,
+                    json.dumps(report).encode(), actor="qa", reason="Páginas incorrectas",
                 )
     def test_cli_exposes_export_catalog_with_repeatable_formats(self) -> None:
         release_id = uuid.uuid4()

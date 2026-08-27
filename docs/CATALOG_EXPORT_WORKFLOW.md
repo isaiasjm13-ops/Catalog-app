@@ -49,6 +49,14 @@ InDesign` trasladan la configuración vigente mediante un script estático permi
 Sólo copia título, subtítulo, agrupaciones, filtro, referencias, tema, columnas y perfil. Nunca añade
 CSRF, confirmación o formatos de salida a la URL. Es mejora progresiva: el formulario POST no depende de JS.
 
+El reporte recibido no puede declarar cualquier paginación: el servidor abre el snapshot InDesign ya
+verificado, reconstruye sus grupos con las mismas claves y calcula exactamente portada, separadores y
+páginas de producto. `group_count` y `page_count` deben coincidir. Sin imágenes faltantes, overflows ni
+fuentes ausentes queda `passed`; en otro caso queda `issues`, sin ocultar sus conteos.
+
+El último recibo se descarga desde la propia tarjeta de exportación. La ruta requiere sesión y enlaza tres
+UUID exactos (release, exportación y recibo); no acepta nombres de archivo ni rutas proporcionadas por el usuario.
+
 La vista previa vuelve a verificar el release completo, calcula el total de todos los grupos y
 renderiza como máximo 24 fichas para mantener una respuesta ágil con catálogos grandes. No crea
 archivos ni altera datos.

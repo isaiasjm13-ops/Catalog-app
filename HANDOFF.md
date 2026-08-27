@@ -130,6 +130,10 @@
 - El compositor ofrece preview digital/InDesign de la configuración actual mediante JS externo self-only.
   Copia una allowlist de campos editoriales; nunca incluye CSRF, confirmación ni opciones mutantes. Sin JS,
   el launcher GET básico y el POST de exportación continúan operativos.
+- El receptor de preflight deriva grupos y páginas desde el snapshot InDesign verificado y exige igualdad
+  exacta con `group_count`/`page_count`; no acepta sólo conteos plausibles. Clasifica `passed` o `issues`.
+- La biblioteca distingue `Sin incidencias`/`Con incidencias` y permite descargar el recibo JSON mediante
+  una ruta autenticada limitada a UUID de release, exportación y recibo. UUID ajeno devuelve 404.
 - Suite local actual: 206 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
