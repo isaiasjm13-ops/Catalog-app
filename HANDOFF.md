@@ -23,6 +23,9 @@
   en el manifiesto y los paquetes, pero presenta una sola fila con cantidad y peso total. El HTML
   digital usa carga diferida nativa y decodificación asíncrona para no descargar de inmediato todas
   las fotografías de un catálogo extenso.
+- El compositor ofrece **HTML autónomo** como entregable opcional. Incrusta las copias aprobadas como
+  URI `data:` Base64 dentro de un único `.html`, conserva el HTML ligero como opción predeterminada
+  y advierte que la variante autónoma puede pesar mucho y cargar todas las imágenes al abrirse.
 
 ## Bloque 2026-08-27: perfiles de marca v1
 

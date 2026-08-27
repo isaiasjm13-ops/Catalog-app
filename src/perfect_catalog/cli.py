@@ -15,6 +15,7 @@ from .catalog_export_job import (
     CATALOG_THEMES,
     CATALOG_FILTER_FIELDS,
     CATALOG_GROUP_FIELDS,
+    DEFAULT_FORMATS,
     INDESIGN_TEMPLATE_PROFILES,
     SUPPORTED_FORMATS,
     export_catalog_release,
@@ -285,7 +286,7 @@ def main(argv: list[str] | None = None) -> int:
                 config,
                 password,
                 args.output_dir,
-                formats=args.formats or SUPPORTED_FORMATS,
+                formats=args.formats or DEFAULT_FORMATS,
                 config={
                     "title": args.title,
                     "subtitle": args.subtitle,

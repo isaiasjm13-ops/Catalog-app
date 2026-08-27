@@ -393,7 +393,8 @@ def generate_catalog_pptx(
 
 def generate_catalog_html(
     rows: list[dict[str, Any]], config: dict[str, Any] | None = None,
-    *, release: dict[str, Any] | None = None,
+    *, release: dict[str, Any] | None = None, bundle_dir: Path | None = None,
+    embed_images: bool = False,
 ) -> bytes:
     """Genera una edición digital portable; no consulta estado mutable ni ejecuta JavaScript."""
     config = config or {}
@@ -411,8 +412,22 @@ def generate_catalog_html(
         for row in section_rows:
             image = ""
             if row.get("image_path"):
+                source = str(row["image_path"])
+                if embed_images:
+                    image_path = _safe_bundle_image(row, bundle_dir)
+                    if image_path is None:
+                        raise FileNotFoundError(
+                            f"No se puede incrustar la imagen segura {source!r}."
+                        )
+                    media_type = str(row.get("image_media_type") or "image/jpeg")
+                    if not media_type.startswith("image/"):
+                        raise ValueError("El recurso incrustado no declara un tipo de imagen.")
+                    source = (
+                        f"data:{media_type};base64,"
+                        + base64.b64encode(image_path.read_bytes()).decode("ascii")
+                    )
                 image = (
-                    f'<div class="photo"><img src="{escape(str(row["image_path"]), quote=True)}" '
+                    f'<div class="photo"><img src="{escape(source, quote=True)}" '
                     f'alt="{escape(str(row.get("internal_reference_original") or row.get("name_original") or "Producto"), quote=True)}" '
                     'loading="lazy" decoding="async"></div>'
                 )

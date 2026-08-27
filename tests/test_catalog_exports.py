@@ -201,6 +201,24 @@ class CatalogExportTests(unittest.TestCase):
         self.assertIn("<b>OEM:</b> OEM-123", content)
         self.assertIn("<b>Aplicaciones:</b> Toyota Hilux", content)
 
+    def test_standalone_html_embeds_approved_image_as_data_uri(self) -> None:
+        release, items = fixture_release()
+        rows = export_rows_from_release(release, items)
+        image_bytes = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII="
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "approved.png").write_bytes(image_bytes)
+            rows[0].update({
+                "image_path": "approved.png", "image_media_type": "image/png",
+            })
+            content = generate_catalog_html(
+                rows, release=release, bundle_dir=root, embed_images=True,
+            ).decode("utf-8")
+        self.assertIn("data:image/png;base64,", content)
+        self.assertNotIn('src="approved.png"', content)
+
     def test_visual_profile_overrides_palette_embeds_brand_and_minimum_type(self) -> None:
         release, items = fixture_release()
         rows = export_rows_from_release(release, items)
@@ -308,13 +326,19 @@ class CatalogExportTests(unittest.TestCase):
             source.write_bytes(content)
             output = root / "bundle"
             result = build_catalog_bundle(
-                release, items, output, formats=("html", "indesign-json"), image_root=root / "images"
+                release, items, output,
+                formats=("html", "html-standalone", "indesign-json"),
+                image_root=root / "images",
             )
             image_entry = next(entry for entry in result["files"] if entry["format"] == "image")
             self.assertEqual((output / image_entry["filename"]).read_bytes(), content)
             snapshot_entry = next(entry for entry in result["files"] if entry["format"] == "indesign-json")
             snapshot = json.loads((output / snapshot_entry["filename"]).read_text(encoding="utf-8"))
             self.assertEqual(snapshot["products"][0]["image_path"], image_entry["filename"])
+            standalone = next(entry for entry in result["files"] if entry["format"] == "html-standalone")
+            standalone_text = (output / standalone["filename"]).read_text(encoding="utf-8")
+            self.assertIn("data:image/jpeg;base64,", standalone_text)
+            self.assertNotIn(f'src="{image_entry["filename"]}"', standalone_text)
             zip_entry = next(entry for entry in result["files"] if entry["format"] == "digital-zip")
             with zipfile.ZipFile(output / zip_entry["filename"]) as digital:
                 self.assertEqual(digital.read(image_entry["filename"]), content)

@@ -20,7 +20,8 @@ from .publication import load_published_release
 INDESIGN_SNAPSHOT_SCHEMA = "perfect-catalog.indesign-snapshot.v1"
 EXPORT_MANIFEST_SCHEMA = "perfect-catalog.export-manifest.v1"
 EXPORT_VERIFICATION_SCHEMA = "perfect-catalog.export-verification.v1"
-SUPPORTED_FORMATS = ("html", "pdf", "pptx", "indesign-json")
+SUPPORTED_FORMATS = ("html", "html-standalone", "pdf", "pptx", "indesign-json")
+DEFAULT_FORMATS = ("html", "pdf", "pptx", "indesign-json")
 INDESIGN_TEMPLATE_PROFILES = ("T4", "T2", "T1", "TABLE")
 INDESIGN_PRODUCTS_PER_PAGE = {"T4": 4, "T2": 2, "T1": 1, "TABLE": 10}
 CATALOG_GROUP_FIELDS = ("category_path", "brand", "vehicle_make", "internal_reference_original")
@@ -478,7 +479,7 @@ def build_catalog_bundle(
     items: Iterable[dict[str, Any]],
     output_dir: Path,
     *,
-    formats: Iterable[str] = SUPPORTED_FORMATS,
+    formats: Iterable[str] = DEFAULT_FORMATS,
     config: dict[str, Any] | None = None,
     image_root: Path | None = None,
     require_images: bool = False,
@@ -521,6 +522,14 @@ def build_catalog_bundle(
         payloads["html"] = (html_name, html_content)
         payloads["digital-zip"] = (
             f"{stem}.digital.zip", _digital_zip(html_content, image_files, output_dir)
+        )
+    if "html-standalone" in requested:
+        payloads["html-standalone"] = (
+            f"{stem}.autonomo.html",
+            generate_catalog_html(
+                rows, export_config, release=metadata,
+                bundle_dir=output_dir, embed_images=True,
+            ),
         )
     if "pdf" in requested:
         payloads["pdf"] = (
@@ -579,7 +588,7 @@ def export_catalog_release(
     password: str,
     output_dir: Path,
     *,
-    formats: Iterable[str] = SUPPORTED_FORMATS,
+    formats: Iterable[str] = DEFAULT_FORMATS,
     config: dict[str, Any] | None = None,
     image_root: Path | None = None,
     require_images: bool = False,

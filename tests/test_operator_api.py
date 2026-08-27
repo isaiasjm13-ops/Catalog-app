@@ -671,6 +671,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
                 "theme": "industrial",
                 "columns": "2",
                 "format_html": "yes",
+                "format_html_standalone": "no",
                 "format_pdf": "yes",
                 "format_pptx": "no",
                 "format_indesign_json": "yes",
@@ -728,6 +729,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
             "theme": "forest",
             "columns": "2", "format_pdf": "yes", "format_pptx": "yes",
             "format_html": "yes",
+            "format_html_standalone": "no",
             "format_indesign_json": "yes", "confirm": "yes",
             "template_profile": "TABLE",
         }
