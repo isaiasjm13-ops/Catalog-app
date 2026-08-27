@@ -58,6 +58,56 @@ def estimate_indesign_layout(groups: Iterable[dict[str, Any]], template_profile:
     }
 
 
+def _indesign_text_length(value: Any) -> int:
+    if isinstance(value, (list, tuple)):
+        return len("; ".join(map(str, value)))
+    return len("" if value is None else str(value))
+
+
+def _adaptive_indesign_profile(requested: str, product: dict[str, Any]) -> str:
+    if requested in {"TABLE", "T1"}:
+        return requested
+    score = sum(_indesign_text_length(product.get(field)) for field in (
+        "name_original", "applications", "oem_references", "engine_types", "category_path",
+    ))
+    if score > 280:
+        return "T1"
+    if requested == "T4" and score > 120:
+        return "T2"
+    return requested
+
+
+def estimate_adaptive_indesign_layout(
+    products: list[dict[str, Any]], layout: dict[str, Any], template_profile: str,
+) -> dict[str, int]:
+    profile = str(template_profile).upper()
+    if profile not in INDESIGN_PRODUCTS_PER_PAGE or not products:
+        raise ValueError("No se puede estimar la composición adaptativa InDesign.")
+    group_by = str(layout.get("group_by") or "category_path")
+    secondary = str(layout.get("group_by_secondary") or "")
+    current_group: str | None = None
+    active_profile: str | None = None
+    slot = 0
+    group_count = 0
+    product_pages = 0
+    for product in products:
+        primary = str(product.get(group_by) or "Sin categoría")
+        group = primary + (" · " + str(product.get(secondary) or "Sin subgrupo") if secondary else "")
+        if group != current_group:
+            current_group = group
+            active_profile = None
+            slot = 0
+            group_count += 1
+        effective = _adaptive_indesign_profile(profile, product)
+        if effective != active_profile or slot >= INDESIGN_PRODUCTS_PER_PAGE[effective]:
+            active_profile = effective
+            slot = 0
+            product_pages += 1
+        slot += 1
+    return {"separator_pages": group_count, "product_pages": product_pages,
+            "estimated_page_count": 1 + group_count + product_pages}
+
+
 def record_indesign_preflight(
     output_root: Path, release_id: uuid.UUID, export_id: uuid.UUID,
     content: bytes, *, actor: str, reason: str,
@@ -140,22 +190,11 @@ def record_indesign_preflight(
         or not isinstance(snapshot_layout, dict)
     ):
         raise ValueError("El snapshot InDesign no permite validar la paginación.")
-    group_by = str(snapshot_layout.get("group_by") or "category_path")
-    secondary = str(snapshot_layout.get("group_by_secondary") or "")
-    group_counts: dict[str, int] = {}
     for product in products:
         if not isinstance(product, dict):
             raise ValueError("El snapshot InDesign contiene un producto no válido.")
-        primary_value = product.get(group_by)
-        primary = str(primary_value) if primary_value not in (None, "") else "Sin categoría"
-        label = primary
-        if secondary:
-            secondary_value = product.get(secondary)
-            secondary_label = str(secondary_value) if secondary_value not in (None, "") else "Sin subgrupo"
-            label += " · " + secondary_label
-        group_counts[label] = group_counts.get(label, 0) + 1
-    expected_layout = estimate_indesign_layout(
-        [{"count": count} for count in group_counts.values()], report["template_profile"]
+    expected_layout = estimate_adaptive_indesign_layout(
+        products, snapshot_layout, report["template_profile"]
     )
     if (
         report["group_count"] != expected_layout["separator_pages"]

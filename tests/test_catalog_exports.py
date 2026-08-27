@@ -19,6 +19,7 @@ from perfect_catalog.catalog_export_job import (
     build_catalog_bundle,
     build_catalog_preview,
     _selection,
+    estimate_adaptive_indesign_layout,
     estimate_indesign_layout,
     record_indesign_preflight,
     list_operator_catalog_exports,
@@ -79,6 +80,18 @@ class CatalogExportTests(unittest.TestCase):
         self.assertEqual(estimate_indesign_layout([{"count": 17}], "TABLE")["estimated_page_count"], 4)
         with self.assertRaisesRegex(ValueError, "Perfil InDesign"):
             estimate_indesign_layout([{"count": 1}], "T8")
+
+    def test_adaptive_indesign_layout_promotes_long_products_and_matches_groups(self) -> None:
+        products = [
+            {"category_path": "Motor", "name_original": "Breve", "applications": ["Toyota"]},
+            {"category_path": "Motor", "name_original": "Largo", "applications": ["A" * 150]},
+            {"category_path": "Motor", "name_original": "Muy largo", "applications": ["B" * 300]},
+            {"category_path": "Frenos", "name_original": "Breve", "applications": ["Nissan"]},
+        ]
+        estimate = estimate_adaptive_indesign_layout(products, {"group_by": "category_path"}, "T4")
+        self.assertEqual(estimate["separator_pages"], 2)
+        self.assertEqual(estimate["product_pages"], 4)
+        self.assertEqual(estimate["estimated_page_count"], 7)
 
     def test_indesign_preflight_is_bound_to_verified_export_and_stored_separately(self) -> None:
         release, items = fixture_release()

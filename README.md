@@ -120,6 +120,8 @@ El selector visual admite ordenar las referencias elegidas. Para HTML también p
 categoría, marca, OEM, aplicaciones o motor; el mismo ajuste aparece en la vista previa y el borrador.
 El script de InDesign incorpora compatibilidad JSON propia para versiones antiguas de ExtendScript;
 no es necesario actualizar InDesign únicamente por ausencia de `JSON.parse`.
+La composición InDesign adapta fichas T4 extensas a T2/T1 para conservar texto mínimo de 12 pt e
+interlineado 1.8; las fichas sin imagen recuperan el espacio fotográfico en vez de quedar vacías.
 
 La misma pantalla permite asociar un logo independiente a cada marca vehicular aprobada. Este
 activo aparece únicamente junto al nombre de la marca del vehículo cuando el catálogo se agrupa

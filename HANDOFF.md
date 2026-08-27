@@ -1,5 +1,23 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: composición adaptativa InDesign v1.30
+
+- Se diagnosticó el snapshot real de 337 productos: perfil T4, 256 imágenes presentes, 81 ausentes,
+  aplicaciones con promedio de 97.7 caracteres y máximo de 335; 174 superan 80 caracteres. El T4
+  fijo no podía contener esos datos a 12 pt e interlineado 1.8.
+- El importador mantiene T4 para fichas breves y promueve automáticamente contenido extenso a T2 o
+  T1 según su carga editorial. En la muestra real resultan 69 T4, 209 T2 y 59 T1. La alerta informa
+  cuántas fichas se ampliaron y el preflight continúa reportando cualquier overflow real restante.
+- Cuando falta imagen, la ficha recupera todo el espacio reservado para fotografía en lugar de dejar
+  un bloque vacío. Las 81 imágenes siguen siendo ausencias reales del release y deben resolverse en
+  la revisión web si se desea un catálogo completamente ilustrado.
+- Todo texto literal del JSX quedó en ASCII con escapes Unicode, evitando `CatÃ¡logo`/`ImÃ¡genes`
+  cuando ExtendScript interpreta el archivo con una página de códigos heredada. No requiere migración.
+- El verificador de preflight replica la misma promoción adaptativa sobre el snapshot, por lo que
+  acepta únicamente el conteo real de páginas producido por la nueva composición.
+- Verificación: sintaxis JSX, 28 pruebas focalizadas y 260 pruebas completas pasan; 6 integraciones
+  PostgreSQL se omiten sin credenciales. Falta la comprobación visual final dentro de InDesign.
+
 ## Bloque 2026-08-27: compatibilidad JSON para InDesign antiguo v1.29
 
 - `ImportPerfectCatalog.jsx` ya no exige `JSON.parse`/`JSON.stringify` nativos. Incluye lector y

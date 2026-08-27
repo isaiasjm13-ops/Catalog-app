@@ -124,7 +124,7 @@
         background.sendToBack();
         page.rectangles.add({geometricBounds: [235, 55, 247, 245], fillColor: theme.secondary, strokeWeight: 0});
         frame(page, [260, 55, 335, 430], String(label), 30, true, {text: theme.primary});
-        frame(page, [350, 55, 390, 540], "Separador de sección · Perfect Trading", 11, false, {text: theme.ink});
+        frame(page, [350, 55, 390, 540], "Separador de secci\u00f3n \u00b7 Perfect Trading", 11, false, {text: theme.ink});
     }
     function vehicleMakeMark(page, baseFolder, visual, makeName) {
         var source = visual && visual.vehicle_makes && visual.vehicle_makes[String(makeName)];
@@ -138,6 +138,17 @@
         if (profile === "T2") return {perPage: 2, columns: 1, rows: 2, imageHeight: 150};
         if (profile === "TABLE") return {perPage: 10, columns: 1, rows: 10, imageHeight: 0};
         return {perPage: 4, columns: 2, rows: 2, imageHeight: 125};
+    }
+    function adaptiveProfile(requested, product) {
+        if (requested === "TABLE" || requested === "T1") return requested;
+        var score = value(product, "name_original", "").length
+            + value(product, "applications", "").length
+            + value(product, "oem_references", "").length
+            + value(product, "engine_types", "").length
+            + value(product, "category_path", "").length;
+        if (score > 280) return "T1";
+        if (requested === "T4" && score > 120) return "T2";
+        return requested;
     }
     function configureDocument(document) {
         document.viewPreferences.horizontalMeasurementUnits = MeasurementUnits.POINTS;
@@ -169,20 +180,22 @@
         }
         var top = bounds[0], left = bounds[1], bottom = bounds[2], right = bounds[3];
         var image = imageFile(baseFolder, product.image_path);
+        var imageHeight = image ? definition.imageHeight : 0;
         if (image) {
             try {
-                var imageBox = page.rectangles.add({geometricBounds: [top + 8, left + 8, top + definition.imageHeight, right - 8]});
+                var imageBox = page.rectangles.add({geometricBounds: [top + 8, left + 8, top + imageHeight, right - 8]});
                 imageBox.strokeColor = theme.primary; imageBox.strokeWeight = 0.75;
                 imageBox.place(image); imageBox.fit(FitOptions.PROPORTIONALLY); imageBox.fit(FitOptions.CENTER_CONTENT);
                 report.linked_image_count++;
             } catch (imageError) { report.missing_images.push({product_index: index, reference: reference, reason: imageError.message}); }
         } else { report.missing_images.push({product_index: index, reference: reference, reason: "Ruta ausente o no segura"}); }
         var contents = reference + "\r" + value(product, "name_original", "Sin nombre") + "\r" +
-            value(product, "piece_type", value(product, "category_path", "Sin categoría")) + " · " + value(product, "brand", "Sin marca") + "\r" +
+            value(product, "piece_type", value(product, "category_path", "Sin categor\u00eda")) + " \u00b7 " + value(product, "brand", "Sin marca") + "\r" +
             "OEM: " + value(product, "oem_references", "No indicadas") + "\r" +
             "Aplicaciones: " + value(product, "applications", "No indicadas") + "\r" +
             "Motor: " + value(product, "engine_types", "No indicado");
-        var card = frame(page, [top + definition.imageHeight + 6, left, bottom, right], contents, 12, false,
+        var cardTop = image ? top + imageHeight + 6 : top;
+        var card = frame(page, [cardTop, left, bottom, right], contents, 12, false,
             {fill: theme.card, stroke: theme.primary, text: theme.ink, strokeWeight: 0.75});
         try { card.paragraphs[0].fontStyle = "Bold"; } catch (ignored) {}
         card.paragraphs[0].pointSize = 13; card.insertLabel("perfect_catalog_product_index", String(index));
@@ -190,7 +203,7 @@
     }
     function render(snapshot, baseFolder) {
         if (!snapshot || snapshot.schema !== SCHEMA) fail("El esquema del snapshot no es compatible.");
-        if (!snapshot.release || snapshot.release.status !== "published") fail("El release no está publicado.");
+        if (!snapshot.release || snapshot.release.status !== "published") fail("El release no est\u00e1 publicado.");
         if (!(snapshot.products instanceof Array) || snapshot.products.length < 1) fail("El snapshot no contiene productos.");
         var profile = (snapshot.layout && snapshot.layout.template_profile) || "T4";
         if (!/^(T4|T2|T1|TABLE)$/.test(profile)) fail("El perfil de plantilla no es compatible.");
@@ -215,7 +228,7 @@
         ACTIVE_BODY_FONT = fontByName(bodyFamily, "Regular");
         if (!ACTIVE_TITLE_FONT) report.unavailable_fonts.push(titleFamily + " Bold");
         if (!ACTIVE_BODY_FONT) report.unavailable_fonts.push(bodyFamily + " Regular");
-        var title = (snapshot.layout && snapshot.layout.title) || "Catálogo de productos";
+        var title = (snapshot.layout && snapshot.layout.title) || "Cat\u00e1logo de productos";
         var subtitle = (snapshot.layout && snapshot.layout.subtitle) || snapshot.release.version;
         var coverBackground = document.pages[0].rectangles.add({geometricBounds: document.pages[0].bounds, fillColor: theme.paper, strokeWeight: 0});
         coverBackground.sendToBack();
@@ -225,16 +238,18 @@
         if (!visual || visual.watermark_enabled !== false) brandMark(document.pages[0], baseFolder, visual, true, false);
         var definition = profileDefinition(profile), groupBy = (snapshot.layout && snapshot.layout.group_by) || "category_path";
         var secondaryGroupBy = (snapshot.layout && snapshot.layout.group_by_secondary) || "";
-        var currentGroup = null, slot = definition.perPage, page = null;
+        var currentGroup = null, activeProfile = null, slot = definition.perPage, page = null, promotedCount = 0;
         for (var index = 0; index < snapshot.products.length; index++) {
-            var product = snapshot.products[index], group = value(product, groupBy, "Sin categoría");
-            if (secondaryGroupBy) group += " · " + value(product, secondaryGroupBy, "Sin subgrupo");
-            if (group !== currentGroup) { separatorPage(document, group, theme); brandMark(document.pages.item(-1), baseFolder, visual, false, false); if (groupBy === "vehicle_make" && !secondaryGroupBy) vehicleMakeMark(document.pages.item(-1), baseFolder, visual, group); currentGroup = group; slot = definition.perPage; report.group_count++; }
-            if (slot >= definition.perPage) { page = document.pages.add(); brandMark(page, baseFolder, visual, false, false); slot = 0; }
-            productFrame(page, productBounds(definition, slot), product, index, definition, baseFolder, report, theme); slot++;
+            var product = snapshot.products[index], group = value(product, groupBy, "Sin categor\u00eda");
+            if (secondaryGroupBy) group += " \u00b7 " + value(product, secondaryGroupBy, "Sin subgrupo");
+            if (group !== currentGroup) { separatorPage(document, group, theme); brandMark(document.pages.item(-1), baseFolder, visual, false, false); if (groupBy === "vehicle_make" && !secondaryGroupBy) vehicleMakeMark(document.pages.item(-1), baseFolder, visual, group); currentGroup = group; slot = definition.perPage; activeProfile = null; report.group_count++; }
+            var effectiveProfile = adaptiveProfile(profile, product), effectiveDefinition = profileDefinition(effectiveProfile);
+            if (effectiveProfile !== profile) promotedCount++;
+            if (activeProfile !== effectiveProfile || slot >= effectiveDefinition.perPage) { page = document.pages.add(); brandMark(page, baseFolder, visual, false, false); slot = 0; activeProfile = effectiveProfile; }
+            productFrame(page, productBounds(effectiveDefinition, slot), product, index, effectiveDefinition, baseFolder, report, theme); slot++;
         }
         report.page_count = document.pages.length;
-        var destination = File.saveDialog("Guardar catálogo InDesign", "InDesign document:*.indd");
+        var destination = File.saveDialog("Guardar cat\u00e1logo InDesign", "InDesign document:*.indd");
         if (!destination) { document.close(SaveOptions.NO); return; }
         if (!/\.indd$/i.test(destination.name)) destination = new File(destination.fsName + ".indd");
         document.save(destination);
@@ -246,8 +261,8 @@
         } catch (fontError) { report.unavailable_fonts.push("No se pudo consultar: " + fontError.message); }
         var reportFile = new File(destination.fsName.replace(/\.indd$/i, "") + ".preflight.json");
         writeJson(reportFile, report);
-        alert("Catálogo creado: " + snapshot.products.length + " productos.\nImágenes faltantes: " + report.missing_images.length +
-            ".\nTextos desbordados: " + report.overflow_product_indexes.length + ".\n\n" + destination.fsName);
+        alert("Cat\u00e1logo creado: " + snapshot.products.length + " productos.\nIm\u00e1genes faltantes: " + report.missing_images.length +
+            ".\nFichas ampliadas automaticamente: " + promotedCount + ".\nTextos desbordados: " + report.overflow_product_indexes.length + ".\n\n" + destination.fsName);
     }
     try {
         var scriptFile = new File($.fileName);

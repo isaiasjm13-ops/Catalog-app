@@ -54,6 +54,12 @@ class InDesignBridgeTests(unittest.TestCase):
         self.assertIn("function stringifyJson", script)
         self.assertIn("El snapshot JSON contiene sintaxis no permitida", script)
         self.assertNotIn("no ofrece JSON.parse", script)
+        self.assertIn("function adaptiveProfile", script)
+        self.assertIn("score > 280", script)
+        self.assertIn("score > 120", script)
+        self.assertIn("var imageHeight = image ? definition.imageHeight : 0", script)
+        self.assertIn("Fichas ampliadas automaticamente", script)
+        self.assertNotRegex(script, r"[^\x00-\x7F]")
 
 
 if __name__ == "__main__":
