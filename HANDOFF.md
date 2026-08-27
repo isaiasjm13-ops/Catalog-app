@@ -644,3 +644,5 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 - La consola solo ofrece actualmente cuatro paletas fijas (`forest`, `industrial`, `midnight`, `classic`); todavia no guarda colores o logos por marca.
 - Bloqueo funcional confirmado: `application.py` materializa altas nuevas con la constante `NATSUKI`. El campo Marca al construir un release resuelve una marca existente, no es un alta de marca.
 - Implementar antes del siguiente catalogo multimarca: migracion de perfil de marca, pantalla `Marcas`, alta/edicion auditada de nombre/codigo/logo/eslogan/colores, seleccion de marca al preparar la importacion y propagacion exacta a PDF, HTML, PPTX e InDesign.
+- Investigación visual y funcional documentada en `docs/DIRECCION-VISUAL-CATALOGOS.md`, con referencias de NSK, ZF, HELLA, Parker Racor, Brembo, TecDoc y Adobe InDesign.
+- Sistema de páginas definido: portada P0, separador S, cuadrículas T4/T2, ficha T1 y guía técnica TABLE.
