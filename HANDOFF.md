@@ -1,5 +1,12 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: jerarquía vertical de separadores v1.33
+
+- En agrupaciones dobles, la marca vehicular se presenta como título principal y la categoría se
+  coloca debajo en una línea independiente. La clave interna conserva ambos valores para no mezclar
+  secciones ni alterar el orden del catálogo.
+- No requiere migración; hay que generar un paquete InDesign nuevo para incorporar el JSX v1.33.0.
+
 ## Bloque 2026-08-27: logos vehiculares con agrupación secundaria v1.32
 
 - El separador ahora conserva por separado la marca vehicular primaria y el título editorial

@@ -15,7 +15,7 @@ class InDesignBridgeTests(unittest.TestCase):
         self.assertIn("SaveOptions.NO", script)
         for profile in ("T4", "T2", "T1", "TABLE"):
             self.assertIn(f'profile === "{profile}"' if profile != "T4" else 'return {perPage: 4', script)
-        self.assertIn("separatorPage(document, group, theme)", script)
+        self.assertIn("separatorPage(document, groupLabel, theme)", script)
         self.assertIn("perfect-catalog.indesign-preflight.v1", script)
         self.assertIn("missing_images", script)
         self.assertIn("overflow_product_indexes", script)
@@ -59,7 +59,7 @@ class InDesignBridgeTests(unittest.TestCase):
         self.assertIn("score > 120", script)
         self.assertIn("var imageHeight = image ? definition.imageHeight : 0", script)
         self.assertIn("Fichas ampliadas automaticamente", script)
-        self.assertIn('var SCRIPT_VERSION = "1.32.0"', script)
+        self.assertIn('var SCRIPT_VERSION = "1.33.0"', script)
         self.assertIn('insertLabel("perfect_catalog_importer_version"', script)
         self.assertIn("function repairText", script)
         self.assertIn('"\\u00c2\\u00b7": "\\u00b7"', script)
@@ -67,6 +67,8 @@ class InDesignBridgeTests(unittest.TestCase):
         self.assertIn("fitFrame(heading, 30, 18, 1.15)", script)
         self.assertIn('if (groupBy === "vehicle_make") vehicleMakeMark', script)
         self.assertIn("visual, primaryGroup)", script)
+        self.assertIn('groupLabel += "\\r" + secondaryGroup', script)
+        self.assertIn("separatorPage(document, groupLabel, theme)", script)
         self.assertNotRegex(script, r"[^\x00-\x7F]")
 
 

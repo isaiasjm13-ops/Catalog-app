@@ -2,7 +2,7 @@
 
 (function () {
     var SCHEMA = "perfect-catalog.indesign-snapshot.v1";
-    var SCRIPT_VERSION = "1.32.0";
+    var SCRIPT_VERSION = "1.33.0";
     var ACTIVE_TITLE_FONT = null, ACTIVE_BODY_FONT = null;
     function fail(message) { alert("Perfect Catalog\n\n" + message); throw new Error(message); }
     function parseJson(text) {
@@ -263,9 +263,13 @@
         var secondaryGroupBy = (snapshot.layout && snapshot.layout.group_by_secondary) || "";
         var currentGroup = null, activeProfile = null, slot = definition.perPage, page = null, promotedCount = 0;
         for (var index = 0; index < snapshot.products.length; index++) {
-            var product = snapshot.products[index], primaryGroup = value(product, groupBy, "Sin categor\u00eda"), group = primaryGroup;
-            if (secondaryGroupBy) group += " \u00b7 " + value(product, secondaryGroupBy, "Sin subgrupo");
-            if (group !== currentGroup) { separatorPage(document, group, theme); brandMark(document.pages.item(-1), baseFolder, visual, false, false); if (groupBy === "vehicle_make") vehicleMakeMark(document.pages.item(-1), baseFolder, visual, primaryGroup); currentGroup = group; slot = definition.perPage; activeProfile = null; report.group_count++; }
+            var product = snapshot.products[index], primaryGroup = value(product, groupBy, "Sin categor\u00eda"), group = primaryGroup, groupLabel = primaryGroup;
+            if (secondaryGroupBy) {
+                var secondaryGroup = value(product, secondaryGroupBy, "Sin subgrupo");
+                group += " \u00b7 " + secondaryGroup;
+                groupLabel += "\r" + secondaryGroup;
+            }
+            if (group !== currentGroup) { separatorPage(document, groupLabel, theme); brandMark(document.pages.item(-1), baseFolder, visual, false, false); if (groupBy === "vehicle_make") vehicleMakeMark(document.pages.item(-1), baseFolder, visual, primaryGroup); currentGroup = group; slot = definition.perPage; activeProfile = null; report.group_count++; }
             var effectiveProfile = adaptiveProfile(profile, product), effectiveDefinition = profileDefinition(effectiveProfile);
             if (effectiveProfile !== profile) promotedCount++;
             if (activeProfile !== effectiveProfile || slot >= effectiveDefinition.perPage) { page = document.pages.add(); brandMark(page, baseFolder, visual, false, false); slot = 0; activeProfile = effectiveProfile; }
