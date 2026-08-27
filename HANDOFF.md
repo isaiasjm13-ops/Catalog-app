@@ -628,3 +628,10 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 3. **Continúa desde Último Checkpoint**: Busca checkboxes [ ] sin marcar
 4. **Antes de Cerrar Sesión**: Actualiza este archivo con tu progreso
 5. **Comenta Decisiones**: Explica el "por qué" no solo el "qué"
+## 2026-08-27 - Limpieza guiada de importaciones
+
+- Se agrego `LIMPIAR-IMPORTACIONES.cmd` para empezar de cero sin reinstalar PostgreSQL ni cambiar usuarios o contrasenas.
+- La herramienta exige cerrar el revisor, escribir `LIMPIAR IMPORTACIONES` y proporcionar la contrasena de PostgreSQL una sola vez.
+- Antes de limpiar crea un `pg_dump` y mueve `data/imports`, `data/intake`, `data/images` y `data/exports` a `data/backups/limpieza-<fecha>`; no borra respaldos anteriores.
+- Reconstruye el esquema `perfect_catalog` y reaplica en orden las migraciones 0001-0012, eliminando importaciones y derivados sin dejar referencias huerfanas.
+- La limpieza no se ejecuta durante desarrollo ni pruebas: solo se realiza al abrir voluntariamente el nuevo lanzador y confirmar.
