@@ -735,3 +735,12 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 - Los releases nuevos congelan las identidades madre y de producto. El empaquetador verifica ruta y SHA-256, incluye ambos logos en el bundle y los propaga a HTML, PDF, PPTX e InDesign según compatibilidad.
 - Portada: Perfect Trading actúa como firma común y la marca de producto como marca de agua. Páginas interiores: la marca de producto mantiene el logo de esquina. SVG se conserva en HTML/InDesign; para presencia idéntica en PDF/PPTX se recomienda PNG/JPG.
 - Operación: ejecutar una vez `ACTUALIZAR-SISTEMA.cmd`, entrar con `INICIAR-REVISOR.cmd`, abrir **Marcas**, guardar la identidad madre y después las marcas necesarias. Es obligatorio construir una versión nueva para incorporar los cambios.
+
+## 2026-08-27 - Auditoría visual y accesibilidad 1.16
+
+- La aplicación usa ahora una región `main` semántica real, avisos de resultado anunciables, blancos de confirmación de 24 px, foco visible en selectores visuales y respeto por `prefers-reduced-motion`.
+- El HTML exportado incorpora un índice navegable por secciones, anclas estables y fichas semánticas `dl/dt/dd` para OEM, aplicaciones y motor. Las imágenes conservan `object-fit: contain` y carga diferida.
+- El PDF incorpora metadatos de título, autor, asunto, creador, palabras clave y marcador de portada; conserva tipografía mínima de 12 pt, interlineado 1.8 y logos separados de empresa/marca.
+- QA: HTML renderizado en Edge a 1440x1200 e inspeccionado sin recortes ni solapamientos. Edge headless no renderizó su visor PDF y Poppler no está instalado; la generación y estructura PDF sí quedaron cubiertas por pruebas automatizadas.
+- Referencias aplicadas: WCAG 2.2 (foco, tamaño de objetivo, movimiento y estructura) y guías oficiales de Adobe sobre PDF etiquetado, orden de lectura, texto alternativo, metadatos, marcadores y compresión.
+- Suite completa: 252 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.

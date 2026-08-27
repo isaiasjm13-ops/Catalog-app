@@ -10,7 +10,7 @@
   <div class="safety-chip"><span>●</span> Releases verificados</div>
 </section>
 
-{% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
 
 {% set published_releases = releases | selectattr('status', 'equalto', 'published') | list %}
 <section class="studio-overview" aria-label="Estado del estudio editorial">

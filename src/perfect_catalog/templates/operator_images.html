@@ -5,7 +5,7 @@
   <div><span class="kicker">Evidencia visual</span><h1>Asociaciones propuestas</h1><p>Compara el archivo indexado con la referencia aprobada. Una decisión aquí no extrae ni publica la fotografía.</p></div>
   <div class="safety-chip"><span>●</span> Revisión humana obligatoria</div>
 </section>
-{% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
 {% set exact_ready_count = candidates.pending_count + candidates.approved_unmaterialized_count %}
 {% if exact_ready_count and exact_ready_count <= 500 %}
 <details class="bulk-review-panel" open>

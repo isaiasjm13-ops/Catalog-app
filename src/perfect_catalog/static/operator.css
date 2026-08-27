@@ -48,6 +48,7 @@ code { font-family: "Cascadia Code", Consolas, monospace; overflow-wrap: anywher
 .operator-nav { display: flex; align-items: center; gap: 5px; padding: 4px; border: 1px solid rgba(12, 91, 72, .13); border-radius: 999px; background: rgba(255,255,255,.55); }
 .operator-nav a { min-height: 44px; display: inline-flex; align-items: center; padding: 8px 13px; border-radius: 999px; color: var(--muted); font-size: 12px; font-weight: 700; text-decoration: none; }
 .operator-nav a:hover { color: var(--forest); background: white; }
+.operator-nav a[aria-current="page"] { color: white; background: var(--forest); box-shadow: 0 5px 14px rgba(12,91,72,.18); }
 .workflow-rail { display: grid; grid-template-columns: repeat(4, 1fr); margin: 18px 0 0; border: 1px solid rgba(12,91,72,.12); border-radius: 16px; background: rgba(255,255,255,.58); box-shadow: var(--shadow-soft); overflow: hidden; }
 .workflow-rail a { position: relative; display: grid; grid-template-columns: 28px 1fr; grid-template-rows: auto auto; gap: 1px 8px; min-width: 0; min-height: 54px; padding: 12px 15px; border-right: 1px solid rgba(12,91,72,.1); text-decoration: none; }
 .workflow-rail a:last-child { border-right: 0; }
@@ -81,6 +82,7 @@ input, select { min-height: 48px; padding: 0 14px; }
 textarea { min-height: 92px; padding: 12px 14px; resize: vertical; }
 input:focus, select:focus, textarea:focus { border-color: var(--forest); box-shadow: 0 0 0 3px rgba(12, 91, 72, .11); }
 button, .primary-button, .secondary-button { min-height: 46px; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; padding: 0 18px; border: 1px solid transparent; font-family: inherit; font-size: 13px; font-weight: 700; text-decoration: none; cursor: pointer; }
+button:active, .primary-button:active, .secondary-button:active { transform: translateY(1px); }
 .primary-button { background: var(--forest); color: white; box-shadow: 0 8px 20px rgba(12, 91, 72, .18); }
 .primary-button:hover { background: var(--forest-dark); }
 .secondary-button { background: white; color: var(--forest-dark); border-color: var(--line); }
@@ -259,6 +261,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .density-choices label, .profile-choices label, .theme-choices label { position: relative; display: grid; gap: 3px; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: white; cursor: pointer; }
 .density-choices input, .profile-choices input, .theme-choices input { position: absolute; opacity: 0; pointer-events: none; }
 .density-choices label:has(input:checked), .profile-choices label:has(input:checked), .theme-choices label:has(input:checked) { border-color: var(--forest); box-shadow: 0 0 0 2px rgba(12,91,72,.12); }
+.density-choices label:has(input:focus-visible), .profile-choices label:has(input:focus-visible), .theme-choices label:has(input:focus-visible) { outline: 3px solid var(--lime); outline-offset: 3px; }
 .density-choices b, .profile-choices b, .theme-choices b { color: var(--ink); font-size: 12px; }
 .density-choices small, .profile-choices small, .theme-choices small { color: var(--muted); font-size: 9px; }
 .theme-choices label { grid-template-columns: 22px 1fr; align-items: center; }
@@ -272,6 +275,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .format-grid { grid-template-columns: repeat(3, 1fr); }
 .export-composer .confirm-field { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 9px; color: var(--muted); font-size: 11px; }
 .export-composer .confirm-field input { width: 16px; min-height: 16px; }
+.confirm-field { min-height: 32px; padding: 4px 0; cursor: pointer; }
+.confirm-field input { min-width: 24px !important; min-height: 24px !important; margin-top: 0 !important; }
 .js-preview-actions { display: none; grid-template-columns: 1fr 1fr; gap: 9px; }
 .composer-js .js-preview-actions { display: grid; }
 .draft-note { margin: 0; padding: 12px; border-radius: 10px; background: #fff3d8; color: #6f541b; font-size: 11px; }
@@ -471,4 +476,9 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .brand-form-row, .brand-color-row { grid-template-columns: 1fr 1fr; }
   .builder-form .confirm-field, .builder-plan, .builder-reason { grid-column: auto; }
   .intake-proof, .intake-details { grid-column: 1 / -1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+  button:active, .primary-button:active, .secondary-button:active { transform: none; }
 }

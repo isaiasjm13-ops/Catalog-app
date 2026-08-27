@@ -955,13 +955,14 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.15.0")
+        self.assertEqual(OPERATOR_VERSION, "1.16.0")
 
     async def test_company_identity_upload_requires_csrf_and_records_logo_without_exposing_it(self) -> None:
         await self.login()
         page = await self.client.get("/operator/brands")
         self.assertEqual(page.status_code, 200)
         self.assertIn("Identidad madre", page.text)
+        self.assertIn('id="contenido-principal"', page.text)
         csrf = hidden_value(page.text, "csrf_token")
         fields = {
             "csrf_token": csrf, "scope": "company", "brand_profile_id": "",

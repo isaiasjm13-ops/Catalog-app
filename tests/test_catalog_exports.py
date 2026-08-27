@@ -210,8 +210,8 @@ class CatalogExportTests(unittest.TestCase):
         self.assertIn("--forest:#C34A21", content)
         self.assertNotIn("<script>", content)
         self.assertIn("Motor / Empaques · Natsuki", content)
-        self.assertIn("<b>OEM:</b> OEM-123", content)
-        self.assertIn("<b>Aplicaciones:</b> Toyota Hilux", content)
+        self.assertIn("<dt>OEM</dt><dd>OEM-123</dd>", content)
+        self.assertIn("<dt>Aplicaciones</dt><dd>Toyota Hilux</dd>", content)
 
     def test_standalone_html_embeds_approved_image_as_data_uri(self) -> None:
         release, items = fixture_release()
@@ -240,6 +240,8 @@ class CatalogExportTests(unittest.TestCase):
         self.assertIn("font-size:16px", html)
         self.assertIn("class=\"brand-logo\"", html)
         self.assertIn("data:image/png;base64,", html)
+        self.assertIn('class="contents" aria-label="Secciones del catálogo"', html)
+        self.assertIn('id="seccion-01"', html)
         self.assertTrue(generate_catalog_pdf(rows, {"template_profile": "T1", "visual_profile": visual}).startswith(b"%PDF-"))
 
     def test_bundle_writes_digital_exports_indesign_snapshot_and_manifest(self) -> None:
