@@ -1,5 +1,17 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: búsqueda móvil y offline v1.18
+
+- El HTML ligero y el autónomo incorporan un buscador interno fijo al desplazarse. Filtra en tiempo
+  real por todo el texto editorial de cada ficha: referencia, nombre, categoría, marca, OEM,
+  aplicaciones y motor; ignora mayúsculas y acentos.
+- La búsqueda funciona completamente en el navegador, sin servidor, red ni envío de consultas. En
+  móvil usa un campo de 48 px, teclado de búsqueda, contador de resultados y botón para limpiar.
+- El catálogo oculta fichas y secciones sin coincidencias, conserva carga diferida de imágenes y el
+  visor de fotografía completa. Los HTML ya exportados deben regenerarse.
+- Verificación: 53 pruebas focalizadas y 252 pruebas completas pasan; 6 integraciones PostgreSQL se
+  omiten sin credenciales.
+
 ## Bloque 2026-08-27: visor de imágenes del catálogo digital v1.17
 
 - Cada fotografía del HTML ligero y del HTML autónomo es ahora pulsable y abre un visor a tamaño
