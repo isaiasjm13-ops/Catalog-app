@@ -843,7 +843,12 @@ def create_operator_app(
         except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
             return _error(environment, 409, "Release no construido", str(exc), session=session)
         except Exception:
-            return _error(environment, 503, "Construcción no disponible", "No se creó el release. Revisa la consola del servidor.", session=session)
+            diagnostic_id = uuid.uuid4().hex[:12]
+            LOGGER.exception("Fallo al construir release; diagnostico=%s", diagnostic_id)
+            return _error(
+                environment, 503, "Construcción no disponible",
+                f"No se creó el release. Diagnóstico: {diagnostic_id}.", session=session,
+            )
         return RedirectResponse(
             f"/operator/catalogs?{urlencode({'result': str(result['status'])})}", status_code=303
         )

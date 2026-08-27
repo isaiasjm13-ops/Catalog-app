@@ -187,7 +187,10 @@ def _resolve_plan_brand(connection: Connection[Any], plan: dict[str, Any]) -> tu
     if len(rows) != 1:
         raise RuntimeError("El plan no resuelve una única marca materializada.")
     row = rows[0]
-    return ({"brand_id": row["brand_id"], "name": row["name"], "normalized_name": row["normalized_name"]}, visual_profile(row))
+    return (
+        {"brand_id": row["brand_id"], "name": row["name"], "normalized_name": row["normalized_name"]},
+        json_compatible(visual_profile(row)),
+    )
 
 
 def _load_release_records(

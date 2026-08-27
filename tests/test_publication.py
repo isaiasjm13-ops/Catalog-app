@@ -11,6 +11,8 @@ from perfect_catalog.publication import (
     _require_version,
     snapshot_from_record,
 )
+from perfect_catalog.brand_profiles import visual_profile
+from perfect_catalog.canonical import json_compatible
 
 
 def publication_record() -> dict[str, object]:
@@ -92,6 +94,18 @@ class PublicationContractTests(unittest.TestCase):
         self.assertEqual(build.command, "build-release")
         self.assertEqual(publish.command, "publish-release")
         self.assertEqual(archive.command, "archive-release")
+
+    def test_visual_profile_is_jsonb_compatible_before_release_hashing(self) -> None:
+        profile = visual_profile({
+            "code": "NATSUKI", "display_name": "Natsuki",
+            "minimum_font_size_pt": Decimal("12.00"),
+            "body_line_height": Decimal("1.80"),
+            "watermark_opacity": Decimal("0.050"),
+        })
+        normalized = json_compatible(profile)
+        self.assertEqual(normalized["minimum_font_size_pt"], "12.00")
+        self.assertEqual(normalized["body_line_height"], "1.80")
+        self.assertEqual(normalized["watermark_opacity"], "0.050")
 
 
 if __name__ == "__main__":
