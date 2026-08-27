@@ -4,6 +4,11 @@
 
 ### Resultado de esta sesión
 
+- Alcance comercial simplificado por decisión del usuario: moneda, precios, inventario, UoM,
+  responsable, etiquetas, favoritos, fechas operativas y `Imagen 128` quedan sólo en el XLSX/hash de
+  origen. Nuevos dry-runs no los normalizan ni crean snapshots/medios; releases nuevos fijan esos
+  campos a nulo y API v1.2, web y adaptadores de exportación los excluyen incluso al leer releases
+  históricos. Las imágenes continúan únicamente por el workflow separado de originales aprobados.
 - Parser vehicular v2 calibrado de forma agregada contra las muestras locales Perfect (896 filas) y
   PDM (154), sin copiar datos reales al repositorio. Añade perfiles de fuente, marcas/abreviaturas,
   años validados, cilindrada/códigos de motor con confianza diferenciada, posiciones canónicas, FMSI,
@@ -157,7 +162,7 @@
 - La exclusión usa ahora advisory lock de sesión en una conexión autocommit; la lectura termina antes del
   dry-run y la escritura final abre un snapshot nuevo. Fallos inesperados muestran/loguean un ID correlacionado
   de 8 hex sin exponer el texto crudo de la excepción.
-- Suite local actual: 218 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
+- Suite local actual: 217 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
 
@@ -326,7 +331,7 @@
 - Auditoría provisional documentada en `docs/STATUS_AUDIT_V2_2.md`.
 - Bloqueo exacto: no se recibió `Manual_Desde_Cero_Perfect_Trading_Natsuki_v2.2.pdf`; solo llegó
   el texto del encargo. La conformidad literal con el manual no puede cerrarse hasta adjuntarlo.
-- API FastAPI v1.1 de solo lectura implementada sin retirar el visor existente.
+- API FastAPI v1.2 de solo lectura implementada sin retirar el visor existente.
 - El origen predeterminado es el último `catalog_release` publicado de una marca; búsqueda,
   categorías y detalle permanecen encerrados en ese release.
 - Las URLs y respuestas publicadas usan UUID estable de variante o template. Los IDs

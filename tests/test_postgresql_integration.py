@@ -822,7 +822,7 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
         repository = ReleaseCatalogRepository.from_connection(self.connection)
         product = repository.product(str(ids["product"]))
         self.assertIsNotNone(product)
-        self.assertEqual(product["data"]["quantity_available"], 0)
+        self.assertNotIn("quantity_available", product["data"])
         self.assertEqual(product["identity_status"], "published_uuid")
 
         archived = _archive_release_in_connection(
@@ -1075,7 +1075,7 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["id"], str(ids["product"]))
         self.assertEqual(results[0]["identity_status"], "published_uuid")
-        self.assertEqual(results[0]["data"]["quantity_available"], 0)
+        self.assertNotIn("quantity_available", results[0]["data"])
         self.assertEqual(
             repository.categories(),
             [{"value": "Empaques / Publicados", "count": 1}],

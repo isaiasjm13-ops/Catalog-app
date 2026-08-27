@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import UTC, datetime
-from decimal import Decimal
 from typing import Any
 
 import psycopg
@@ -53,17 +52,6 @@ def _require_sha256(value: str, label: str = "snapshot_sha256") -> str:
     return digest
 
 
-def _json_number(value: Any) -> int | float | None:
-    if value is None:
-        return None
-    number = Decimal(value)
-    if not number.is_finite():
-        raise ValueError("La cantidad del snapshot debe ser finita.")
-    if number == number.to_integral_value():
-        return int(number)
-    return float(number)
-
-
 def snapshot_from_record(record: dict[str, Any]) -> dict[str, Any]:
     template_name = _require_text(record["name_original"], "name_original")
     variant_name = str(record.get("variant_name") or "").strip()
@@ -94,9 +82,9 @@ def snapshot_from_record(record: dict[str, Any]) -> dict[str, Any]:
         "template_name_original": template_name,
         "variant_name": variant_name or None,
         "category_path": record.get("category_path"),
-        "quantity_available": _json_number(record.get("quantity_available")),
-        "uom_original": record.get("uom_original"),
-        "currency": record.get("currency_code"),
+        "quantity_available": None,
+        "uom_original": None,
+        "currency": None,
         "image_status": "present" if record.get("has_processed_media") or record.get("approved_image_relpath") else "absent",
         "image_storage_relpath": record.get("approved_image_relpath"),
         "image_sha256": record.get("approved_image_sha256"),

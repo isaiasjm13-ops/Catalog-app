@@ -97,7 +97,7 @@ web exige dos decisiones separadas y auditadas: primero aprobar el fingerprint e
 productos) y luego aplicar el plan aprobado. Los productos aplicados quedan pendientes de revisión
 individual; nunca se publican automáticamente. Véase [`docs/OPERATOR_WEB.md`](docs/OPERATOR_WEB.md).
 
-Sin `--source` ni `--source-dir`, la API v1.1 lee por defecto el último release publicado de la
+Sin `--source` ni `--source-dir`, la API v1.2 lee por defecto el último release publicado de la
 marca solicitada y expone UUID estables. El release completo y cada snapshot se validan contra sus
 checksums antes de responder:
 
@@ -270,7 +270,7 @@ git branch -a
 |-----------|--------|
 | Documentación | ✓ Arquitectura inicial definida |
 | Base de Datos | PostgreSQL instalado; migraciones `0001`–`0007` aplicadas y validadas localmente |
-| Backend | FastAPI v1.1: release publicado con UUID por defecto y modo piloto XLSX explícito |
+| Backend | FastAPI v1.2: catálogo de identidad sin inventario/precios; release publicado con UUID por defecto y modo piloto XLSX explícito |
 | Apply | Workflow transaccional validado con el rol real y rollback sintético; plan empresarial no autorizado |
 | Revisión | Consola web local protegida, paginada y validada; plan empresarial aún no aplicado |
 | Ingreso | Cuarentena web trazable para Odoo, imágenes, PDF e InDesign; procesamiento posterior explícito |

@@ -119,6 +119,7 @@ class CatalogExportTests(unittest.TestCase):
         release, items = fixture_release()
         rows = export_rows_from_release(release, items)
         self.assertEqual(rows[0]["internal_reference_original"], "NK-001")
+        self.assertNotIn("quantity_available", rows[0])
         release["snapshot_sha256"] = "0"*64
         with self.assertRaisesRegex(ValueError, "snapshot_sha256"):
             export_rows_from_release(release, items)

@@ -38,3 +38,11 @@ de cada snapshot, sus hashes individuales y el `snapshot_sha256` agregado antes 
 
 Los generadores no leen PostgreSQL, cuarentena, Odoo ni rutas empresariales. La selección y carga
 del release corresponde a una capa llamadora autorizada.
+
+## Alcance comercial excluido
+
+El catálogo es de identidad y compatibilidad, no de ventas ni inventario. Moneda, precios, cantidades,
+unidad de medida, responsable, etiquetas operativas, favoritos, fechas operativas y miniaturas Odoo
+no se normalizan ni se exponen en API/web/PDF/PPTX/InDesign. El XLSX original y su SHA-256 permanecen
+como evidencia, pero esos campos no generan plan items. Las imágenes publicables siguen el workflow
+separado de ZIP, asociación exacta, aprobación y materialización.

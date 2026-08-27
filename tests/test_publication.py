@@ -7,7 +7,6 @@ from decimal import Decimal
 
 from perfect_catalog.cli import build_parser
 from perfect_catalog.publication import (
-    _json_number,
     _require_sha256,
     _require_version,
     snapshot_from_record,
@@ -37,20 +36,18 @@ def publication_record() -> dict[str, object]:
 
 
 class PublicationContractTests(unittest.TestCase):
-    def test_snapshot_preserves_variant_identity_and_numeric_quantity(self) -> None:
+    def test_snapshot_preserves_identity_and_excludes_commercial_values(self) -> None:
         record = publication_record()
         snapshot = snapshot_from_record(record)
         self.assertEqual(snapshot["product_template_id"], str(record["product_template_id"]))
         self.assertEqual(snapshot["product_variant_id"], str(record["product_variant_id"]))
         self.assertEqual(snapshot["name_original"], "Empaque de motor — 2.0 L")
         self.assertEqual(snapshot["name_normalized"], "EMPAQUE DE MOTOR — 2.0 L")
-        self.assertEqual(snapshot["quantity_available"], -2.5)
+        self.assertIsNone(snapshot["quantity_available"])
+        self.assertIsNone(snapshot["currency"])
+        self.assertIsNone(snapshot["uom_original"])
         self.assertEqual(snapshot["image_status"], "present")
         self.assertEqual(snapshot["source_updated_at"], "2026-08-24T00:00:00+00:00")
-
-    def test_integral_decimal_remains_an_integer(self) -> None:
-        self.assertEqual(_json_number(Decimal("0.000")), 0)
-        self.assertEqual(_json_number(Decimal("9007199254740993")), 9007199254740993)
 
     def test_version_and_checksum_contracts_are_strict(self) -> None:
         self.assertEqual(_require_version("2026.08.24-r1"), "2026.08.24-r1")

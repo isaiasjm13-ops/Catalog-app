@@ -121,15 +121,18 @@ class RowPreparationTests(unittest.TestCase):
         self.assertEqual(rows[0].source_row_number, 2)
         self.assertEqual(list(rows[0].raw_values), list(EXPECTED_HEADERS))
 
-    def test_negative_stock_is_valid(self) -> None:
+    def test_inventory_columns_are_ignored_for_catalog_scope(self) -> None:
         row = prepare_rows("Synthetic", EXPECTED_HEADERS, [synthetic_row()], [2])[0]
-        self.assertEqual(row.normalized["quantity_on_hand"], -2)
+        self.assertIsNone(row.normalized["quantity_on_hand"])
+        self.assertIsNone(row.normalized["quantity_available"])
+        self.assertIsNone(row.normalized["currency"])
+        self.assertIsNone(row.normalized["uom_original"])
         self.assertNotIn("quantity_on_hand_invalid", {issue["code"] for issue in row.issue_specs})
 
-    def test_empty_image_continues_without_base64_logging(self) -> None:
+    def test_odoo_thumbnail_is_ignored_in_favor_of_approved_image_workflow(self) -> None:
         row = prepare_rows("Synthetic", EXPECTED_HEADERS, [synthetic_row()], [2])[0]
-        self.assertEqual(row.normalized["image_status"], "absent")
-        self.assertIn("image_absent", {issue["code"] for issue in row.issue_specs})
+        self.assertEqual(row.normalized["image_status"], "not_exported")
+        self.assertNotIn("image_absent", {issue["code"] for issue in row.issue_specs})
 
     def test_base64_is_not_copied_to_structural_metadata_or_issues(self) -> None:
         payload = "U1lOVEhFVElDX0lNQUdF" * 20
@@ -146,11 +149,11 @@ class RowPreparationTests(unittest.TestCase):
         self.assertNotIn(payload, public_evidence)
         self.assertFalse(row.structural_metadata["image"]["decoded"])
 
-    def test_excel_date_remains_serial_with_warning(self) -> None:
+    def test_operational_update_date_is_not_normalized(self) -> None:
         row = prepare_rows("Synthetic", EXPECTED_HEADERS, [synthetic_row()], [2])[0]
-        self.assertEqual(row.raw_excel_serials["Última actualización el"], 46000.5)
+        self.assertEqual(row.raw_excel_serials, {})
         self.assertIsNone(row.normalized["source_updated_at"])
-        self.assertIn("excel_date_unconverted", {issue["code"] for issue in row.issue_specs})
+        self.assertNotIn("excel_date_unconverted", {issue["code"] for issue in row.issue_specs})
 
     def test_duplicate_names_do_not_merge_references(self) -> None:
         rows = prepare_rows(

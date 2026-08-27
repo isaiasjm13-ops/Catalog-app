@@ -2,6 +2,11 @@
 
 > **Arquitectura aprobada v0.1; implementación parcial con contrato de entrada v0.2 (2026-08-24)**
 
+> Decisión de alcance vigente (2026-08-27): el catálogo sólo procesa identidad, referencias y
+> compatibilidad. Las secciones históricas de inventario describen capacidad del esquema, pero el
+> importador activo no normaliza moneda, precio, cantidades, UoM, responsable, etiquetas, favoritos,
+> fechas operativas ni `Imagen 128`, y no crea snapshots de inventario.
+
 El dry-run, staging, resultados, incidencias y planes ya tienen una implementación piloto. El
 contrato `natsuki-empaques-v0.2` acepta columnas conocidas reordenadas, conserva columnas nuevas,
 reporta opcionales ausentes y permite conteos variables bajo un límite de piloto de 5,000 filas.

@@ -43,7 +43,11 @@ def export_rows_from_release(release: dict[str, Any], items: Iterable[dict[str, 
     calculated = release_snapshot_sha256(uuid.UUID(str(release["brand_id"])), str(release["version"]), release["definition"], materialized)
     if calculated != release["snapshot_sha256"]:
         raise ValueError("Los items no coinciden con snapshot_sha256 del release.")
-    return [dict(item["snapshot_data"]) for item in materialized]
+    rows = [dict(item["snapshot_data"]) for item in materialized]
+    for row in rows:
+        for excluded in ("quantity_available", "quantity_on_hand", "uom_original", "currency", "price", "price_two"):
+            row.pop(excluded, None)
+    return rows
 
 
 def _groups(

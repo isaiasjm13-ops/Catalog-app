@@ -205,25 +205,17 @@ def prepare_rows(sheet_name: str, headers: tuple[str, ...], rows: list[list[Any]
 
         reference_original = str(field("Referencia interna") or "")
         name_original = str(field("Nombre") or "")
-        image_column_present = _header_key("Imagen 128") in values_by_key
-        image_value = field("Imagen 128")
-        image_status = (
-            "not_exported"
-            if not image_column_present
-            else "present" if not _is_empty(image_value) else "absent"
-        )
-        date_serial = field("Última actualización el")
-        raw_excel_serials = (
-            {"Última actualización el": date_serial}
-            if isinstance(date_serial, (int, float)) and not isinstance(date_serial, bool)
-            else {}
-        )
+        # El catálogo es de identidad y compatibilidad. Inventario, precio, moneda,
+        # responsable, UoM, miniaturas Odoo y metadatos operativos sólo permanecen
+        # en el XLSX original/hash; no se normalizan ni generan operaciones.
+        image_status = "not_exported"
+        raw_excel_serials: dict[str, Any] = {}
         structural_metadata = {
             "column_count": len(headers),
             "sheet_name": sheet_name,
             "image": {
                 "status": image_status,
-                "payload_character_count": len(str(image_value)) if image_status == "present" else 0,
+                "payload_character_count": 0,
                 "decoded": False,
             },
         }
@@ -242,57 +234,26 @@ def prepare_rows(sheet_name: str, headers: tuple[str, ...], rows: list[list[Any]
                 "message": "El nombre del producto está vacío.",
                 "column_name": "Nombre",
             })
-        quantity_on_hand = _as_number(field("Cantidad real"))
-        quantity_available = _as_number(field("Cantidad disponible"))
-        if _header_key("Cantidad real") in values_by_key and quantity_on_hand is None:
-            issues.append({
-                "severity": "error",
-                "code": "quantity_on_hand_invalid",
-                "message": "Cantidad real no es numérica.",
-                "column_name": "Cantidad real",
-            })
-        if _header_key("Cantidad disponible") in values_by_key and quantity_available is None:
-            issues.append({
-                "severity": "error",
-                "code": "quantity_available_invalid",
-                "message": "Cantidad disponible no es numérica.",
-                "column_name": "Cantidad disponible",
-            })
-        if image_status == "absent":
-            issues.append({
-                "severity": "warning",
-                "code": "image_absent",
-                "message": "La imagen está ausente; el producto continúa en el plan.",
-                "column_name": "Imagen 128",
-            })
-        if raw_excel_serials:
-            issues.append({
-                "severity": "warning",
-                "code": "excel_date_unconverted",
-                "message": "El serial Excel se conserva sin convertir hasta validar sistema de fechas y zona de origen.",
-                "column_name": "Última actualización el",
-            })
-
         normalized = {
             "source_model": SOURCE_MODEL,
             "brand": BRAND,
             "family": FAMILY,
-            "currency": field("Moneda"),
-            "activity_state": field("Estado de la actividad"),
+            "currency": None,
+            "activity_state": None,
             "category_path": field("Categoría de producto"),
-            "is_favorite": _as_bool(field("Favorito")),
+            "is_favorite": None,
             "name_original": name_original,
             "name_normalized": normalize_name(name_original),
             "internal_reference_original": reference_original,
             "internal_reference_normalized": normalize_reference(reference_original),
             "variant_count_observed": _as_number(field("# Variantes de producto")),
-            "quantity_on_hand": quantity_on_hand,
-            "uom_original": field("Unidad de medida"),
-            "quantity_available": quantity_available,
+            "quantity_on_hand": None,
+            "uom_original": None,
+            "quantity_available": None,
             "image_status": image_status,
-            "source_date_serial": date_serial,
+            "source_date_serial": None,
             "source_updated_at": None,
-            "show_quantity_status": _as_bool(field("Mostrar botón de estado de cantidad real")),
+            "show_quantity_status": None,
             "source_active": None,
             "catalog_status": "pending_review",
             "name_enrichment": parse_product_name(
@@ -669,11 +630,7 @@ def run_dry_run(
                     {"code": issue["code"], "severity": issue["severity"]}
                     for issue in row.issue_specs
                 ]
-                inventory_complete = (
-                    row.normalized["quantity_on_hand"] is not None
-                    and row.normalized["quantity_available"] is not None
-                    and bool(str(row.normalized["uom_original"] or "").strip())
-                )
+                inventory_complete = False
                 if not inventory_complete:
                     row_issue_codes.append({
                         "code": "inventory_snapshot_not_planned",

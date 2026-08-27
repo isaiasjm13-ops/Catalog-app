@@ -290,7 +290,12 @@ class ReleaseCatalogRepository:
         }
         validate_release_item(item)
         target_id = item["product_variant_id"] or item["product_template_id"]
-        data = item["snapshot_data"]
+        data = dict(item["snapshot_data"])
+        for excluded in (
+            "quantity_available", "quantity_on_hand", "uom_original", "currency",
+            "price", "price_two", "responsible", "product_tags",
+        ):
+            data.pop(excluded, None)
         source_row = data.get("source_row_number")
         return {
             "id": str(target_id),
@@ -485,16 +490,13 @@ def render_results(items: list[dict[str, Any]]) -> str:
             f'<img src="/media/{html.escape(str(item["id"]), quote=True)}" alt="{reference}" loading="lazy">'
             if data.get("image_storage_relpath") and data.get("image_sha256") else f'<span>{initials}</span>'
         )
-        quantity_value = data.get("quantity_available")
-        quantity = 0 if quantity_value is None else quantity_value
         rendered.append(
             '<article class="result">'
             f'<a class="result-visual {image_status}" href="{product_url}">{visual}</a>'
             f'<div class="result-body"><div class="ref"><a href="{product_url}">{reference}</a></div>'
             f'<div class="name">{html.escape(str(data.get("name_original") or ""))}</div>'
             f'<div class="meta">{html.escape(str(data.get("category_path") or "Sin categoría"))}</div>'
-            f'<div class="result-footer"><span class="brand-chip">{html.escape(str(data.get("brand") or "Perfect"))}</span>'
-            f'<div class="qty"><small>Disponible</small>{html.escape(str(quantity))}</div></div></div>'
+            f'<div class="result-footer"><span class="brand-chip">{html.escape(str(data.get("brand") or "Perfect"))}</span></div></div>'
             '</article>'
         )
     return "".join(rendered)
@@ -540,8 +542,6 @@ def render_product(product: dict[str, Any], printable: bool = False) -> str:
     title = html.escape(str(data.get("name_original") or "Producto Natsuki"))
     reference = html.escape(str(data.get("internal_reference_original") or ""))
     category = html.escape(str(data.get("category_path") or "Sin categoría"))
-    quantity = html.escape(str(data.get("quantity_available") or 0))
-    currency = html.escape(str(data.get("currency") or ""))
     image_status = html.escape(str(data.get("image_status") or "absent"))
     media_url = f'/media/{html.escape(str(product["id"]), quote=True)}'
     image_panel = (
@@ -575,7 +575,7 @@ def render_product(product: dict[str, Any], printable: bool = False) -> str:
 .notice {{ border-left:4px solid var(--warm); padding:14px 16px; background:#fff8e8; font:14px/1.5 Arial,sans-serif; }}
 @media print {{ body {{ background:#fff; }} .actions,.back {{ display:none; }} .sheet {{ padding:0; }} }} @media(max-width:700px) {{ .hero {{ grid-template-columns:1fr; }} .top {{ display:block; }} .actions {{ margin-top:18px; }} }}
 </style></head><body><main class="sheet">{back}<div class="top"><div><div class="eyebrow">Perfect Trading / Natsuki</div><h1>{title}</h1><div class="ref">{reference}</div></div><div class="actions">{print_link}</div></div>
-<section class="hero">{image_panel}<div class="facts"><div class="fact"><span class="label">Categoría</span><strong>{category}</strong></div><div class="fact"><span class="label">Disponible</span><strong>{quantity} {currency}</strong></div>{applications_fact}{oem_fact}<div class="fact"><span class="label">Identidad</span><strong>{_identity_label(product)}</strong></div></div></section>
+<section class="hero">{image_panel}<div class="facts"><div class="fact"><span class="label">Categoría</span><strong>{category}</strong></div>{applications_fact}{oem_fact}<div class="fact"><span class="label">Identidad</span><strong>{_identity_label(product)}</strong></div></div></section>
 <div class="notice">Ficha basada en la exportación preliminar de Odoo. Los campos no presentes en la muestra, como aplicaciones, OEM, FMSI y especificaciones técnicas, permanecen pendientes de futuras fuentes.</div>
 </main></body></html>"""
 

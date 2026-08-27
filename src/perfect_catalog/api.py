@@ -27,7 +27,7 @@ from .web import (
 from .config import DatabaseConfig, prompt_password
 
 
-API_VERSION = "1.1.0"
+API_VERSION = "1.2.0"
 
 
 class StrictResponse(BaseModel):
@@ -46,7 +46,6 @@ class ProductResource(StrictResponse):
     reference: str
     name: str
     category: str | None
-    quantity_available: int | float | None
     image_status: str
     brand: str | None
     family: str | None
@@ -76,7 +75,6 @@ def _product_resource(item: dict[str, Any]) -> ProductResource:
     row = item.get("row")
     row_number = int(row) if isinstance(row, int) else None
     category = data.get("category_path")
-    quantity = data.get("quantity_available")
     return ProductResource(
         id=str(item.get("id") or f"source-row:{row_number}"),
         identity_status=str(item.get("identity_status") or "provisional_source_row"),
@@ -84,7 +82,6 @@ def _product_resource(item: dict[str, Any]) -> ProductResource:
         reference=str(data.get("internal_reference_original") or ""),
         name=str(data.get("name_original") or ""),
         category=str(category) if category is not None and str(category).strip() else None,
-        quantity_available=quantity if isinstance(quantity, (int, float)) and not isinstance(quantity, bool) else None,
         image_status=str(data.get("image_status") or "absent"),
         brand=str(data["brand"]) if data.get("brand") is not None else None,
         family=str(data["family"]) if data.get("family") is not None else None,

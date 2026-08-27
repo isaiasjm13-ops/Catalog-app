@@ -116,11 +116,11 @@ class CatalogApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["items"][0]["id"], "source-row:2")
         self.assertEqual(payload["items"][0]["identity_status"], "provisional_source_row")
 
-    async def test_product_preserves_zero_negative_and_missing_values(self) -> None:
+    async def test_product_api_excludes_inventory_values(self) -> None:
         first = (await self.client.get("/api/v1/products/2")).json()
         second = (await self.client.get("/api/v1/products/3")).json()
-        self.assertEqual(first["quantity_available"], 0)
-        self.assertEqual(second["quantity_available"], -2)
+        self.assertNotIn("quantity_available", first)
+        self.assertNotIn("quantity_available", second)
         self.assertIsNone(second["category"])
 
     async def test_missing_product_returns_404(self) -> None:
@@ -180,7 +180,10 @@ class CatalogApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("category-strip", catalog)
         self.assertIn("Todos+%2F+Empaques", catalog)
         self.assertIn('class="active"', catalog)
-        self.assertIn("EMPAQUE SINTÉTICO ÁRBOL", (await self.client.get("/producto/2")).text)
+        detail = (await self.client.get("/producto/2")).text
+        self.assertIn("EMPAQUE SINTÉTICO ÁRBOL", detail)
+        self.assertNotIn("Disponible", catalog)
+        self.assertNotIn("Disponible", detail)
         self.assertNotIn("Volver al catálogo", (await self.client.get("/producto/2/ficha")).text)
 
     async def test_public_catalog_paginates_and_preserves_filters(self) -> None:
