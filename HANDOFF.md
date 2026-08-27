@@ -1,5 +1,19 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: previsualización de identidad de marca v1.27
+
+- Los formularios de identidad madre, marca nueva y revisión de marca muestran una composición
+  inmediata con portada, ficha, referencia, aplicaciones, motor, acento secundario y marca de agua.
+- Nombre, eslogan y cuatro colores se reflejan mientras se editan. El logo elegido se previsualiza
+  mediante una URL `blob:` local y se revoca al reemplazarlo; no se carga al servidor hasta enviar el
+  formulario auditado. Los logos actuales sirven como punto de partida.
+- La interfaz calcula contraste texto/fondo y principal/fondo, muestra sus razones y advierte cuando
+  no llegan a 4.5:1. La validación autoritativa del servidor permanece intacta.
+- CSP amplía exclusivamente `img-src` para imágenes `blob:` generadas localmente; scripts, estilos,
+  formularios y demás recursos conservan las restricciones previas. No requiere migración.
+- Verificación: sintaxis JavaScript, 44 pruebas focalizadas y 258 pruebas completas pasan; 6
+  integraciones PostgreSQL se omiten sin credenciales.
+
 ## Bloque 2026-08-27: selector visual de productos v1.26
 
 - El compositor permite buscar y seleccionar visualmente productos de un release publicado. La

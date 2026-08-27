@@ -470,6 +470,21 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .brand-color-row { grid-template-columns: repeat(4,1fr); }
 .brand-form-row label, .brand-color-row label { display: grid; gap: 6px; }
 .brand-color-row input { width: 100%; min-height: 46px; padding: 4px; }
+.brand-live-preview { --preview-primary:#086650; --preview-secondary:#c7df54; --preview-ink:#17211d; --preview-paper:#fff; position: relative; display: grid; grid-template-columns: minmax(0,1.2fr) minmax(220px,.8fr); min-height: 270px; margin: 4px 0 10px; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; color: var(--preview-ink); background: var(--preview-paper); }
+.brand-live-cover { position: relative; display: grid; align-content: end; gap: 8px; min-height: 270px; padding: 28px; border-top: 14px solid var(--preview-primary); }
+.brand-live-cover::after { content:""; position:absolute; right:24px; top:34px; width:74px; height:74px; border:8px solid var(--preview-secondary); border-radius:50%; opacity:.6; }
+.brand-live-logo { position: relative; z-index: 1; width: min(220px,65%); height: 70px; object-fit: contain; object-position: left center; }
+.brand-live-initials { position: relative; z-index: 1; color: var(--preview-primary); font: 800 32px Georgia,serif; }
+.brand-live-cover small { color: var(--preview-primary); font-weight: 900; letter-spacing:.12em; text-transform:uppercase; }
+.brand-live-cover strong { max-width: 420px; font: 600 clamp(25px,4vw,44px)/1 Georgia,serif; }
+.brand-live-card { position: relative; align-self: center; margin: 20px; padding: 18px; border: 1px solid color-mix(in srgb,var(--preview-ink) 18%,transparent); border-bottom: 7px solid var(--preview-secondary); border-radius: 12px; background: color-mix(in srgb,var(--preview-paper) 90%,var(--preview-primary)); }
+.brand-live-card code { color: var(--preview-primary); font-weight:900; }
+.brand-live-card strong, .brand-live-card span { display:block; margin-top:7px; }
+.brand-live-card span { font-size:11px; }
+.brand-live-watermark { position:absolute; right:4%; bottom:3%; width:42%; height:80px; object-fit:contain; opacity:.05; pointer-events:none; }
+.brand-contrast-status { grid-column:1/-1; margin:0; padding:10px 14px; color:#245c43; background:#e7f4eb; font-size:11px; font-weight:800; }
+.brand-contrast-status.has-warning { color:#8b3a24; background:#fdece6; }
+@media(max-width:760px) { .brand-live-preview { grid-template-columns:1fr; } .brand-live-card { margin-top:0; } }
 .identity-logo-preview { display: block; width: min(360px,100%); max-height: 150px; margin: 14px 0 22px; object-fit: contain; object-position: left center; }
 .identity-logo-preview.compact { max-width: 210px; max-height: 90px; margin-bottom: 10px; }
 .brand-profile-card .materialize-action form { display: grid; gap: 10px; }

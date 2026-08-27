@@ -114,6 +114,8 @@ y muestra un resumen vivo. No almacena credenciales ni confirmaciones, y puede r
 la misma pantalla.
 La selección de productos también puede hacerse visualmente: el buscador paginado muestra referencia,
 categoría, aplicaciones, motor y miniatura, y transfiere las casillas al contrato exacto de referencias.
+En **Marcas**, los formularios ofrecen una vista previa local de portada, ficha y marca de agua antes
+de guardar, además de comprobar contraste 4.5:1 entre texto/fondo y color principal/fondo.
 
 La misma pantalla permite asociar un logo independiente a cada marca vehicular aprobada. Este
 activo aparece únicamente junto al nombre de la marca del vehículo cuando el catálogo se agrupa

@@ -53,7 +53,7 @@ from .importer import DEFAULT_MAX_PILOT_ROWS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.26.0"
+OPERATOR_VERSION = "1.27.0"
 LOGGER = logging.getLogger(__name__)
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
@@ -357,7 +357,7 @@ def _render(environment: Environment, name: str, **context: Any) -> HTMLResponse
 def _set_security_headers(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; "
+        "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' blob:; "
         "form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
     )
     # El login local necesita Referer como respaldo cuando una superficie Chromium

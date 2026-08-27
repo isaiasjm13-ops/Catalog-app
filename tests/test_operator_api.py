@@ -1016,7 +1016,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.26.0")
+        self.assertEqual(OPERATOR_VERSION, "1.27.0")
 
     async def test_company_identity_upload_requires_csrf_and_records_logo_without_exposing_it(self) -> None:
         await self.login()
@@ -1024,6 +1024,13 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(page.status_code, 200)
         self.assertIn("Identidad madre", page.text)
         self.assertIn('id="contenido-principal"', page.text)
+        self.assertIn('/operator/static/brand-preview.js', page.text)
+        self.assertIn("img-src 'self' blob:", page.headers["content-security-policy"])
+        preview_script = await self.client.get("/operator/static/brand-preview.js")
+        self.assertEqual(preview_script.status_code, 200)
+        self.assertIn("brand-live-preview", preview_script.text)
+        self.assertIn("4.5", preview_script.text)
+        self.assertIn("URL.createObjectURL", preview_script.text)
         csrf = hidden_value(page.text, "csrf_token")
         fields = {
             "csrf_token": csrf, "scope": "company", "brand_profile_id": "", "vehicle_make_id": "",
