@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import uuid
 from datetime import UTC, datetime
@@ -199,6 +200,21 @@ def _require_review_state(value: str) -> str:
     return state
 
 
+def _vehicle_applications_from_row(row: dict[str, Any]) -> list[dict[str, Any]]:
+    applications = [dict(item) for item in row.get("vehicle_applications") or []]
+    for item in applications:
+        notes = item.get("notes")
+        if isinstance(notes, str):
+            try:
+                parsed = json.loads(notes)
+            except json.JSONDecodeError:
+                parsed = {}
+            if isinstance(parsed, dict):
+                item["engines"] = list(parsed.get("engines") or [])
+                item["positions"] = list(parsed.get("positions") or [])
+    return applications
+
+
 def _review_target_from_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "identity_type": row["identity_type"],
@@ -215,6 +231,7 @@ def _review_target_from_row(row: dict[str, Any]) -> dict[str, Any]:
         "source_import_batch_id": row["source_import_batch_id"],
         "staging_row_id": row["staging_row_id"],
         "source_row_number": row["source_row_number"],
+        "vehicle_applications": _vehicle_applications_from_row(row),
         "reference": {
             "product_reference_id": row["product_reference_id"],
             "reference_type": row["reference_type"],
@@ -247,6 +264,7 @@ WITH target_ids AS (
         sr.source_row_number,
         ref.product_reference_id, ref.reference_type, ref.value_original,
         ref.value_normalized, ref.is_primary, ref.review_status,
+        COALESCE(app.vehicle_applications, '[]'::jsonb) AS vehicle_applications,
         COALESCE(ref.reference_count, 0) AS reference_count
     FROM target_ids AS t
     LEFT JOIN perfect_catalog.product_template AS p
@@ -270,6 +288,21 @@ WITH target_ids AS (
         ORDER BY pr.product_reference_id
         LIMIT 1
     ) AS ref ON true
+    LEFT JOIN LATERAL (
+        SELECT jsonb_agg(jsonb_build_object(
+            'make', vm.name, 'model', vmo.name,
+            'year_from', pac.year_from, 'year_to', pac.year_to,
+            'position', pac.position, 'confidence', pac.confidence,
+            'status', pac.review_status, 'notes', pac.notes
+        ) ORDER BY vm.name, vmo.name NULLS LAST, pac.product_application_candidate_id)
+        AS vehicle_applications
+        FROM perfect_catalog.product_application_candidate AS pac
+        LEFT JOIN perfect_catalog.vehicle_make AS vm
+          ON vm.vehicle_make_id=pac.vehicle_make_id
+        LEFT JOIN perfect_catalog.vehicle_model AS vmo
+          ON vmo.vehicle_model_id=pac.vehicle_model_id
+        WHERE pac.product_template_id=t.planned_product_template_id
+    ) AS app ON true
 ), classified AS (
     SELECT review_rows.*,
            CASE
@@ -378,6 +411,7 @@ def _review_queue_page_in_connection(
                 "reference_status": row["review_status"],
                 "reference_count": int(row["reference_count"]),
                 "source_row_number": row["source_row_number"],
+                "vehicle_applications": _vehicle_applications_from_row(row),
                 "review_state": row["review_state"],
                 "review_sha256": review_evidence_sha256(target, plan),
             }
@@ -662,6 +696,61 @@ def _insert_review_audit(
     )
 
 
+def _review_vehicle_applications(
+    connection: Connection[Any], product_template_id: uuid.UUID,
+    decision: str, actor: str, reason: str, now: datetime,
+) -> int:
+    desired = "approved" if decision == "approve" else "rejected"
+    candidate_ids = connection.execute(
+        """
+        SELECT product_application_candidate_id
+        FROM perfect_catalog.product_application_candidate
+        WHERE product_template_id=%s AND review_status='pending'
+        ORDER BY product_application_candidate_id
+        FOR UPDATE
+        """,
+        (product_template_id,),
+    ).fetchall()
+    if not candidate_ids:
+        return 0
+    if decision == "approve":
+        connection.execute(
+            """
+            UPDATE perfect_catalog.vehicle_make AS vm
+            SET review_status='approved', reviewed_by=%s, reviewed_at=%s,
+                review_note=%s, updated_at=%s
+            WHERE vm.review_status='pending' AND EXISTS (
+                SELECT 1 FROM perfect_catalog.product_application_candidate AS pac
+                WHERE pac.product_template_id=%s AND pac.vehicle_make_id=vm.vehicle_make_id
+            )
+            """,
+            (actor, now, reason, now, product_template_id),
+        )
+        connection.execute(
+            """
+            UPDATE perfect_catalog.vehicle_model AS vm
+            SET review_status='approved', reviewed_by=%s, reviewed_at=%s,
+                review_note=%s, updated_at=%s
+            WHERE vm.review_status='pending' AND EXISTS (
+                SELECT 1 FROM perfect_catalog.product_application_candidate AS pac
+                WHERE pac.product_template_id=%s AND pac.vehicle_model_id=vm.vehicle_model_id
+            )
+            """,
+            (actor, now, reason, now, product_template_id),
+        )
+    changed = connection.execute(
+        """
+        UPDATE perfect_catalog.product_application_candidate
+        SET review_status=%s, reviewed_by=%s, reviewed_at=%s, review_note=%s
+        WHERE product_template_id=%s AND review_status='pending'
+        """,
+        (desired, actor, now, reason, product_template_id),
+    ).rowcount
+    if changed != len(candidate_ids):
+        raise RuntimeError("Las aplicaciones cambiaron mientras se revisaba el producto.")
+    return changed
+
+
 def _review_product_in_connection(
     connection: Connection[Any],
     plan_id: uuid.UUID,
@@ -775,6 +864,9 @@ def _review_product_in_connection(
     ).rowcount
     if changed != 1:
         raise RuntimeError("La referencia cambió mientras se revisaba.")
+    application_count = _review_vehicle_applications(
+        connection, target["product_template_id"], decision, actor, reason, now
+    )
     before_data = {
         "catalog_status": "pending_review",
         "reference_status": reference["review_status"],
@@ -783,6 +875,7 @@ def _review_product_in_connection(
         "catalog_status": desired_catalog,
         "reference_status": desired_reference,
         "product_reference_id": reference["product_reference_id"],
+        "vehicle_application_count": application_count,
         "review_evidence_sha256": recalculated,
     }
     _insert_review_audit(
@@ -803,6 +896,7 @@ def _review_product_in_connection(
         "status": desired_reference,
         "catalog_status": desired_catalog,
         "reference_status": desired_reference,
+        "vehicle_application_count": application_count,
         "review_evidence_sha256": recalculated,
         "reviewed_by": actor,
     }
@@ -980,6 +1074,15 @@ class DatabaseReviewGateway:
         from .application import apply_approved_plan
 
         return apply_approved_plan(plan_id, fingerprint, actor, reason, self._config, self._password)
+
+    def prepare_import_plan(
+        self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
+    ) -> dict[str, Any]:
+        from .application import approve_and_apply_plan
+
+        return approve_and_apply_plan(
+            plan_id, fingerprint, actor, reason, self._config, self._password
+        )
 
     def page(
         self,

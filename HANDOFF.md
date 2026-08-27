@@ -1,5 +1,29 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: aplicaciones vehiculares de extremo a extremo
+
+- Corregido el corte principal: `name_enrichment` ya no se pierde al aplicar. Los planes nuevos
+  materializan fabricante, modelo y candidato de aplicación con años, posición, motores, confianza,
+  regla y evidencia original; una marca no reconocida permanece vacía.
+- La decisión de identidad resuelve atómicamente sus candidatos vehiculares visibles. Aprobar también
+  aprueba el vocabulario pendiente utilizado; rechazar conserva el vocabulario y rechaza sólo las
+  asociaciones del producto. La aprobación por filtro sigue limitada a 500 y audita cada identidad.
+- Los releases incluyen `vehicle_makes`, `application_details` y etiquetas legibles. Vista previa,
+  HTML, PDF, PPTX y Data Merge/InDesign muestran aplicaciones y permiten filtrar, agrupar o
+  subagrupar por marca vehicular; productos multimarca aparecen en cada grupo correspondiente.
+- El dry-run ahora ofrece **Verificar y preparar**: una confirmación ejecuta aprobación y aplicación
+  como dos eventos dentro de una transacción. Publicar permanece separado.
+- Añadida migración forward-only `0012` y `MIGRAR-APLICACIONES-VEHICULARES.cmd`. Debe aplicarse una vez
+  en `perfect_catalog_dev` antes de probar un ingreso nuevo; requiere contraseña de `postgres`.
+- Consola operador v1.9. Suite: 223 pruebas correctas, 6 integraciones PostgreSQL omitidas sin clave.
+
+### Verificación manual pendiente
+
+1. Ejecutar `MIGRAR-APLICACIONES-VEHICULARES.cmd` y confirmar `Resultado de psql: 0`.
+2. Crear un dry-run nuevo; los planes ya aplicados antes de `0012` no contienen esos candidatos.
+3. Abrir la cola, comprobar marca/modelo/años/motores y aprobar el filtro; construir un release nuevo.
+4. Agrupar la vista previa por **Marca vehicular** y comparar varias referencias contra Odoo.
+
 ## Bloque 2026-08-27: inicio rápido y dirección visual
 
 - Consola operador v1.8: `INICIAR-REVISOR.cmd` solicita únicamente la contraseña de PostgreSQL.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import uuid
 from datetime import UTC, datetime
@@ -58,6 +59,35 @@ def snapshot_from_record(record: dict[str, Any]) -> dict[str, Any]:
     display_name = (
         f"{template_name} — {variant_name}" if variant_name else template_name
     )
+    application_details = list(record.get("application_details") or [])
+    for item in application_details:
+        notes = item.get("notes")
+        if isinstance(notes, str):
+            try:
+                parsed_notes = json.loads(notes)
+            except json.JSONDecodeError:
+                parsed_notes = {}
+            if isinstance(parsed_notes, dict):
+                item["engines"] = list(parsed_notes.get("engines") or [])
+                item["positions"] = list(parsed_notes.get("positions") or [])
+    vehicle_makes = sorted({
+        str(item.get("make") or "").strip()
+        for item in application_details if str(item.get("make") or "").strip()
+    })
+    applications: list[str] = []
+    for item in application_details:
+        label = " ".join(filter(None, (
+            str(item.get("make") or "").strip(), str(item.get("model") or "").strip()
+        )))
+        year_from, year_to = item.get("year_from"), item.get("year_to")
+        if year_from:
+            label += f" {year_from}" + (f"–{year_to}" if year_to else "+")
+        if item.get("position"):
+            label += f" · {item['position']}"
+        if item.get("engines"):
+            label += " · " + ", ".join(map(str, item["engines"]))
+        if label.strip() and label.strip() not in applications:
+            applications.append(label.strip())
     return {
         "product_template_id": str(record["product_template_id"]),
         "product_variant_id": (
@@ -90,6 +120,10 @@ def snapshot_from_record(record: dict[str, Any]) -> dict[str, Any]:
         "image_sha256": record.get("approved_image_sha256"),
         "image_media_type": record.get("approved_image_media_type"),
         "brand": _require_text(record["brand_name"], "brand"),
+        "vehicle_makes": vehicle_makes,
+        "vehicle_make": vehicle_makes[0] if len(vehicle_makes) == 1 else None,
+        "applications": applications,
+        "application_details": application_details,
         "family": None,
         "source_active": record.get("source_active"),
         "source_updated_at": json_compatible(record.get("source_updated_at")),
@@ -225,6 +259,7 @@ def _load_release_records(
                    approved_image.storage_relpath AS approved_image_relpath,
                    approved_image.content_sha256 AS approved_image_sha256,
                    approved_image.media_type AS approved_image_media_type,
+                   COALESCE(app.application_details, '[]'::jsonb) AS application_details,
                    b.name AS brand_name
             FROM targets AS t
             JOIN perfect_catalog.brand AS b ON b.brand_id=%s
@@ -261,6 +296,24 @@ def _load_release_records(
                 ORDER BY m.materialized_at, m.approved_image_materialization_id
                 LIMIT 1
             ) AS approved_image ON true
+            LEFT JOIN LATERAL (
+                SELECT jsonb_agg(jsonb_build_object(
+                    'make', vm.name, 'model', vmo.name,
+                    'year_from', pac.year_from, 'year_to', pac.year_to,
+                    'position', pac.position, 'confidence', pac.confidence,
+                    'notes', pac.notes
+                ) ORDER BY vm.name, vmo.name NULLS LAST,
+                           pac.product_application_candidate_id) AS application_details
+                FROM perfect_catalog.product_application_candidate AS pac
+                JOIN perfect_catalog.vehicle_make AS vm
+                  ON vm.vehicle_make_id=pac.vehicle_make_id
+                 AND vm.review_status='approved'
+                LEFT JOIN perfect_catalog.vehicle_model AS vmo
+                  ON vmo.vehicle_model_id=pac.vehicle_model_id
+                 AND vmo.review_status='approved'
+                WHERE pac.product_template_id=t.product_template_id
+                  AND pac.review_status='approved'
+            ) AS app ON true
             ORDER BY ref.value_normalized NULLS LAST,
                      COALESCE(t.product_variant_id, t.product_template_id)
             """,
@@ -297,7 +350,10 @@ def _release_items(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "snapshot_data": snapshot,
                 "snapshot_sha256": product_snapshot_sha256(snapshot),
                 "section_key": record.get("category_path"),
-                "grouping_keys": {"category": record.get("category_path")},
+                "grouping_keys": {
+                    "category": record.get("category_path"),
+                    "vehicle_makes": snapshot.get("vehicle_makes", []),
+                },
                 "source_import_batch_id": record.get("source_import_batch_id"),
             }
         )

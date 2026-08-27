@@ -55,9 +55,19 @@ def _groups(
 ) -> list[tuple[str, list[dict[str, Any]]]]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
-        primary = str(row.get(key) or "Sin categoría")
-        secondary = str(row.get(secondary_key) or "Sin subgrupo") if secondary_key else ""
-        grouped[f"{primary} · {secondary}" if secondary else primary].append(row)
+        primary_values = (
+            row.get("vehicle_makes") or ["Sin marca vehicular"]
+            if key == "vehicle_make" else [row.get(key) or "Sin categoría"]
+        )
+        secondary_values = (
+            row.get("vehicle_makes") or ["Sin marca vehicular"]
+            if secondary_key == "vehicle_make" else [row.get(secondary_key) or "Sin subgrupo"]
+            if secondary_key else [""]
+        )
+        for primary in primary_values:
+            for secondary in secondary_values:
+                label = f"{primary} · {secondary}" if secondary else str(primary)
+                grouped[label].append(row)
     return list(grouped.items())
 
 
@@ -284,11 +294,12 @@ def generate_indesign_datamerge_csv(rows: list[dict[str, Any]]) -> bytes:
 
     stream = io.StringIO(newline="")
     writer = csv.writer(stream, lineterminator="\r\n")
-    writer.writerow(("reference", "name", "category", "brand", "applications", "oem_references", "@image"))
+    writer.writerow(("reference", "name", "category", "brand", "vehicle_make", "applications", "oem_references", "@image"))
     for row in rows:
         writer.writerow((
             cell(row.get("internal_reference_original")), cell(row.get("name_original")),
             cell(row.get("category_path")), cell(row.get("brand")),
+            cell(row.get("vehicle_make") or row.get("vehicle_makes")),
             cell(row.get("applications")), cell(row.get("oem_references")),
             cell(row.get("image_path")),
         ))

@@ -101,6 +101,14 @@ class SyntheticReviewGateway:
         self.import_plan_status = "applied"
         return {"plan_id": str(plan_id), "status": "applied", "counts": {"create": 1}}
 
+    def prepare_import_plan(
+        self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
+    ) -> dict[str, Any]:
+        if plan_id != PLAN_ID or fingerprint != FINGERPRINT or self.import_plan_status != "awaiting_review":
+            raise PermissionError("Preparación rechazada")
+        self.import_plan_status = "applied"
+        return {"plan_id": str(plan_id), "status": "prepared", "counts": {"create": 1}}
+
     def page(
         self,
         plan_id: uuid.UUID,
@@ -577,15 +585,15 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.gateway.bulk_decisions[0]["expected_count"], 1)
         self.assertEqual(self.gateway.bulk_decisions[0]["actor"], "web-reviewer")
 
-    async def test_import_plan_requires_explicit_approve_then_apply(self) -> None:
+    async def test_import_plan_prepares_with_one_explicit_audited_confirmation(self) -> None:
         await self.login()
         detail = await self.client.get(f"/operator/import-plans/{PLAN_ID}")
         self.assertEqual(detail.status_code, 200)
-        self.assertIn("Aprobar plan exacto", detail.text)
+        self.assertIn("Verificar y preparar", detail.text)
         self.assertIn(FINGERPRINT, detail.text)
 
         rejected = await self.client.post(
-            f"/operator/import-plans/{PLAN_ID}/approve",
+            f"/operator/import-plans/{PLAN_ID}/prepare",
             data={
                 "csrf_token": hidden_value(detail.text, "csrf_token"),
                 "fingerprint": FINGERPRINT, "reason": "Revisión piloto", "confirm": "wrong",
@@ -595,30 +603,17 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rejected.status_code, 409)
         self.assertEqual(self.gateway.import_plan_status, "awaiting_review")
 
-        approved = await self.client.post(
-            f"/operator/import-plans/{PLAN_ID}/approve",
+        prepared = await self.client.post(
+            f"/operator/import-plans/{PLAN_ID}/prepare",
             data={
                 "csrf_token": hidden_value(detail.text, "csrf_token"),
-                "fingerprint": FINGERPRINT, "reason": "Revisión piloto", "confirm": "approve",
+                "fingerprint": FINGERPRINT, "reason": "Revisión piloto", "confirm": "prepare",
             },
             headers={"Origin": "http://testserver"},
         )
-        self.assertEqual(approved.status_code, 303)
-        self.assertIn("result=approved", approved.headers["location"])
-
-        approved_detail = await self.client.get(f"/operator/import-plans/{PLAN_ID}")
-        self.assertIn("Aplicar plan aprobado", approved_detail.text)
-        applied = await self.client.post(
-            f"/operator/import-plans/{PLAN_ID}/apply",
-            data={
-                "csrf_token": hidden_value(approved_detail.text, "csrf_token"),
-                "fingerprint": FINGERPRINT, "reason": "Aplicación autorizada", "confirm": "apply",
-            },
-            headers={"Origin": "http://testserver"},
-        )
-        self.assertEqual(applied.status_code, 303)
-        self.assertIn("result=applied", applied.headers["location"])
-        final_detail = await self.client.get(f"/operator/import-plans/{PLAN_ID}?result=applied")
+        self.assertEqual(prepared.status_code, 303)
+        self.assertIn("result=prepared", prepared.headers["location"])
+        final_detail = await self.client.get(f"/operator/import-plans/{PLAN_ID}?result=prepared")
         self.assertIn("Abrir cola de revisión", final_detail.text)
 
     async def test_catalog_workspace_exports_and_downloads_manifest_files(self) -> None:
@@ -912,7 +907,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.8.0")
+        self.assertEqual(OPERATOR_VERSION, "1.9.0")
 
     async def test_promotion_requires_individual_post_origin_csrf_and_confirmation(self) -> None:
         await self.login()

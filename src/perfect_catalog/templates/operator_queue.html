@@ -69,6 +69,16 @@
         <div><dt>Referencia</dt><dd>{{ item.reference_status or 'pending' }}</dd></div>
         <div><dt>Referencias primarias</dt><dd>{{ item.reference_count }}</dd></div>
       </dl>
+      {% if item.get('vehicle_applications') %}
+      <details class="application-evidence" open>
+        <summary>Aplicaciones detectadas · {{ item.get('vehicle_applications')|length }}</summary>
+        <ul>
+          {% for app in item.get('vehicle_applications') %}
+          <li><b>{{ app.make }}{% if app.model %} {{ app.model }}{% endif %}</b>{% if app.year_from %} · {{ app.year_from }}{% if app.year_to %}–{{ app.year_to }}{% else %}+{% endif %}{% endif %}{% if app.get('positions') %} · {{ app.get('positions')|join(', ') }}{% elif app.position %} · {{ app.position }}{% endif %}{% if app.get('engines') %} · motor {{ app.get('engines')|join(', ') }}{% endif %} <small>{{ (app.confidence * 100)|round|int }}% confianza</small></li>
+          {% endfor %}
+        </ul>
+      </details>
+      {% else %}<p class="muted-note">Sin aplicación vehicular reconocida; no se inventará una.</p>{% endif %}
       <details><summary>Evidencia exacta</summary><code class="hash-code">{{ item.review_sha256 }}</code></details>
     </div>
     {% if item.review_state == 'pending' and item.reference_count == 1 %}

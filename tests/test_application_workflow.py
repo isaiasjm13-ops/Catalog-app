@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 
 from perfect_catalog.application import (
     _apply_plan_in_connection,
+    _insert_vehicle_applications,
     assert_applicable_items,
     verify_plan_integrity,
 )
@@ -194,6 +195,31 @@ class ApplyIdempotencyTests(unittest.TestCase):
             )
         self.assertEqual(result["status"], "already_applied")
         connection.execute.assert_not_called()
+
+
+class VehicleApplicationMaterializationTests(unittest.TestCase):
+    def test_parser_suggestion_becomes_reviewable_vehicle_candidate(self) -> None:
+        plan, items, _ = make_plan()
+        item = items[0]
+        item["proposed_values"]["name_enrichment"] = {  # type: ignore[index]
+            "parser_version": "vehicle-name-suggestions-v2",
+            "applications": [{
+                "vehicle_brand": "Toyota", "model_suggestion": "Corolla",
+                "years": {"from": 2010, "to": 2015}, "positions": ["delantero"],
+                "engines": ["1.8L"], "confidence": 0.88,
+            }],
+        }
+        connection = Mock()
+        empty = Mock(); empty.fetchone.return_value = None
+        connection.execute.side_effect = [empty, Mock(), empty, Mock(), Mock()]
+        count = _insert_vehicle_applications(connection, plan, item)
+        self.assertEqual(count, 1)
+        sql = "\n".join(str(call.args[0]) for call in connection.execute.call_args_list)
+        self.assertIn("vehicle_make", sql)
+        self.assertIn("vehicle_model", sql)
+        self.assertIn("product_application_candidate", sql)
+        candidate_parameters = connection.execute.call_args_list[-1].args[1]
+        self.assertIn('"engines": ["1.8L"]', candidate_parameters[-1])
 
 
 if __name__ == "__main__":

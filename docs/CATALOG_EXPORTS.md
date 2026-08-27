@@ -13,8 +13,11 @@ aplicación y evidencia declara confianza, versión y `review_status=pending_rev
 ni publicar un producto.
 
 El importador Natsuki incorpora este resultado completo a `name_enrichment` dentro del dry-run y del
-fingerprint. La aplicación empresarial todavía ignora esas sugerencias: materializarlas en las tablas
-vehiculares requiere un workflow humano posterior. `Referencias Adicionales`, cuando existe como
+fingerprint. Desde la migración `0012`, apply materializa las sugerencias como fabricante, modelo y
+candidato de aplicación pendiente. La misma decisión visible de la identidad aprueba o rechaza sus
+candidatos; el release conserva marcas y aplicaciones con años, posición y motores. Web, PDF,
+PowerPoint e InDesign pueden filtrar y agrupar por **marca vehicular**. Una marca no reconocida queda
+vacía: el sistema no inventa compatibilidad. `Referencias Adicionales`, cuando existe como
 columna dedicada, se conserva con confianza 1.0 como evidencia exacta de la fuente, no como referencia
 primaria aprobada.
 
@@ -32,7 +35,7 @@ de cada snapshot, sus hashes individuales y el `snapshot_sha256` agregado antes 
 `generate_catalog_pdf()` y `generate_catalog_pptx()` consumen esas filas desacopladas y admiten:
 
 - portada y branding básico (`title`, `subtitle`, `primary_color`);
-- agrupación por un campo del snapshot (`group_by`);
+- agrupación por categoría, marca de producto, marca vehicular o referencia (`group_by`);
 - diseños de una a tres columnas (`columns_per_row`);
 - referencia, nombre, OEM y aplicaciones cuando existen en el snapshot verificado.
 

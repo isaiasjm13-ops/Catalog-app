@@ -391,6 +391,7 @@ class CatalogExportTests(unittest.TestCase):
             )
             self.assertEqual(result["selection"]["selected_item_count"], 1)
             self.assertEqual(result["selection"]["group_by_secondary"], "category_path")
+
             manifest = json.loads((output / result["manifest"]).read_text(encoding="utf-8"))
             self.assertEqual(manifest["selection"]["filter_query"], "empaque")
             with self.assertRaisesRegex(ValueError, "ningún producto"):
@@ -398,6 +399,15 @@ class CatalogExportTests(unittest.TestCase):
                     release, items, Path(temporary) / "empty", formats=("pdf",),
                     config={"filter_field": "name_original", "filter_query": "inexistente"},
                 )
+
+    def test_vehicle_make_can_group_products_into_each_application_brand(self) -> None:
+        rows = [{
+            "internal_reference_original": "A-1", "name_original": "Producto",
+            "vehicle_makes": ["Toyota", "Nissan"], "applications": ["Toyota Corolla", "Nissan Sentra"],
+        }]
+        from perfect_catalog.catalog_exports import _groups
+        groups = _groups(rows, "vehicle_make")
+        self.assertEqual([label for label, _ in groups], ["Toyota", "Nissan"])
 
     def test_manual_reference_selection_is_exact_manifested_and_rejects_typos(self) -> None:
         release, items = fixture_release()

@@ -22,8 +22,8 @@ EXPORT_VERIFICATION_SCHEMA = "perfect-catalog.export-verification.v1"
 SUPPORTED_FORMATS = ("html", "pdf", "pptx", "indesign-json")
 INDESIGN_TEMPLATE_PROFILES = ("T4", "T2", "T1", "TABLE")
 INDESIGN_PRODUCTS_PER_PAGE = {"T4": 4, "T2": 2, "T1": 1, "TABLE": 16}
-CATALOG_GROUP_FIELDS = ("category_path", "brand", "internal_reference_original")
-CATALOG_FILTER_FIELDS = ("all", "category_path", "brand", "internal_reference_original", "name_original")
+CATALOG_GROUP_FIELDS = ("category_path", "brand", "vehicle_make", "internal_reference_original")
+CATALOG_FILTER_FIELDS = ("all", "category_path", "brand", "vehicle_make", "internal_reference_original", "name_original")
 MAX_SELECTED_REFERENCES = 5000
 MAX_INDESIGN_PREFLIGHT_BYTES = 1024 * 1024
 INDESIGN_PREFLIGHT_SCHEMA = "perfect-catalog.indesign-preflight.v1"
@@ -371,6 +371,22 @@ def _release_metadata(release: dict[str, Any], item_count: int) -> dict[str, Any
     }
 
 
+def _indesign_rows(rows: list[dict[str, Any]], config: dict[str, Any]) -> list[dict[str, Any]]:
+    """Expande multimarca para que cada separador InDesign reciba su ficha."""
+    if "vehicle_make" not in {
+        str(config.get("group_by") or ""), str(config.get("group_by_secondary") or "")
+    }:
+        return rows
+    expanded: list[dict[str, Any]] = []
+    for row in rows:
+        makes = row.get("vehicle_makes") or ["Sin marca vehicular"]
+        for make in makes:
+            copy = dict(row)
+            copy["vehicle_make"] = str(make)
+            expanded.append(copy)
+    return expanded
+
+
 def _selection(rows: list[dict[str, Any]], config: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     group_by = str(config.get("group_by") or "category_path")
     secondary = str(config.get("group_by_secondary") or "")
@@ -408,8 +424,13 @@ def _selection(rows: list[dict[str, Any]], config: dict[str, Any]) -> tuple[list
     selected = rows
     if query:
         needle = query.casefold()
-        keys = ("category_path", "brand", "internal_reference_original", "name_original") if filter_field == "all" else (filter_field,)
-        selected = [row for row in rows if any(needle in str(row.get(key) or "").casefold() for key in keys)]
+        keys = ("category_path", "brand", "vehicle_make", "internal_reference_original", "name_original") if filter_field == "all" else (filter_field,)
+        selected = [row for row in rows if any(
+            needle in (
+                " ".join(map(str, row.get("vehicle_makes") or []))
+                if key == "vehicle_make" else str(row.get(key) or "")
+            ).casefold() for key in keys
+        )]
     if reference_keys:
         available = {
             str(row.get("internal_reference_original") or "").strip().casefold()
@@ -491,14 +512,15 @@ def build_catalog_bundle(
             f"{stem}.pptx", generate_catalog_pptx(rows, export_config, bundle_dir=output_dir, release=metadata)
         )
     if "indesign-json" in requested:
+        indesign_rows = _indesign_rows(rows, export_config)
         snapshot = {
             "schema": INDESIGN_SNAPSHOT_SCHEMA,
             "release": metadata,
             "layout": export_config,
-            "products": rows,
+            "products": indesign_rows,
         }
         snapshot_content = _json_bytes(snapshot)
-        datamerge_content = generate_indesign_datamerge_csv(rows)
+        datamerge_content = generate_indesign_datamerge_csv(indesign_rows)
         payloads["indesign-json"] = (f"{stem}.indesign.json", snapshot_content)
         payloads["indesign-csv"] = (f"{stem}.datamerge.csv", datamerge_content)
         payloads["indesign-package"] = (
@@ -774,14 +796,17 @@ def build_catalog_preview(
     groups: dict[str, dict[str, Any]] = {}
     sampled = 0
     for row in rows:
-        primary = str(row.get(group_by) or "Sin categoría")
-        secondary = str(row.get(preview_config["group_by_secondary"]) or "Sin subgrupo") if preview_config["group_by_secondary"] else ""
-        label = f"{primary} · {secondary}" if secondary else primary
-        group = groups.setdefault(label, {"label": label, "count": 0, "products": []})
-        group["count"] += 1
-        if sampled < sample_limit:
-            group["products"].append(row)
-            sampled += 1
+        primary_values = row.get("vehicle_makes") or ["Sin marca vehicular"] if group_by == "vehicle_make" else [row.get(group_by) or "Sin categoría"]
+        secondary_field = preview_config["group_by_secondary"]
+        secondary_values = row.get("vehicle_makes") or ["Sin marca vehicular"] if secondary_field == "vehicle_make" else [row.get(secondary_field) or "Sin subgrupo"] if secondary_field else [""]
+        for primary in primary_values:
+            for secondary in secondary_values:
+                label = f"{primary} · {secondary}" if secondary else str(primary)
+                group = groups.setdefault(label, {"label": label, "count": 0, "products": []})
+                group["count"] += 1
+                if sampled < sample_limit:
+                    group["products"].append(row)
+                    sampled += 1
     return {
         "release": _release_metadata(release, len(source_rows)),
         "group_by": group_by,

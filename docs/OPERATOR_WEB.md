@@ -32,14 +32,15 @@ operación requiera una identidad distinta de la sesión de Windows.
 ## Flujo visible
 
 - La portada enumera únicamente planes en estado `applied` que crearon identidades.
-- Tras crear un dry-run, **Ingresos** enlaza una inspección separada que muestra UUID, cantidad de
-  operaciones, versiones, hashes y fingerprint completos. Un primer POST aprueba la evidencia sin
-  escribir productos; sólo un segundo POST explícito permite aplicar el plan aprobado.
+- Tras crear un dry-run, **Ingresos** enlaza una inspección que muestra UUID, cantidad de operaciones,
+  versiones, hashes y fingerprint completos. **Verificar y preparar** registra aprobación y aplicación
+  como eventos separados dentro de una sola transacción y una sola confirmación del operador.
 - Cada plan muestra pendientes, aprobadas, rechazadas e inconsistentes.
 - La cola usa 50 registros por página y consulta set-based; admite más de 25,000 sin cargar todo el
   catálogo en HTML ni ejecutar una consulta por producto.
 - Se puede buscar por nombre, referencia original/normalizada o número de fila y filtrar por estado.
-- Cada tarjeta muestra UUID, fila fuente, referencia, estados y `review_sha256` completo.
+- Cada tarjeta muestra UUID, fila fuente, referencia, aplicaciones vehiculares, estados y
+  `review_sha256` completo.
 - Solo una identidad coherente y pendiente presenta botones. Aprobar o rechazar exige un motivo de
   4 a 500 caracteres y una confirmación explícita por ficha.
 - El filtro `pending` ofrece además una decisión atómica para todo su resultado (máximo 500). El

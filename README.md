@@ -71,6 +71,10 @@ La misma aplicación expone:
 
 ### Consola local de revisión
 
+Antes de importar nuevamente con aplicaciones vehiculares, ejecuta una vez
+`MIGRAR-APLICACIONES-VEHICULARES.cmd` como propietario de PostgreSQL. La migración sólo concede los
+permisos mínimos de inserción/revisión; no elimina ni modifica evidencia anterior.
+
 La revisión humana usa un servidor separado del catálogo público. Haz doble clic en
 `INICIAR-REVISOR.cmd` e introduce únicamente la contraseña de PostgreSQL para
 `perfect_catalog_app`. El iniciador toma el usuario de Windows como actor de auditoría, genera un

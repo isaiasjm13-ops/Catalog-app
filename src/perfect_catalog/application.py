@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import uuid
 from datetime import UTC, datetime
@@ -361,6 +362,107 @@ def _ensure_category(
     return category_id
 
 
+def _ensure_vehicle_make(connection: Connection[Any], name: str) -> uuid.UUID:
+    normalized = normalize_name(name)
+    existing = connection.execute(
+        """SELECT vehicle_make_id FROM perfect_catalog.vehicle_make
+           WHERE normalized_name=%s ORDER BY
+             CASE review_status WHEN 'approved' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END,
+             vehicle_make_id LIMIT 1""",
+        (normalized,),
+    ).fetchone()
+    if existing:
+        return existing[0]
+    make_id = uuid.uuid5(NAMESPACE, f"vehicle-make:{normalized}")
+    connection.execute(
+        """
+        INSERT INTO perfect_catalog.vehicle_make (
+            vehicle_make_id, name, normalized_name, review_status
+        ) VALUES (%s,%s,%s,'pending')
+        ON CONFLICT (vehicle_make_id) DO NOTHING
+        """,
+        (make_id, name.strip(), normalized),
+    )
+    return make_id
+
+
+def _ensure_vehicle_model(
+    connection: Connection[Any], make_id: uuid.UUID, name: str | None
+) -> uuid.UUID | None:
+    model = str(name or "").strip()
+    if not model:
+        return None
+    normalized = normalize_name(model)
+    existing = connection.execute(
+        """SELECT vehicle_model_id FROM perfect_catalog.vehicle_model
+           WHERE vehicle_make_id=%s AND normalized_name=%s ORDER BY
+             CASE review_status WHEN 'approved' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END,
+             vehicle_model_id LIMIT 1""",
+        (make_id, normalized),
+    ).fetchone()
+    if existing:
+        return existing[0]
+    model_id = uuid.uuid5(NAMESPACE, f"vehicle-model:{make_id}:{normalized}")
+    connection.execute(
+        """
+        INSERT INTO perfect_catalog.vehicle_model (
+            vehicle_model_id, vehicle_make_id, name, normalized_name, review_status
+        ) VALUES (%s,%s,%s,%s,'pending')
+        ON CONFLICT (vehicle_model_id) DO NOTHING
+        """,
+        (model_id, make_id, model, normalized),
+    )
+    return model_id
+
+
+def _insert_vehicle_applications(
+    connection: Connection[Any], plan: dict[str, Any], item: dict[str, Any]
+) -> int:
+    proposed = item["proposed_values"]
+    enrichment = proposed.get("name_enrichment") or {}
+    applications = enrichment.get("applications") or []
+    inserted = 0
+    for order, application in enumerate(applications, start=1):
+        make_name = str(application.get("vehicle_brand") or "").strip()
+        if not make_name:
+            continue
+        make_id = _ensure_vehicle_make(connection, make_name)
+        model_id = _ensure_vehicle_model(connection, make_id, application.get("model_suggestion"))
+        years = application.get("years") or {}
+        positions = [str(value) for value in application.get("positions") or [] if str(value).strip()]
+        engines = [str(value) for value in application.get("engines") or [] if str(value).strip()]
+        candidate_id = uuid.uuid5(
+            item["import_plan_item_id"], f"vehicle-application:{order}:{make_id}:{model_id}"
+        )
+        notes = {
+            "engines": engines,
+            "positions": positions,
+            "parser_version": enrichment.get("parser_version"),
+            "year_evidence": application.get("year_evidence"),
+        }
+        connection.execute(
+            """
+            INSERT INTO perfect_catalog.product_application_candidate (
+                product_application_candidate_id, product_template_id, staging_row_id,
+                vehicle_make_id, vehicle_model_id, evidence_original,
+                rule_code, rule_version, confidence, review_status,
+                year_from, year_to, position, notes
+            ) VALUES (%s,%s,%s,%s,%s,%s,'product-name-parser',%s,%s,'pending',%s,%s,%s,%s)
+            ON CONFLICT (product_application_candidate_id) DO NOTHING
+            """,
+            (
+                candidate_id, item["planned_product_template_id"], item["staging_row_id"],
+                make_id, model_id, proposed["name_original"],
+                str(enrichment.get("parser_version") or "unknown"),
+                application.get("confidence", 0), years.get("from"), years.get("to"),
+                positions[0] if positions else None,
+                json.dumps(notes, ensure_ascii=False, sort_keys=True),
+            ),
+        )
+        inserted += 1
+    return inserted
+
+
 def _apply_create_item(
     connection: Connection[Any],
     plan: dict[str, Any],
@@ -405,6 +507,7 @@ def _apply_create_item(
             plan["import_batch_id"],
         ),
     )
+    _insert_vehicle_applications(connection, plan, item)
     reference = str(proposed["internal_reference_original"])
     normalized_reference = normalize_reference(reference)
     reference_id = uuid.uuid5(
@@ -599,3 +702,21 @@ def apply_approved_plan(
         return _apply_plan_in_connection(
             connection, plan_id, expected_fingerprint, actor, reason
         )
+
+
+def approve_and_apply_plan(
+    plan_id: uuid.UUID, expected_fingerprint: str, actor: str, reason: str,
+    config: DatabaseConfig, password: str,
+) -> dict[str, Any]:
+    """Una confirmación del operador; dos eventos auditados en una transacción."""
+    with psycopg.connect(**config.connection_kwargs(password)) as connection:
+        connection.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+        _approve_plan_in_connection(
+            connection, plan_id, expected_fingerprint, actor, reason
+        )
+        result = _apply_plan_in_connection(
+            connection, plan_id, expected_fingerprint, actor, reason,
+            verify_source=False,
+        )
+        result["status"] = "prepared"
+        return result

@@ -32,6 +32,11 @@ def publication_record() -> dict[str, object]:
         "source_import_batch_id": uuid.uuid4(),
         "has_processed_media": True,
         "brand_name": "Natsuki",
+        "application_details": [
+            {"make": "Toyota", "model": "Corolla", "year_from": 2010,
+             "year_to": 2015, "position": "delantero", "confidence": 0.9,
+             "notes": '{"engines":["1.8L"],"positions":["delantero"]}'}
+        ],
     }
 
 
@@ -47,6 +52,9 @@ class PublicationContractTests(unittest.TestCase):
         self.assertIsNone(snapshot["currency"])
         self.assertIsNone(snapshot["uom_original"])
         self.assertEqual(snapshot["image_status"], "present")
+        self.assertEqual(snapshot["vehicle_makes"], ["Toyota"])
+        self.assertEqual(snapshot["vehicle_make"], "Toyota")
+        self.assertEqual(snapshot["applications"], ["Toyota Corolla 2010–2015 · delantero · 1.8L"])
         self.assertEqual(snapshot["source_updated_at"], "2026-08-24T00:00:00+00:00")
 
     def test_version_and_checksum_contracts_are_strict(self) -> None:

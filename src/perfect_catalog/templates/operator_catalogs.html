@@ -77,7 +77,7 @@
         </dl>
         {% if release.status == 'published' %}
         <form class="preview-launcher" method="get" action="/operator/catalogs/{{ release.catalog_release_id }}/preview">
-          <label><span>Vista previa</span><select name="group_by"><option value="category_path">Por categoría</option><option value="brand">Por marca</option><option value="internal_reference_original">Por referencia</option></select></label>
+          <label><span>Vista previa</span><select name="group_by"><option value="category_path">Por categoría</option><option value="vehicle_make">Por marca vehicular</option><option value="brand">Por marca de producto</option><option value="internal_reference_original">Por referencia</option></select></label>
           <input type="hidden" name="group_by_secondary" value="">
           <input type="hidden" name="filter_field" value="all">
           <input type="hidden" name="filter_query" value="">
@@ -97,15 +97,16 @@
               <label><span>Agrupar por</span>
                 <select name="group_by">
                   <option value="category_path">Categoría</option>
-                  <option value="brand">Marca</option>
+                  <option value="vehicle_make">Marca vehicular</option>
+                  <option value="brand">Marca de producto</option>
                   <option value="internal_reference_original">Referencia</option>
                 </select>
               </label>
               <div class="choice-field"><span>Densidad</span><div class="density-choices"><label><input type="radio" name="columns" value="1"><b>T1</b><small>Editorial</small></label><label><input type="radio" name="columns" value="2" checked><b>T2</b><small>Equilibrada</small></label><label><input type="radio" name="columns" value="3"><b>T3</b><small>Compacta</small></label></div></div>
               </div>
             <div class="composer-row">
-              <label><span>Subagrupar por</span><select name="group_by_secondary"><option value="">Sin segundo nivel</option><option value="category_path">Categoría</option><option value="brand">Marca</option><option value="internal_reference_original">Referencia</option></select></label>
-              <label><span>Filtrar campo</span><select name="filter_field"><option value="all">Todos</option><option value="category_path">Categoría</option><option value="brand">Marca</option><option value="internal_reference_original">Referencia</option><option value="name_original">Nombre</option></select></label>
+              <label><span>Subagrupar por</span><select name="group_by_secondary"><option value="">Sin segundo nivel</option><option value="category_path">Categoría</option><option value="vehicle_make">Marca vehicular</option><option value="brand">Marca de producto</option><option value="internal_reference_original">Referencia</option></select></label>
+              <label><span>Filtrar campo</span><select name="filter_field"><option value="all">Todos</option><option value="category_path">Categoría</option><option value="vehicle_make">Marca vehicular</option><option value="brand">Marca de producto</option><option value="internal_reference_original">Referencia</option><option value="name_original">Nombre</option></select></label>
             </div>
             <label><span>Texto de filtro opcional</span><input name="filter_query" maxlength="120" placeholder="Ej. Toyota, motor o NK-001"></label>
             <label><span>Selección manual de referencias (opcional)</span><textarea name="selected_references" maxlength="20000" placeholder="Una referencia por línea, o separadas por coma"></textarea><small>Si se completa, sólo se exportan coincidencias exactas del release. Los errores de escritura detienen la exportación.</small></label>

@@ -53,7 +53,7 @@ from .importer import DEFAULT_MAX_PILOT_ROWS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.8.0"
+OPERATOR_VERSION = "1.9.0"
 LOGGER = logging.getLogger(__name__)
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
@@ -79,6 +79,10 @@ class ReviewGateway(Protocol):
     ) -> dict[str, Any]: ...
 
     def apply_import_plan(
+        self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
+    ) -> dict[str, Any]: ...
+
+    def prepare_import_plan(
         self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
     ) -> dict[str, Any]: ...
 
@@ -806,9 +810,9 @@ def create_operator_app(
             template_profile = template_profile.upper()
             if template_profile not in INDESIGN_TEMPLATE_PROFILES:
                 raise ValueError("Perfil InDesign no soportado.")
-            if group_by not in {"category_path", "brand", "internal_reference_original"}:
+            if group_by not in {"category_path", "brand", "vehicle_make", "internal_reference_original"}:
                 raise ValueError("Agrupación no permitida.")
-            if group_by_secondary not in {"", "category_path", "brand", "internal_reference_original"}:
+            if group_by_secondary not in {"", "category_path", "brand", "vehicle_make", "internal_reference_original"}:
                 raise ValueError("Agrupación secundaria no permitida.")
             if filter_field not in {"all", "category_path", "brand", "internal_reference_original", "name_original"}:
                 raise ValueError("Campo de filtro no permitido.")
@@ -918,10 +922,10 @@ def create_operator_app(
             group_by = form["group_by"].strip()
             if len(title) > 120 or len(subtitle) > 180:
                 raise ValueError("Título o subtítulo demasiado largo.")
-            if group_by not in {"category_path", "brand", "internal_reference_original"}:
+            if group_by not in {"category_path", "brand", "vehicle_make", "internal_reference_original"}:
                 raise ValueError("Agrupación no permitida.")
             group_by_secondary = form["group_by_secondary"].strip()
-            if group_by_secondary not in {"", "category_path", "brand", "internal_reference_original"}:
+            if group_by_secondary not in {"", "category_path", "brand", "vehicle_make", "internal_reference_original"}:
                 raise ValueError("Agrupación secundaria no permitida.")
             filter_field = form["filter_field"].strip()
             if filter_field not in {"all", "category_path", "brand", "internal_reference_original", "name_original"}:
@@ -1460,6 +1464,7 @@ def create_operator_app(
         message = {
             "approved": "Plan aprobado. Aún no se han creado productos.",
             "applied": "Plan aplicado. Sus productos ya están pendientes de revisión individual.",
+            "prepared": "Importación verificada y preparada. Revisa sólo las identidades y aplicaciones detectadas.",
             "already_applied": "El plan ya estaba aplicado.",
         }.get(result)
         return _render(
@@ -1486,7 +1491,11 @@ def create_operator_app(
             if form["confirm"] != transition:
                 raise ValueError("La confirmación explícita no coincide con la operación.")
             parsed_plan_id = _uuid(plan_id, "plan_id")
-            action = gateway.approve_import_plan if transition == "approve" else gateway.apply_import_plan
+            action = (
+                gateway.prepare_import_plan if transition == "prepare"
+                else gateway.approve_import_plan if transition == "approve"
+                else gateway.apply_import_plan
+            )
             result = await run_in_threadpool(
                 action, parsed_plan_id, form["fingerprint"], session.actor, reason,
             )
@@ -1506,6 +1515,10 @@ def create_operator_app(
     @app.post("/operator/import-plans/{plan_id}/apply")
     async def apply_import_plan_route(request: Request, plan_id: str) -> Response:
         return await _import_plan_transition(request, plan_id, "apply")
+
+    @app.post("/operator/import-plans/{plan_id}/prepare")
+    async def prepare_import_plan_route(request: Request, plan_id: str) -> Response:
+        return await _import_plan_transition(request, plan_id, "prepare")
 
     @app.post("/operator/plans/{plan_id}/products/{product_id}/decision")
     async def decide(request: Request, plan_id: str, product_id: str) -> Response:
