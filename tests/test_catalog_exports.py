@@ -210,6 +210,9 @@ class CatalogExportTests(unittest.TestCase):
         self.assertIn(".photo img{display:block;width:100%;height:100%;object-fit:contain;object-position:center center}", content)
         self.assertIn('<button class="photo" type="button"', content)
         self.assertIn('<dialog class="photo-viewer" id="photo-viewer">', content)
+        self.assertIn("photo-viewer-details", content)
+        self.assertIn("Ver ficha completa", content)
+        self.assertIn("node.cloneNode(true)", content)
         self.assertIn(".photo-viewer img{grid-column:1/-1;width:100%;height:100%;min-height:0;object-fit:contain", content)
         self.assertIn("viewerImage.src=source.currentSrc||source.src", content)
         self.assertIn("--forest:#C34A21", content)
@@ -244,6 +247,7 @@ class CatalogExportTests(unittest.TestCase):
     def test_visual_profile_overrides_palette_embeds_brand_and_minimum_type(self) -> None:
         release, items = fixture_release()
         rows = export_rows_from_release(release, items)
+        rows[0].update({"applications": ["Toyota Corolla 2014"], "engine_types": ["1.8L"], "oem_references": ["OEM-123"]})
         visual = {"primary_color": "#E30613", "secondary_color": "#12355B", "ink_color": "#111111", "paper_color": "#FFFFFF", "logo_asset_key": "brands/natsuki/logo.svg", "corner_logo_enabled": True, "watermark_enabled": True, "watermark_opacity": .05}
         html = generate_catalog_html(rows, {"template_profile": "T4", "visual_profile": visual}).decode("utf-8")
         self.assertIn("--forest:#E30613", html)
@@ -253,6 +257,9 @@ class CatalogExportTests(unittest.TestCase):
         self.assertIn("data:image/png;base64,", html)
         self.assertIn('class="contents" aria-label="Secciones del catálogo"', html)
         self.assertIn('id="seccion-01"', html)
+        self.assertIn("Motor / Empaques", html)
+        self.assertIn("Toyota Corolla 2014", html)
+        self.assertIn("OEM-123", html)
         self.assertTrue(generate_catalog_pdf(rows, {"template_profile": "T1", "visual_profile": visual}).startswith(b"%PDF-"))
         pptx = generate_catalog_pptx(rows, {"template_profile": "T1", "visual_profile": visual})
         with zipfile.ZipFile(io.BytesIO(pptx)) as presentation:

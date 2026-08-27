@@ -544,9 +544,9 @@ def generate_catalog_html(
                 )
                 image_source = escape(source, quote=True)
                 image = (
-                    f'<button class="photo" type="button" aria-label="Ampliar imagen de {image_alt}">'
+                    f'<button class="photo" type="button" aria-label="Ver ficha completa de {image_alt}">'
                     f'<img src="{image_source}" alt="{image_alt}" loading="lazy" decoding="async">'
-                    '<span class="zoom-hint" aria-hidden="true">Ampliar</span></button>'
+                    '<span class="zoom-hint" aria-hidden="true">Ver ficha</span></button>'
                 )
             applications = escape("; ".join(map(str, row.get("applications") or [])))
             engines = escape(", ".join(map(str, row.get("engine_types") or [])))
@@ -597,6 +597,10 @@ def generate_catalog_html(
         base64.b64encode(files("perfect_catalog").joinpath("assets/brands/natsuki/fonts/BarlowCondensed-Bold.ttf").read_bytes()).decode("ascii"),
     )
     html = html.replace("</style>", brand_css + "</style>", 1)
+    detail_css = """.photo-viewer-details{min-width:0;align-self:start;padding:4px 8px 8px}.photo-viewer-details code{display:block;margin-bottom:4px;font-size:16px}.photo-viewer-details h3{margin:.15em 0;font-size:clamp(24px,4vw,38px)}.photo-viewer-details .meta{margin:.2em 0 12px;font-weight:700}.photo-viewer-details .specifications{margin-top:10px}@media(min-width:820px){.photo-viewer[open]{grid-template-columns:minmax(0,1.45fr) minmax(300px,.55fr);grid-template-rows:minmax(0,1fr) auto}.photo-viewer img{grid-column:1;grid-row:1/-1}.photo-viewer-details{grid-column:2;grid-row:1}.photo-viewer form{grid-column:2;grid-row:2}}@media(max-width:819px){.photo-viewer[open]{grid-template-columns:1fr;grid-template-rows:minmax(42vh,1fr) auto auto}.photo-viewer img{grid-column:1;grid-row:1}.photo-viewer-details{grid-column:1;grid-row:2;max-height:34vh;overflow:auto}.photo-viewer form{grid-column:1;grid-row:3}}"""
+    html = html.replace("</style>", detail_css + "</style>", 1)
+    detail_script = """<script>(()=>{const viewer=document.querySelector('#photo-viewer'),caption=viewer.querySelector('p'),details=document.createElement('div');details.className='photo-viewer-details';details.setAttribute('aria-live','polite');caption.replaceWith(details);for(const trigger of document.querySelectorAll('.photo'))trigger.addEventListener('click',()=>{const card=trigger.closest('.product');details.replaceChildren(...[...card.children].filter(node=>!node.classList.contains('photo')).map(node=>node.cloneNode(true)))})})();</script>"""
+    html = html.replace("</body>", detail_script + "</body>", 1)
     if company_logo_uri or brand_logo_uri:
         marks = ((f'<img class="brand-logo" src="{company_logo_uri}" alt="Perfect Trading">' if company_logo_uri else "")
                  + (f'<img class="watermark" src="{brand_logo_uri}" alt="">' if brand_logo_uri else ""))

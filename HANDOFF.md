@@ -1,5 +1,16 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: ficha ampliada en HTML v1.24
+
+- Al tocar una fotografía del catálogo HTML se abre una ficha responsive con la imagen completa,
+  referencia, nombre, categoría/marca, OEM, aplicaciones y motor disponibles.
+- En escritorio la información ocupa un panel lateral; en móvil queda bajo la fotografía con
+  desplazamiento propio. La imagen conserva `object-fit: contain` y nunca se recorta.
+- El visor reutiliza la ficha y la imagen ya presentes en el documento: no duplica los Base64 del
+  HTML autónomo, conserva búsqueda offline y funciona sin servicios externos.
+- Verificación: 57 pruebas focalizadas y 257 pruebas completas pasan; 6 integraciones PostgreSQL
+  se omiten sin credenciales. No requiere migración.
+
 ## Bloque 2026-08-27: dirección visual derivada de marca v1.23
 
 - La paleta congelada de la marca del producto gobierna ahora la composición completa: principal,
