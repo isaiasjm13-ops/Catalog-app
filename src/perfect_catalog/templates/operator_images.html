@@ -6,6 +6,17 @@
   <div class="safety-chip"><span>●</span> Revisión humana obligatoria</div>
 </section>
 {% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+{% if candidates.approved_unmaterialized_count and candidates.approved_unmaterialized_count <= 500 %}
+<details class="bulk-review-panel" open>
+  <summary>Materializar aprobadas en lote · {{ candidates.approved_unmaterialized_count }}</summary>
+  <form method="post" action="/operator/images/candidates/bulk-materialize">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><input type="hidden" name="expected_count" value="{{ candidates.approved_unmaterialized_count }}">
+    <label><span>Motivo común</span><textarea name="reason" minlength="4" maxlength="500" required placeholder="Ej. Fotografías aprobadas para la nueva versión"></textarea></label>
+    <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Verificar y copiar las {{ candidates.approved_unmaterialized_count }} imágenes sin modificar el ZIP original.</span></label>
+    <button class="primary-button" type="submit">Materializar {{ candidates.approved_unmaterialized_count }} aprobadas</button>
+  </form>
+</details>
+{% endif %}
 {% if candidates.pending_count and candidates.pending_count <= 500 %}
 <details class="bulk-review-panel">
   <summary>Validar en lote · {{ candidates.pending_count }} asociaciones pendientes</summary>

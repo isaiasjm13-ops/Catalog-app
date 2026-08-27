@@ -142,3 +142,46 @@ def materialize_approved_image(
         "status": "materialized", "approved_image_materialization_id": str(materialization_id),
         "storage_relpath": storage_relpath.as_posix(), "content_sha256": str(record["content_sha256"]),
     }
+
+
+def materialize_approved_images_bulk(
+    expected_count: int, intake_root: Path, image_root: Path,
+    config: DatabaseConfig, password: str, *, actor: str, reason: str,
+    max_items: int = 500,
+) -> dict[str, Any]:
+    """Materializa el conjunto exacto de aprobadas pendientes, verificando cada archivo."""
+    actor, reason = _actor(actor), _reason(reason)
+    if not 1 <= expected_count <= max_items:
+        raise ValueError(f"expected_count debe estar entre 1 y {max_items}.")
+    with psycopg.connect(**config.connection_kwargs(password), row_factory=dict_row) as connection:
+        connection.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 6))",
+            ("perfect_catalog.approved_image_materialization.bulk",),
+        )
+        rows = connection.execute(
+            """
+            SELECT c.image_product_candidate_id, c.evidence_sha256
+            FROM perfect_catalog.image_product_candidate AS c
+            JOIN perfect_catalog.image_product_decision AS d
+              ON d.image_product_candidate_id=c.image_product_candidate_id
+             AND d.decision='approved'
+            LEFT JOIN perfect_catalog.approved_image_materialization AS m
+              ON m.image_product_candidate_id=c.image_product_candidate_id
+            WHERE m.approved_image_materialization_id IS NULL
+            ORDER BY d.decided_at, c.image_product_candidate_id
+            LIMIT %s
+            """,
+            (max_items + 1,),
+        ).fetchall()
+    if len(rows) != expected_count:
+        raise PermissionError("La cantidad aprobada sin materializar cambió; recarga la página.")
+    completed = 0
+    for row in rows:
+        result = materialize_approved_image(
+            row["image_product_candidate_id"], str(row["evidence_sha256"]),
+            intake_root, image_root, config, password,
+            actor=actor, reason=reason,
+        )
+        if result["status"] in {"materialized", "already_materialized"}:
+            completed += 1
+    return {"status": "bulk_materialized", "count": completed}

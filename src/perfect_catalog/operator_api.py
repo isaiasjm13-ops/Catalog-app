@@ -154,6 +154,11 @@ class ReviewGateway(Protocol):
         intake_root: Path, image_root: Path, actor: str, reason: str,
     ) -> dict[str, Any]: ...
 
+    def materialize_approved_images_bulk(
+        self, expected_count: int, intake_root: Path, image_root: Path,
+        actor: str, reason: str,
+    ) -> dict[str, Any]: ...
+
     def catalog_releases(self, *, limit: int = 100) -> list[dict[str, Any]]: ...
 
     def brand_profiles(self) -> list[dict[str, Any]]: ...
@@ -1348,6 +1353,7 @@ def create_operator_app(
             "bulk_rejected": "Asociaciones pendientes rechazadas en lote; la evidencia permanece intacta.",
             "materialized": "Imagen verificada y copiada al almacenamiento content-addressed.",
             "already_materialized": "La imagen aprobada ya estaba materializada.",
+            "bulk_materialized": "Imágenes aprobadas materializadas en lote. Construye una versión nueva para incluirlas.",
         }.get(request.query_params.get("result"))
         previous_url = f"/operator/images?page={page - 1}" if page > 1 else None
         next_url = f"/operator/images?page={page + 1}" if page * limit < candidates["filtered_count"] else None
@@ -1483,6 +1489,35 @@ def create_operator_app(
         return RedirectResponse(
             f"/operator/images?{urlencode({'result': str(result['status'])})}", status_code=303
         )
+
+    @app.post("/operator/images/candidates/bulk-materialize")
+    async def materialize_approved_images_bulk_route(request: Request) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "expected_count", "reason", "confirm"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
+                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if form["confirm"] != "yes":
+                raise ValueError("Debes confirmar la materialización del lote exacto.")
+            reason = _require_text(form["reason"], "reason")
+            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
+                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
+            result = await run_in_threadpool(
+                gateway.materialize_approved_images_bulk, int(form["expected_count"]),
+                resolved_intake_root, resolved_image_output, session.actor, reason,
+            )
+        except (ValueError, RuntimeError, PermissionError, FileExistsError) as exc:
+            return _error(environment, 409, "Lote no materializado", str(exc), session=session)
+        except Exception:
+            diagnostic_id = uuid.uuid4().hex[:12]
+            LOGGER.exception("Fallo al materializar lote de imágenes; diagnostico=%s", diagnostic_id)
+            return _error(environment, 503, "Materialización no disponible", f"No se materializó el lote. Diagnóstico: {diagnostic_id}.", session=session)
+        return RedirectResponse(f"/operator/images?{urlencode({'result': str(result['status'])})}", status_code=303)
 
     @app.get("/operator/plans/{plan_id}", response_class=HTMLResponse)
     async def review_queue(

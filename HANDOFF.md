@@ -681,3 +681,4 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 - La carpeta raíz expone un solo actualizador: `ACTUALIZAR-SISTEMA.cmd`. Detecta y aplica en orden únicamente los bloques pendientes 0007–0014; si el esquema base no existe se detiene sin reconstruir ni borrar datos.
 - Se retiraron los ocho lanzadores públicos `MIGRAR-*`. Los SQL históricos y bootstrap internos permanecen versionados para trazabilidad y reconstrucción controlada.
 - Regla operativa: el usuario trabaja con `INICIAR-REVISOR.cmd`; ejecuta `ACTUALIZAR-SISTEMA.cmd` únicamente después de recibir código nuevo que cambie la base o cuando la consola indique que falta una actualización.
+- Imágenes: la consola permite materializar en lote hasta 500 asociaciones aprobadas, verificando el conjunto exacto y cada SHA-256. Después debe construirse una versión nueva porque los releases anteriores son inmutables.

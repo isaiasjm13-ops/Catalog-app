@@ -251,6 +251,10 @@ class SyntheticReviewGateway:
         return {"items": self.image_candidate_data[offset:offset + limit],
                 "filtered_count": len(self.image_candidate_data),
                 "pending_count": sum(item["decision"] is None for item in self.image_candidate_data),
+                "approved_unmaterialized_count": sum(
+                    item["decision"] == "approved" and not item["approved_image_materialization_id"]
+                    for item in self.image_candidate_data
+                ),
                 "limit": limit, "offset": offset}
 
     def decide_image_candidate(
@@ -284,6 +288,18 @@ class SyntheticReviewGateway:
         candidate["approved_image_materialization_id"] = str(uuid.uuid4())
         candidate["storage_relpath"] = "objects/88/" + "8" * 64 + ".jpg"
         return {"status": "materialized"}
+
+    def materialize_approved_images_bulk(
+        self, expected_count: int, intake_root: Path, image_root: Path,
+        actor: str, reason: str,
+    ) -> dict[str, Any]:
+        pending = [item for item in self.image_candidate_data if item["decision"] == "approved" and not item["approved_image_materialization_id"]]
+        if len(pending) != expected_count:
+            raise PermissionError("cantidad materializable cambió")
+        for candidate in pending:
+            candidate["approved_image_materialization_id"] = str(uuid.uuid4())
+            candidate["storage_relpath"] = "objects/88/" + "8" * 64 + ".jpg"
+        return {"status": "bulk_materialized", "count": len(pending)}
 
     def intake_submissions(
         self,
@@ -1063,6 +1079,17 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 303)
         self.assertIn("result=bulk_approved", response.headers["location"])
         self.assertEqual(self.gateway.image_candidate_data[0]["decision"], "approved")
+        materialize_page = await self.client.get("/operator/images")
+        self.assertIn("Materializar aprobadas en lote · 1", materialize_page.text)
+        materialized = await self.client.post(
+            "/operator/images/candidates/bulk-materialize",
+            data={"csrf_token": hidden_value(materialize_page.text, "csrf_token"),
+                  "expected_count": "1", "reason": "Copia aprobada para nueva versión", "confirm": "yes"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(materialized.status_code, 303)
+        self.assertIn("result=bulk_materialized", materialized.headers["location"])
+        self.assertIsNotNone(self.gateway.image_candidate_data[0]["approved_image_materialization_id"])
 
     async def test_intake_requires_auth_origin_csrf_and_confirmation(self) -> None:
         unauthenticated = await self.client.get("/operator/intake")

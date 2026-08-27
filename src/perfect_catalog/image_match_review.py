@@ -115,6 +115,7 @@ def list_image_candidates(
                        m.approved_image_materialization_id, m.storage_relpath,
                        count(*) OVER () AS filtered_count,
                        count(*) FILTER (WHERE d.image_product_decision_id IS NULL) OVER () AS pending_count
+                       , count(*) FILTER (WHERE d.decision='approved' AND m.approved_image_materialization_id IS NULL) OVER () AS approved_unmaterialized_count
                 FROM perfect_catalog.image_product_candidate AS c
                 JOIN perfect_catalog.image_archive_entry AS e ON e.image_archive_entry_id=c.image_archive_entry_id
                 JOIN perfect_catalog.product_reference AS r ON r.product_reference_id=c.product_reference_id
@@ -129,10 +130,13 @@ def list_image_candidates(
             rows = [dict(row) for row in cursor.fetchall()]
     count = int(rows[0].pop("filtered_count")) if rows else 0
     pending_count = int(rows[0].pop("pending_count")) if rows else 0
+    approved_unmaterialized_count = int(rows[0].pop("approved_unmaterialized_count")) if rows else 0
     for row in rows[1:]:
         row.pop("filtered_count", None)
         row.pop("pending_count", None)
+        row.pop("approved_unmaterialized_count", None)
     return {"items": rows, "filtered_count": count, "pending_count": pending_count,
+            "approved_unmaterialized_count": approved_unmaterialized_count,
             "limit": limit, "offset": offset}
 
 
