@@ -179,9 +179,14 @@
         {% set preflight = preflight_by_export.get(export.export_id) %}
         <div class="delivery-title"><div><strong>{{ export.release.version }}</strong><small>{{ export.selection.selected_item_count }} de {{ export.release.item_count }} productos{% if export.selection.filter_query %} · “{{ export.selection.filter_query }}”{% endif %}{% if export.selection.get('selected_references') %} · {{ export.selection.selected_references|length }} referencias manuales{% endif %}{% if export.layout.get('theme') %} · tema {{ export.layout.theme }}{% endif %}</small></div><span class="{% if preflight %}quality-{{ preflight.get('quality', {}).get('status', 'issues') }}{% endif %}">{{ 'Sin incidencias' if preflight and preflight.get('quality', {}).get('status') == 'passed' else ('Con incidencias' if preflight else 'Verificable') }}</span></div>
         <ul>
-          {% for file in export.files %}
+          {% set packaged_images = export.files | selectattr('format', 'equalto', 'image') | list %}
+          {% set deliverable_files = export.files | rejectattr('format', 'equalto', 'image') | list %}
+          {% for file in deliverable_files %}
           <li><a href="/operator/catalogs/{{ export.release_id }}/exports/{{ export.export_id }}/{{ file.filename }}">{{ file.format }}</a><span>{{ file.bytes }} B</span></li>
           {% endfor %}
+          {% if packaged_images %}
+          <li><span>Imágenes incluidas en los paquetes</span><span>{{ packaged_images|length }} archivos · {{ packaged_images|sum(attribute='bytes') }} B</span></li>
+          {% endif %}
           <li><a href="/operator/catalogs/{{ export.release_id }}/exports/{{ export.export_id }}/{{ export.manifest }}">manifiesto</a><span>SHA-256</span></li>
         </ul>
         {% set indesign_packages = export.files | selectattr('format', 'equalto', 'indesign-package') | list %}

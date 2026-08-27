@@ -19,6 +19,10 @@
 - Ajuste posterior de composición: las fotografías usan encaje proporcional completo en vista
   previa, HTML, PDF, PowerPoint e InDesign. Las cajas pueden dejar espacio libre, pero nunca recortan
   ni deforman el producto; PowerPoint calcula además el centrado para formatos extremos.
+- La biblioteca de exportaciones ya no enumera cientos de objetos `IMAGE`: conserva su trazabilidad
+  en el manifiesto y los paquetes, pero presenta una sola fila con cantidad y peso total. El HTML
+  digital usa carga diferida nativa y decodificación asíncrona para no descargar de inmediato todas
+  las fotografías de un catálogo extenso.
 
 ## Bloque 2026-08-27: perfiles de marca v1
 

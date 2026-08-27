@@ -413,7 +413,8 @@ def generate_catalog_html(
             if row.get("image_path"):
                 image = (
                     f'<div class="photo"><img src="{escape(str(row["image_path"]), quote=True)}" '
-                    f'alt="{escape(str(row.get("internal_reference_original") or row.get("name_original") or "Producto"), quote=True)}"></div>'
+                    f'alt="{escape(str(row.get("internal_reference_original") or row.get("name_original") or "Producto"), quote=True)}" '
+                    'loading="lazy" decoding="async"></div>'
                 )
             applications = escape("; ".join(map(str, row.get("applications") or [])))
             engines = escape(", ".join(map(str, row.get("engine_types") or [])))
