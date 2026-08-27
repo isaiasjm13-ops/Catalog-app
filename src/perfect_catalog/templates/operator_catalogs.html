@@ -87,7 +87,7 @@
           <input type="hidden" name="filter_field" value="all">
           <input type="hidden" name="filter_query" value="">
           <label><span>Columnas</span><select name="columns"><option>1</option><option selected>2</option><option>3</option></select></label>
-          <label><span>Tema</span><select name="theme"><option value="forest">Bosque</option><option value="industrial">Industrial</option><option value="midnight">Medianoche</option><option value="classic">Clásico</option></select></label>
+          <input type="hidden" name="theme" value="forest">
           <button class="secondary-button" type="submit">Previsualizar</button>
         </form>
         <details class="export-composer">
@@ -116,14 +116,11 @@
             <label><span>Texto de filtro opcional</span><input name="filter_query" maxlength="120" placeholder="Ej. Toyota, motor o NK-001"></label>
             <label><span>Selección manual de referencias (opcional)</span><textarea name="selected_references" maxlength="20000" placeholder="Una referencia por línea, o separadas por coma"></textarea><small>Si se completa, sólo se exportan coincidencias exactas del release. Los errores de escritura detienen la exportación.</small></label>
             </fieldset>
-            <fieldset class="composer-section">
-              <legend>02 · Dirección visual</legend>
-              <div class="theme-choices">
-                <label class="theme-forest"><input type="radio" name="theme" value="forest" aria-label="Bosque · corporativo" checked><i></i><span><b>Bosque</b><small>Corporativo</small></span></label>
-                <label class="theme-industrial"><input type="radio" name="theme" value="industrial" aria-label="Industrial · repuestos"><i></i><span><b>Industrial</b><small>Repuestos</small></span></label>
-                <label class="theme-midnight"><input type="radio" name="theme" value="midnight" aria-label="Medianoche · tecnológico"><i></i><span><b>Medianoche</b><small>Tecnológico</small></span></label>
-                <label class="theme-classic"><input type="radio" name="theme" value="classic" aria-label="Clásico · premium"><i></i><span><b>Clásico</b><small>Premium</small></span></label>
-              </div>
+            <fieldset class="composer-section brand-direction-note">
+              <legend>02 · Dirección visual de marca</legend>
+              <input type="hidden" name="theme" value="forest">
+              <strong>La identidad congelada de esta marca controla el catálogo.</strong>
+              <p>Logo, colores, tipografía y marca de agua se toman del perfil aprobado. Puedes revisarlos en <a href="/operator/brands">Marcas</a>.</p>
             </fieldset>
             <fieldset class="composer-section">
               <legend>03 · Entregables</legend>

@@ -109,6 +109,9 @@ el principal define jerarquía, el secundario aporta acentos, y texto/fondo cont
 El tema editorial elegido solo actúa como respaldo si no existe un perfil de marca.
 En el catálogo HTML, tocar una fotografía abre una ficha completa responsive con referencia,
 categoría, aplicaciones, motor y OEM; la imagen se muestra entera y el visor continúa offline.
+El compositor de **Catálogos** conserva automáticamente un borrador local independiente por release
+y muestra un resumen vivo. No almacena credenciales ni confirmaciones, y puede restablecerse desde
+la misma pantalla.
 
 La misma pantalla permite asociar un logo independiente a cada marca vehicular aprobada. Este
 activo aparece únicamente junto al nombre de la marca del vehículo cuando el catálogo se agrupa

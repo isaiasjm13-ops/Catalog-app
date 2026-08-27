@@ -1,5 +1,18 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: compositor web persistente v1.25
+
+- La configuración de cada release se guarda automáticamente en `localStorage`: título, subtítulo,
+  agrupaciones, filtros, referencias, densidad, plantilla y formatos. Al regresar se restaura sin
+  guardar secretos, CSRF ni autorizaciones; **Restablecer** elimina únicamente ese borrador local.
+- Un resumen vivo muestra agrupación, columnas, alcance de referencias y entregables seleccionados.
+  El formulario continúa funcionando sin JavaScript o cuando el almacenamiento está deshabilitado.
+- Se retiraron de la consola las paletas genéricas que aparentaban cambiar una marca ya congelada.
+  La dirección visual informa ahora que logo, colores, tipografía y marca de agua provienen del perfil
+  aprobado; `forest` permanece como respaldo técnico oculto para releases antiguos sin identidad.
+- Verificación: JavaScript válido con `node --check` y 257 pruebas completas pasan; 6 integraciones
+  PostgreSQL se omiten sin credenciales. No requiere migración.
+
 ## Bloque 2026-08-27: ficha ampliada en HTML v1.24
 
 - Al tocar una fotografía del catálogo HTML se abre una ficha responsive con la imagen completa,

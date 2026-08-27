@@ -749,9 +749,10 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Estado del estudio editorial", page.text)
         self.assertIn("Entregables con integridad comprobada", page.text)
         self.assertIn("01 · Estructura del contenido", page.text)
-        self.assertIn('name="theme" value="industrial" aria-label="Industrial · repuestos"', page.text)
+        self.assertIn("Dirección visual de marca", page.text)
+        self.assertIn("La identidad congelada de esta marca controla el catálogo", page.text)
         self.assertIn('type="radio" name="template_profile" value="TABLE"', page.text)
-        self.assertIn('<label><span>Tema</span><select name="theme">', page.text)
+        self.assertIn('<input type="hidden" name="theme" value="forest">', page.text)
         self.assertIn("Previsualizar edición digital", page.text)
         self.assertIn("Previsualizar en InDesign", page.text)
         self.assertIn('/operator/static/catalog-composer.js', page.text)
@@ -760,6 +761,9 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(script.status_code, 200)
         self.assertNotIn("csrf_token", script.text)
         self.assertNotIn("confirm", script.text)
+        self.assertIn("window.localStorage", script.text)
+        self.assertIn("composer-live-summary", script.text)
+        self.assertIn("Borrador recuperado", script.text)
         fields = {
             "csrf_token": hidden_value(page.text, "csrf_token"),
             "title": "Catálogo web", "subtitle": "", "group_by": "category_path",
@@ -982,7 +986,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.24.0")
+        self.assertEqual(OPERATOR_VERSION, "1.25.0")
 
     async def test_company_identity_upload_requires_csrf_and_records_logo_without_exposing_it(self) -> None:
         await self.login()
