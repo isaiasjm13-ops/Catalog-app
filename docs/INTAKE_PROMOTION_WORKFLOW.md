@@ -5,7 +5,7 @@ content-addressed y un evento de ingreso; nunca perfila ni importa automáticame
 
 ## Migración
 
-Ejecutar `MIGRAR-PROMOCIONES.cmd` como administrador de la base. La migración `0008` crea
+Ejecutar `ACTUALIZAR-SISTEMA.cmd` como administrador de la base. El actualizador aplica `0008` solamente si falta y crea
 `intake_promotion`, una evidencia append-only que enlaza exactamente submission, asset/SHA-256,
 batch y plan. El rol de aplicación sólo obtiene `SELECT` e `INSERT`.
 

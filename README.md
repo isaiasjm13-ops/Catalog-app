@@ -39,17 +39,25 @@ py -3.14 -m venv .venv
 # 3. Instalar aplicación y dependencias de prueba
 .\.venv\Scripts\python.exe -m pip install -e ".[test]"
 
-# 4. Copiar una exportación autorizada a data\imports (no se versiona)
+# 4. Actualizar la base después de recibir una versión nueva
+.\ACTUALIZAR-SISTEMA.cmd
 
-# 5. Iniciar el piloto local sobre el XLSX más reciente
-.\INICIAR-SERVER.cmd
+# 5. Iniciar la consola principal de trabajo
+.\INICIAR-REVISOR.cmd
 ```
 
 Abrir:
 
-- Catálogo: `http://127.0.0.1:8080/`
-- Documentación OpenAPI: `http://127.0.0.1:8080/docs`
-- Estado: `http://127.0.0.1:8080/api/v1/health`
+- Consola de trabajo: `http://127.0.0.1:8081/operator`
+- Catálogo publicado (con `INICIAR-CATALOGO-PUBLICADO.cmd`): `http://127.0.0.1:8080/`
+
+### Qué significa “actualizar la base”
+
+El código y PostgreSQL evolucionan juntos. Los archivos numerados de `db/migrations` conservan el
+historial técnico de esos cambios y no son accesos de uso diario. No debes escogerlos manualmente:
+`ACTUALIZAR-SISTEMA.cmd` consulta la base, detecta lo que falta y aplica solamente esos cambios.
+Úsalo después de recibir una actualización que incluya cambios de base de datos o cuando la consola
+lo indique. Para el trabajo normal abre únicamente `INICIAR-REVISOR.cmd`.
 
 Al hacer doble clic en `INICIAR-SERVER.cmd`, la web queda visible en
 `http://127.0.0.1:8080/`. Ese iniciador conserva deliberadamente el piloto XLSX y detecta el archivo más reciente de
@@ -71,9 +79,9 @@ La misma aplicación expone:
 
 ### Consola local de revisión
 
-Antes de importar nuevamente con aplicaciones vehiculares, ejecuta una vez
-`MIGRAR-APLICACIONES-VEHICULARES.cmd` como propietario de PostgreSQL. La migración sólo concede los
-permisos mínimos de inserción/revisión; no elimina ni modifica evidencia anterior.
+Después de actualizar el código, ejecuta una sola vez `ACTUALIZAR-SISTEMA.cmd`. El actualizador
+detecta automáticamente qué cambios de base de datos faltan, los aplica en orden y conserva
+permisos mínimos; no debes elegir ni ejecutar migraciones individuales.
 
 La revisión humana usa un servidor separado del catálogo público. Haz doble clic en
 `INICIAR-REVISOR.cmd` e introduce únicamente la contraseña de PostgreSQL para
@@ -90,8 +98,8 @@ nombre o fila, filtra estados y permite aprobar/rechazar una sola ficha con moti
 el mismo fingerprint y `review_sha256` de la CLI. Está aislado en localhost, no monta el catálogo
 público ni OpenAPI, y aplica sesión firmada, CSRF, validación de origen, escape HTML y cabeceras CSP.
 
-La misma consola incorpora un centro de ingreso en `/operator/intake`. Antes de usarlo por primera
-vez, ejecuta `MIGRAR-INGRESOS.cmd`. Recibe XLSX/CSV/TSV de Odoo, PDF y paquetes ZIP de imágenes o
+La misma consola incorpora un centro de ingreso en `/operator/intake`. Si el actualizador lo solicita,
+ejecuta `ACTUALIZAR-SISTEMA.cmd`. Recibe XLSX/CSV/TSV de Odoo, PDF y paquetes ZIP de imágenes o
 InDesign, calcula SHA-256 y los conserva en cuarentena sin importar ni publicar automáticamente.
 Véase [`docs/INTAKE_WORKFLOW.md`](docs/INTAKE_WORKFLOW.md).
 

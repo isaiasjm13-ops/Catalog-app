@@ -675,3 +675,9 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 - Aprobación en lote de imágenes corregida: `FOR UPDATE` exigía un permiso incompatible con la tabla append-only. Se reemplazó por `pg_advisory_xact_lock` dentro de la transacción serializable; se conservan permisos mínimos y la comprobación del conjunto pendiente exacto.
 - Auditoría preventiva de permisos: decisión individual y materialización tenían el mismo riesgo sobre evidencia append-only. Ambas usan ahora bloqueos advisory por candidato y no requieren ampliar permisos `UPDATE`.
 - Construcción de release: los valores numéricos del perfil visual provenientes de PostgreSQL se convierten a JSON canónico antes de calcular y persistir el snapshot. Se evita que `Jsonb` rechace objetos `Decimal`; la ruta incluye diagnóstico seguro.
+
+## 2026-08-27 - Operación simplificada y auditoría preventiva
+
+- La carpeta raíz expone un solo actualizador: `ACTUALIZAR-SISTEMA.cmd`. Detecta y aplica en orden únicamente los bloques pendientes 0007–0014; si el esquema base no existe se detiene sin reconstruir ni borrar datos.
+- Se retiraron los ocho lanzadores públicos `MIGRAR-*`. Los SQL históricos y bootstrap internos permanecen versionados para trazabilidad y reconstrucción controlada.
+- Regla operativa: el usuario trabaja con `INICIAR-REVISOR.cmd`; ejecuta `ACTUALIZAR-SISTEMA.cmd` únicamente después de recibir código nuevo que cambie la base o cuando la consola indique que falta una actualización.

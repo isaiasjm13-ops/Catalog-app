@@ -6,7 +6,7 @@ productos.
 
 ## Uso
 
-1. Aplicar `0007`, `0008` y después `MIGRAR-INDICE-IMAGENES.cmd`.
+1. Ejecutar `ACTUALIZAR-SISTEMA.cmd`; detecta y aplica `0007`–`0009` solamente cuando faltan.
 2. Ejecutar:
 
 ```powershell

@@ -16,7 +16,7 @@ La migración `0010` separa tres hechos que no deben confundirse:
 2. su nombre coincide exactamente con una referencia interna primaria aprobada;
 3. una persona aprobó o rechazó esa propuesta.
 
-Ejecuta `MIGRAR-REVISION-IMAGENES.cmd` como administrador de PostgreSQL. La migración crea
+Ejecuta `ACTUALIZAR-SISTEMA.cmd` como administrador de PostgreSQL. El actualizador aplica la migración necesaria y crea
 `image_product_candidate` e `image_product_decision`, ambas append-only y con permisos de la
 aplicación limitados a `SELECT`/`INSERT`.
 

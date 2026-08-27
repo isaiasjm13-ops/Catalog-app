@@ -16,7 +16,7 @@ La etapa actual termina en **cuarentena**. No existe una transición automática
 
 ## Puesta en marcha
 
-1. Ejecutar una sola vez `MIGRAR-INGRESOS.cmd` e introducir la contraseña de `postgres`.
+1. Después de actualizar el proyecto, ejecutar `ACTUALIZAR-SISTEMA.cmd` e introducir la contraseña de `postgres`.
 2. Iniciar `INICIAR-REVISOR.cmd` e introducir sólo la contraseña de `perfect_catalog_app`.
 3. Copiar en el navegador abierto el código temporal generado en la consola y usar **Ingresar**.
 
