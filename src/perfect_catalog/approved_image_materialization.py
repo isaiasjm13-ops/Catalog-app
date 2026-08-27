@@ -66,6 +66,10 @@ def materialize_approved_image(
     image_root = Path(image_root).resolve()
     with psycopg.connect(**config.connection_kwargs(password)) as connection:
         connection.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+        connection.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 5))",
+            (str(candidate_id),),
+        )
         with connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
                 """
@@ -88,7 +92,6 @@ def materialize_approved_image(
                 JOIN perfect_catalog.intake_asset AS a
                   ON a.intake_asset_id=s.intake_asset_id
                 WHERE c.image_product_candidate_id=%s
-                FOR UPDATE OF d
                 """,
                 (candidate_id,),
             )

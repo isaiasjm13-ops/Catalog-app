@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 from perfect_catalog.config import DatabaseConfig
 from perfect_catalog.image_match_review import (
-    MATCH_ALGORITHM, decide_image_candidates_bulk, exact_image_candidates,
+    MATCH_ALGORITHM, decide_image_candidate, decide_image_candidates_bulk, exact_image_candidates,
 )
 
 
@@ -31,6 +31,20 @@ class ImageMatchReviewTests(unittest.TestCase):
         references = [{"product_reference_id": reference_id, "product_template_id": product_id,
                        "product_variant_id": None, "value_original": "ABC-1", "value_normalized": "ABC-1"}]
         self.assertEqual(exact_image_candidates(entries, references), exact_image_candidates(entries, references))
+
+    def test_individual_decision_uses_advisory_lock_for_append_only_candidate(self) -> None:
+        candidate_id = uuid.uuid4()
+        cursor = Mock(); cursor.fetchone.side_effect = [{"evidence_sha256": "a" * 64}, None]
+        cursor_context = Mock(); cursor_context.__enter__ = Mock(return_value=cursor); cursor_context.__exit__ = Mock(return_value=False)
+        connection = Mock(); connection.cursor.return_value = cursor_context
+        connection_context = Mock(); connection_context.__enter__ = Mock(return_value=connection); connection_context.__exit__ = Mock(return_value=False)
+        with patch("perfect_catalog.image_match_review.psycopg.connect", return_value=connection_context):
+            result = decide_image_candidate(candidate_id, "a" * 64, "approved", "isa", "Revisión exacta", DatabaseConfig(), "secret")
+        self.assertEqual(result, {"status": "approved"})
+        connection.execute.assert_called_once_with(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 4))", (str(candidate_id),)
+        )
+        self.assertNotIn("FOR UPDATE", "\n".join(str(call.args[0]) for call in cursor.execute.call_args_list))
 
     def test_bulk_decision_locks_exact_pending_set_and_preserves_each_hash(self) -> None:
         candidates = [

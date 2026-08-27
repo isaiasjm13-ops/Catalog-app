@@ -146,9 +146,13 @@ def decide_image_candidate(
     if len(evidence_sha256) != 64:
         raise ValueError("evidence_sha256 inválido.")
     with psycopg.connect(**config.connection_kwargs(password)) as connection:
+        connection.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 4))",
+            (str(candidate_id),),
+        )
         with connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
-                "SELECT evidence_sha256 FROM perfect_catalog.image_product_candidate WHERE image_product_candidate_id=%s FOR UPDATE",
+                "SELECT evidence_sha256 FROM perfect_catalog.image_product_candidate WHERE image_product_candidate_id=%s",
                 (candidate_id,),
             )
             candidate = cursor.fetchone()

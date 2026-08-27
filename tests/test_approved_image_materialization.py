@@ -8,6 +8,11 @@ from perfect_catalog.approved_image_materialization import _copy_verified_member
 
 
 class ApprovedImageMaterializationTests(unittest.TestCase):
+    def test_materialization_does_not_lock_append_only_decision_for_update(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "src/perfect_catalog/approved_image_materialization.py").read_text(encoding="utf-8")
+        self.assertIn("pg_advisory_xact_lock", source)
+        self.assertNotIn("FOR UPDATE OF d", source)
+
     def test_member_is_copied_content_addressed_without_changing_archive(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
