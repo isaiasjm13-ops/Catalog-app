@@ -41,6 +41,10 @@ class BrandProfileTests(unittest.TestCase):
             normalize_profile_input(valid_profile(public_base_url="http://example.test"))
         with self.assertRaisesRegex(ValueError, "hexadecimal"):
             normalize_profile_input(valid_profile(primary_color="red"))
+        with self.assertRaisesRegex(ValueError, "contraste"):
+            normalize_profile_input(valid_profile(ink_color="#AAAAAA"))
+        with self.assertRaisesRegex(ValueError, "contraste"):
+            normalize_profile_input(valid_profile(primary_color="#FFFF00"))
 
     def test_migration_is_forward_only_and_permissions_are_minimal(self) -> None:
         sql = (ROOT / "db/migrations/0013_brand_profiles.sql").read_text(encoding="utf-8")

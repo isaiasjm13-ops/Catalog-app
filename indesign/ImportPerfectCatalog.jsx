@@ -109,7 +109,7 @@
     function productFrame(page, bounds, product, index, definition, baseFolder, report, theme) {
         var reference = value(product, "internal_reference_original", "Sin referencia");
         if (definition.perPage === 10) {
-            var tableRow = frame(page, bounds, reference + "\t" + value(product, "name_original", "Sin nombre") + "\t" + value(product, "applications", "No indicadas"), 8, false,
+            var tableRow = frame(page, bounds, reference + "\t" + value(product, "name_original", "Sin nombre") + "\t" + value(product, "applications", "No indicadas"), 12, false,
                 {fill: index % 2 ? theme.card : theme.paper, stroke: theme.primary, text: theme.ink, strokeWeight: 0.35});
             tableRow.insertLabel("perfect_catalog_product_index", String(index));
             if (tableRow.overflows) report.overflow_product_indexes.push(index); return;
@@ -125,9 +125,10 @@
             } catch (imageError) { report.missing_images.push({product_index: index, reference: reference, reason: imageError.message}); }
         } else { report.missing_images.push({product_index: index, reference: reference, reason: "Ruta ausente o no segura"}); }
         var contents = reference + "\r" + value(product, "name_original", "Sin nombre") + "\r" +
-            value(product, "category_path", "Sin categoría") + " · " + value(product, "brand", "Sin marca") + "\r" +
+            value(product, "piece_type", value(product, "category_path", "Sin categoría")) + " · " + value(product, "brand", "Sin marca") + "\r" +
             "OEM: " + value(product, "oem_references", "No indicadas") + "\r" +
-            "Aplicaciones: " + value(product, "applications", "No indicadas");
+            "Aplicaciones: " + value(product, "applications", "No indicadas") + "\r" +
+            "Motor: " + value(product, "engine_types", "No indicado");
         var card = frame(page, [top + definition.imageHeight + 6, left, bottom, right], contents, 12, false,
             {fill: theme.card, stroke: theme.primary, text: theme.ink, strokeWeight: 0.75});
         try { card.paragraphs[0].fontStyle = "Bold"; } catch (ignored) {}

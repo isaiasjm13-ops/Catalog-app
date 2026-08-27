@@ -1,5 +1,19 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: auditoría técnica y visual
+
+- Auditoría registrada en `docs/AUDIT-2026-08-27.md` con prioridades, decisiones y referencias
+  oficiales W3C/Adobe.
+- PDF/PPTX usan copias raster limitadas a su tamaño de presentación, con orientación EXIF, encaje
+  proporcional y JPEG progresivo; los originales aprobados y el paquete InDesign siguen intactos.
+  El último PDF anterior a esta corrección medía aproximadamente 105 MB y debe regenerarse para
+  medir la reducción real.
+- Los errores de imagen en PDF/PPTX ya no se omiten silenciosamente. InDesign TABLE respeta 12 pt y
+  las fichas incluyen tipo de pieza y motor.
+- La consola suma navegación por teclado visible, salto al contenido y objetivos de 44 px. Los
+  perfiles nuevos validan contraste WCAG AA 4.5:1.
+- Los manifiestos nuevos conservan conteos de productos con/sin imagen, imágenes únicas y bytes.
+
 ## Bloque 2026-08-27: preparación asistida y control de imágenes v1.14
 
 - La revisión de imágenes ofrece **Aprobar y materializar coincidencias exactas**: una sola

@@ -514,6 +514,13 @@ def build_catalog_bundle(
     if output_dir.exists() and any(output_dir.iterdir()):
         raise FileExistsError(f"El directorio de exportación no está vacío: {output_dir}")
     image_files = _package_images(rows, output_dir, image_root)
+    selected_image_count = sum(bool(row.get("image_path")) for row in rows)
+    selection.update({
+        "selected_image_count": selected_image_count,
+        "missing_image_count": len(rows) - selected_image_count,
+        "unique_image_file_count": len(image_files),
+        "image_bytes": sum(int(item["bytes"]) for item in image_files),
+    })
     stem = _safe_stem(f"catalogo-{release['version']}-{str(release['catalog_release_id'])[:8]}")
     payloads: dict[str, tuple[str, bytes]] = {}
     if "html" in requested:

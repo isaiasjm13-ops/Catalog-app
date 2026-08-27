@@ -10,6 +10,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any, Iterable
 
+from PIL import Image as PILImage, ImageOps
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.util import Inches, Pt
@@ -145,6 +146,28 @@ def _contained_size(
     return source_width * scale, source_height * scale
 
 
+def _optimized_raster(
+    image_path: Path, max_width_px: int, max_height_px: int, *, quality: int = 84,
+) -> io.BytesIO:
+    """Creates a bounded display copy while leaving the approved original untouched."""
+    with PILImage.open(image_path) as source:
+        image = ImageOps.exif_transpose(source)
+        image.thumbnail((max_width_px, max_height_px), PILImage.Resampling.LANCZOS)
+        if image.mode not in {"RGB", "L"}:
+            background = PILImage.new("RGB", image.size, "white")
+            if "A" in image.getbands():
+                background.paste(image, mask=image.getchannel("A"))
+            else:
+                background.paste(image.convert("RGB"))
+            image = background
+        elif image.mode == "L":
+            image = image.convert("RGB")
+        output = io.BytesIO()
+        image.save(output, format="JPEG", quality=quality, optimize=True, progressive=True)
+    output.seek(0)
+    return output
+
+
 def _pdf_cell(
     row: dict[str, Any], styles: Any, bundle_dir: Path | None,
     palette: dict[str, str], columns: int,
@@ -153,14 +176,22 @@ def _pdf_cell(
     image_path = _safe_bundle_image(row, bundle_dir)
     if image_path:
         try:
-            width, height = ImageReader(str(image_path)).getSize()
             available_width = (A4[0] - 3.2 * cm) / columns
+            available_height = (4.4 if columns == 1 else 3.2) * cm
+            optimized = _optimized_raster(
+                image_path,
+                max(1, round(available_width / 72 * 200)),
+                max(1, round(available_height / 72 * 200)),
+            )
+            width, height = ImageReader(optimized).getSize()
             scale = min(available_width / width, (4.4 if columns == 1 else 3.2) * cm / height)
-            product_image = Image(str(image_path), width=width * scale, height=height * scale)
+            optimized.seek(0)
+            product_image = Image(optimized, width=width * scale, height=height * scale)
             product_image.hAlign = "CENTER"
             contents.extend([product_image, Spacer(1, .22 * cm)])
-        except Exception:
-            pass
+        except Exception as exc:
+            reference = str(row.get("internal_reference_original") or "sin referencia")
+            raise RuntimeError(f"No se pudo preparar la imagen PDF de {reference}.") from exc
     reference = escape(str(row.get("internal_reference_original") or "Sin referencia"))
     contents.append(Paragraph(reference, styles["CatalogReference"]))
     contents.append(Paragraph(escape(str(row.get("name_original") or "Sin nombre")), styles["CatalogProductTitle"]))
@@ -359,19 +390,24 @@ def generate_catalog_pptx(
                 image_path = _safe_bundle_image(row, bundle_dir)
                 if image_path:
                     try:
-                        source_width, source_height = ImageReader(str(image_path)).getSize()
+                        optimized = _optimized_raster(image_path, 300, 240)
+                        source_width, source_height = ImageReader(optimized).getSize()
                         image_width, image_height = _contained_size(
                             source_width, source_height, 1.0, .8,
                         )
+                        optimized.seek(0)
                         slide.shapes.add_picture(
-                            str(image_path),
+                            optimized,
                             Inches(.55 + col * width + (1.0 - image_width) / 2),
                             Inches(1.05 + line * 2.05 + (.8 - image_height) / 2),
                             width=Inches(image_width), height=Inches(image_height),
                         )
                         frame.margin_left = Inches(1.15)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        reference = str(row.get("internal_reference_original") or "sin referencia")
+                        raise RuntimeError(
+                            f"No se pudo preparar la imagen PowerPoint de {reference}."
+                        ) from exc
                 p = frame.paragraphs[0]; p.text = str(row.get("internal_reference_original") or ""); p.font.bold = True; p.font.size = Pt(12)
                 p = frame.add_paragraph(); p.text = str(row.get("name_original") or ""); p.font.size = Pt(12)
                 if row.get("piece_type") or row.get("category_path") or row.get("brand"):
@@ -460,7 +496,7 @@ def generate_catalog_html(
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="generator" content="Perfect Catalog"><meta name="release-sha256" content="{checksum}">
 <title>{title}</title><style>
-:root{{--ink:{palette['ink']};--forest:{palette['primary']};--paper:{palette['paper']};--card:{palette['card']};--line:#d9d5c9;--muted:#65716b}}*{{box-sizing:border-box}}html{{scroll-behavior:smooth}}body{{margin:0;color:var(--ink);background:var(--paper);font:15px/1.55 Arial,sans-serif}}main{{max-width:1280px;margin:auto;padding:clamp(24px,5vw,72px)}}.hero{{position:relative;min-height:48vh;display:grid;align-content:end;padding:8vw clamp(0px,2vw,28px) 4vw;border-bottom:4px solid var(--ink)}}.hero:before{{content:"";position:absolute;top:12%;right:2%;width:clamp(90px,14vw,190px);aspect-ratio:1;border:1px solid var(--forest);border-radius:50%;opacity:.22}}.hero small{{color:var(--forest);font-weight:800;letter-spacing:.16em;text-transform:uppercase}}h1{{position:relative;max-width:900px;margin:.2em 0;font:500 clamp(44px,8vw,104px)/.9 Georgia,serif;letter-spacing:-.035em}}.hero p{{max-width:700px;font-size:18px}}section{{padding:clamp(38px,6vw,72px) 0}}section>header{{display:flex;justify-content:space-between;gap:20px;align-items:end;border-bottom:1px solid var(--line)}}h2{{margin:.25em 0;font:500 clamp(27px,4vw,48px) Georgia,serif;letter-spacing:-.02em}}section>header span{{padding-bottom:1.2em;color:var(--muted)}}.products{{display:grid;grid-template-columns:repeat({columns},minmax(0,1fr));gap:20px;padding-top:24px}}.product{{min-width:0;padding:20px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(20,42,34,.06);overflow:hidden}}.photo{{height:210px;margin:-20px -20px 20px;padding:10px;background:#f8f8f5;display:grid;place-items:center;overflow:hidden;border-bottom:1px solid var(--line)}}.photo img{{display:block;width:auto;height:auto;max-width:100%;max-height:100%;object-fit:contain}}code{{color:var(--forest);font-weight:800;letter-spacing:.035em}}h3{{margin:.5em 0;font:500 22px/1.15 Georgia,serif}}.meta{{color:var(--muted);font-size:13px}}.proof{{padding:28px 0;border-top:1px solid var(--line);overflow-wrap:anywhere;color:var(--muted);font-size:12px}}@media(max-width:760px){{html{{scroll-behavior:auto}}.products{{grid-template-columns:1fr}}.hero{{min-height:38vh}}section>header{{align-items:start;flex-direction:column;gap:0}}section>header span{{padding-bottom:1em}}}}
+:root{{--ink:{palette['ink']};--forest:{palette['primary']};--paper:{palette['paper']};--card:{palette['card']};--line:#d9d5c9;--muted:#65716b}}*{{box-sizing:border-box}}html{{scroll-behavior:smooth}}body{{margin:0;color:var(--ink);background:var(--paper);font:15px/1.55 Arial,sans-serif}}main{{max-width:1280px;margin:auto;padding:clamp(24px,5vw,72px)}}.hero{{position:relative;min-height:48vh;display:grid;align-content:end;padding:8vw clamp(0px,2vw,28px) 4vw;border-bottom:4px solid var(--ink)}}.hero:before{{content:"";position:absolute;top:12%;right:2%;width:clamp(90px,14vw,190px);aspect-ratio:1;border:1px solid var(--forest);border-radius:50%;opacity:.22}}.hero small{{color:var(--forest);font-weight:800;letter-spacing:.16em;text-transform:uppercase}}h1{{position:relative;max-width:900px;margin:.2em 0;font:500 clamp(44px,8vw,104px)/.9 Georgia,serif;letter-spacing:-.035em}}.hero p{{max-width:700px;font-size:18px}}section{{padding:clamp(38px,6vw,72px) 0}}section>header{{display:flex;justify-content:space-between;gap:20px;align-items:end;border-bottom:1px solid var(--line)}}h2{{margin:.25em 0;font:500 clamp(27px,4vw,48px) Georgia,serif;letter-spacing:-.02em}}section>header span{{padding-bottom:1.2em;color:var(--muted)}}.products{{display:grid;grid-template-columns:repeat({columns},minmax(0,1fr));gap:20px;padding-top:24px}}.product{{min-width:0;padding:20px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(20,42,34,.06);overflow:hidden}}.photo{{height:210px;margin:-20px -20px 20px;padding:10px;background:#f8f8f5;display:grid;place-items:center;overflow:hidden;border-bottom:1px solid var(--line)}}.photo img{{display:block;width:auto;height:auto;max-width:100%;max-height:100%;object-fit:contain}}code{{color:var(--forest);font-weight:800;letter-spacing:.035em}}h3{{margin:.5em 0;font:500 22px/1.15 Georgia,serif}}.meta{{color:var(--muted);font-size:13px}}.proof{{padding:28px 0;border-top:1px solid var(--line);overflow-wrap:anywhere;color:var(--muted);font-size:12px}}@media(max-width:760px){{html{{scroll-behavior:auto}}.products{{grid-template-columns:1fr}}.hero{{min-height:38vh}}section>header{{align-items:start;flex-direction:column;gap:0}}section>header span{{padding-bottom:1em}}}}@media print{{@page{{size:A4;margin:12mm}}body{{background:#fff}}main{{max-width:none;padding:0}}.hero{{min-height:245mm;break-after:page}}section{{break-before:page;padding:0}}.product{{break-inside:avoid;box-shadow:none}}.products{{gap:6mm}}}}
 </style></head><body><main><header class="hero"><small>Perfect Trading · edición {version}</small><h1>{title}</h1><p>{subtitle}</p></header>{''.join(sections)}<footer class="proof">Release SHA-256: {checksum}</footer></main></body></html>"""
     brand_css = """@font-face{font-family:'DM Sans';src:url(data:font/ttf;base64,%s)}@font-face{font-family:'Barlow Condensed';src:url(data:font/ttf;base64,%s);font-weight:700}body{font-family:'DM Sans',sans-serif;font-size:16px;line-height:1.8}h1,h2,h3{font-family:'Barlow Condensed',sans-serif;font-weight:700}.meta,.proof{font-size:16px}.brand-logo{position:absolute;right:2rem;top:2rem;width:min(260px,35vw);z-index:2}.watermark{position:absolute;right:5%%;bottom:8%%;width:55%%;opacity:.05;pointer-events:none}""" % (
         base64.b64encode(files("perfect_catalog").joinpath("assets/brands/natsuki/fonts/DMSans-Regular.ttf").read_bytes()).decode("ascii"),

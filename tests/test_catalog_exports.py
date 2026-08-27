@@ -9,9 +9,10 @@ from unittest import mock
 import uuid
 import zipfile
 from pathlib import Path
+from PIL import Image as PILImage
 
 from perfect_catalog.catalog_exports import (
-    _contained_size, export_rows_from_release, generate_catalog_html,
+    _contained_size, _optimized_raster, export_rows_from_release, generate_catalog_html,
     generate_catalog_pdf, generate_catalog_pptx, generate_indesign_datamerge_csv,
 )
 from perfect_catalog.catalog_export_job import (
@@ -54,6 +55,17 @@ class CatalogExportTests(unittest.TestCase):
         self.assertEqual(_contained_size(2, 1, 4, 3), (2, 1))
         with self.assertRaises(ValueError):
             _contained_size(0, 1, 4, 3)
+
+    def test_display_raster_is_bounded_without_touching_approved_original(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "approved.png"
+            PILImage.new("RGB", (2400, 600), "red").save(source)
+            original = source.read_bytes()
+            optimized = _optimized_raster(source, 600, 600)
+            with PILImage.open(optimized) as result:
+                self.assertEqual(result.size, (600, 150))
+                self.assertEqual(result.format, "JPEG")
+            self.assertEqual(source.read_bytes(), original)
 
     def test_indesign_layout_estimate_matches_cover_separators_and_profile_capacity(self) -> None:
         estimate = estimate_indesign_layout(

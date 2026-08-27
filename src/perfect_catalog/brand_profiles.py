@@ -16,6 +16,15 @@ CODE_PATTERN = re.compile(r"[A-Z0-9][A-Z0-9_-]{1,31}")
 COLOR_PATTERN = re.compile(r"#[0-9A-F]{6}")
 
 
+def _contrast_ratio(first: str, second: str) -> float:
+    def luminance(color: str) -> float:
+        channels = [int(color[index:index + 2], 16) / 255 for index in (1, 3, 5)]
+        linear = [value / 12.92 if value <= .04045 else ((value + .055) / 1.055) ** 2.4 for value in channels]
+        return .2126 * linear[0] + .7152 * linear[1] + .0722 * linear[2]
+    lighter, darker = sorted((luminance(first), luminance(second)), reverse=True)
+    return (lighter + .05) / (darker + .05)
+
+
 def visual_profile(row: dict[str, Any]) -> dict[str, Any]:
     """Serializable, immutable subset used by release/export snapshots."""
     return {
@@ -45,6 +54,10 @@ def normalize_profile_input(values: dict[str, str]) -> dict[str, str | None]:
         if not COLOR_PATTERN.fullmatch(color):
             raise ValueError(f"{field} debe tener formato hexadecimal #RRGGBB.")
         colors[field] = color
+    if _contrast_ratio(colors["ink_color"], colors["paper_color"]) < 4.5:
+        raise ValueError("Texto y fondo deben alcanzar contraste WCAG AA de 4.5:1.")
+    if _contrast_ratio(colors["primary_color"], colors["paper_color"]) < 4.5:
+        raise ValueError("El color primario sobre el fondo debe alcanzar contraste WCAG AA de 4.5:1.")
     public_url = str(values.get("public_base_url") or "").strip() or None
     if public_url:
         parsed = urlsplit(public_url)
