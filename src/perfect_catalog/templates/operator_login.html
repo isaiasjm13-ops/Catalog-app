@@ -5,10 +5,10 @@
   <div class="login-intro">
     <span class="kicker">Perfect Trading · Operaciones</span>
     <h1>Revisar antes de publicar.</h1>
-    <p>Esta consola resuelve una identidad por vez. Ninguna aprobación es masiva ni implícita.</p>
+    <p>Un espacio único para ingresar, validar, diseñar y entregar ediciones verificables.</p>
     <ul class="guard-list">
       <li>Hash exacto por producto</li>
-      <li>Actor y motivo obligatorios</li>
+      <li>Lotes seguros con auditoría individual</li>
       <li>Historial sin borrado</li>
     </ul>
   </div>
@@ -16,7 +16,7 @@
     <div class="lock-icon" aria-hidden="true">⌁</div>
     <span class="kicker">Sesión temporal</span>
     <h2>Acceso de operador</h2>
-    <p>Introduce el código definido en la consola donde arrancaste este servidor.</p>
+    <p>Introduce el código generado automáticamente en la consola de inicio.</p>
     {% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
     <form method="post" action="/operator/login" class="stack-form">
       <input type="hidden" name="csrf_token" value="{{ login_csrf }}">

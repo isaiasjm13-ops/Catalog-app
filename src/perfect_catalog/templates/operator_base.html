@@ -31,6 +31,12 @@
         </form>
       </div>
     </header>
+    <nav class="workflow-rail" aria-label="Flujo de creación del catálogo">
+      <a href="/operator/intake"><span>01</span><b>Ingresar</b><small>Datos e imágenes</small></a>
+      <a href="/operator"><span>02</span><b>Validar</b><small>Identidades</small></a>
+      <a href="/operator/catalogs"><span>03</span><b>Diseñar</b><small>Edición visual</small></a>
+      <a href="/operator/catalogs"><span>04</span><b>Entregar</b><small>Digital · PDF · INDD</small></a>
+    </nav>
     {% endif %}
     {% block content %}{% endblock %}
     <footer>Consola local · v{{ version }} · Las decisiones quedan auditadas</footer>

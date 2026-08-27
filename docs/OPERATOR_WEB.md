@@ -19,15 +19,15 @@ debe ejecutar `MIGRAR-INGRESOS.cmd`. El flujo y sus límites están documentados
 
 ## Inicio seguro
 
-Haz doble clic en `INICIAR-REVISOR.cmd`. La ventana solicita:
+Haz doble clic en `INICIAR-REVISOR.cmd`. La ventana sólo solicita la contraseña de
+`perfect_catalog_app`, oculta y conservada en memoria. El iniciador usa la identidad de Windows como
+actor auditable, genera un código web temporal aleatorio y abre
+`http://127.0.0.1:8081/operator/login` en el navegador predeterminado.
 
-1. contraseña de `perfect_catalog_app`, oculta y conservada solo en memoria;
-2. nombre del operador, que se registra como actor humano;
-3. código web temporal de 12 o más caracteres, escrito dos veces y oculto.
-
-La conexión PostgreSQL se comprueba antes de abrir el servidor. Luego visita
-`http://127.0.0.1:8081/operator` e introduce el código temporal, no la contraseña de PostgreSQL.
-Al cerrar la ventana se pierden clave de sesión, código y sesiones activas.
+Introduce allí el código mostrado en la consola, nunca la contraseña de PostgreSQL. El código no se
+guarda en archivos ni se añade a la URL. Al cerrar la ventana se pierden clave de sesión, código y
+sesiones activas. El inicio avanzado por CLI permite pedir actor y código manualmente cuando una
+operación requiera una identidad distinta de la sesión de Windows.
 
 ## Flujo visible
 

@@ -72,15 +72,14 @@ La misma aplicación expone:
 ### Consola local de revisión
 
 La revisión humana usa un servidor separado del catálogo público. Haz doble clic en
-`INICIAR-REVISOR.cmd`; la consola solicitará, en este orden:
+`INICIAR-REVISOR.cmd` e introduce únicamente la contraseña de PostgreSQL para
+`perfect_catalog_app`. El iniciador toma el usuario de Windows como actor de auditoría, genera un
+código web temporal fuerte y abre automáticamente el login en el navegador predeterminado.
 
-1. contraseña de PostgreSQL para `perfect_catalog_app`;
-2. nombre del operador que quedará en auditoría;
-3. un código temporal de al menos 12 caracteres y su confirmación.
-
-Después abre `http://127.0.0.1:8081/operator` e introduce únicamente el código temporal. La
-contraseña de PostgreSQL nunca se escribe en el navegador. La sesión dura una hora y desaparece al
-detener el servidor.
+Copia en la página el código visible en la consola. La contraseña de PostgreSQL nunca se escribe en
+el navegador ni se guarda en el proyecto. La sesión dura una hora y desaparece al detener el
+servidor. Para una identidad o código elegidos manualmente siguen disponibles las opciones
+`--prompt-operator` y `--prompt-access-code` de la CLI.
 
 El modo operador lista planes aplicados, pagina 50 identidades por vista, busca por referencia,
 nombre o fila, filtra estados y permite aprobar/rechazar una sola ficha con motivo obligatorio. Usa

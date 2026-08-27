@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import argparse
 import re
 import json
 import tempfile
@@ -17,6 +18,9 @@ from perfect_catalog.operator_api import (
     MAX_UPLOAD_REQUEST_BYTES,
     OPERATOR_VERSION,
     OperatorAuthenticator,
+    _operator_access_code,
+    _operator_actor,
+    build_parser,
     create_operator_app,
 )
 
@@ -423,6 +427,23 @@ class OperatorAuthenticatorTests(unittest.TestCase):
         for _ in range(5):
             self.assertEqual(auth.authenticate_result("wrong-password"), "invalid_code")
         self.assertEqual(auth.authenticate_result("temporary-123"), "rate_limited")
+
+    def test_quick_start_uses_os_actor_and_generates_strong_temporary_code(self) -> None:
+        args = build_parser().parse_args(["--generate-access-code"])
+        with mock.patch("perfect_catalog.operator_api.getpass.getuser", return_value="WINDOWS\\isa"):
+            self.assertEqual(_operator_actor(args), "WINDOWS\\isa")
+        code, generated = _operator_access_code(args)
+        self.assertTrue(generated)
+        self.assertRegex(code, r"^[0-9A-F]{6}(?:-[0-9A-F]{6}){2}$")
+        self.assertGreaterEqual(len(code), 12)
+
+    def test_quick_start_rejects_conflicting_identity_and_code_modes(self) -> None:
+        actor_args = argparse.Namespace(prompt_operator=True, operator="isa")
+        with self.assertRaisesRegex(ValueError, "no ambos"):
+            _operator_actor(actor_args)
+        code_args = argparse.Namespace(prompt_access_code=True, generate_access_code=True)
+        with self.assertRaisesRegex(ValueError, "no ambos"):
+            _operator_access_code(code_args)
 
 
 class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
@@ -891,7 +912,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.7.0")
+        self.assertEqual(OPERATOR_VERSION, "1.8.0")
 
     async def test_promotion_requires_individual_post_origin_csrf_and_confirmation(self) -> None:
         await self.login()

@@ -1,5 +1,26 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: inicio rápido y dirección visual
+
+- Consola operador v1.8: `INICIAR-REVISOR.cmd` solicita únicamente la contraseña de PostgreSQL.
+  Toma el usuario de Windows como actor, genera un código temporal de 72 bits, lo muestra sólo en
+  consola y abre automáticamente `/operator/login` en el navegador predeterminado. No guarda
+  credenciales ni coloca secretos en la URL; siguen disponibles los prompts manuales por CLI.
+- Navegación reorganizada alrededor del flujo **Ingresar → Validar → Diseñar → Entregar**, conservando
+  los accesos funcionales existentes, la sesión local, CSRF, cookies HttpOnly y auditoría.
+- Catálogo digital HTML refinado con portada editorial, mejor espaciado, tarjetas, jerarquía de
+  metadatos y comportamiento móvil, sin fuentes remotas ni JavaScript obligatorio.
+- Añadido `docs/VISUAL_SYSTEM.md` con reglas compartidas para web/PDF/InDesign y referencias oficiales
+  de Adobe para Data Merge, preflight, empaquetado, Output Preview y PDF/X-4. El perfil CMYK, sangrado
+  y marcas quedan sujetos a la especificación real de la imprenta.
+- Verificación: 219 pruebas pasan; 6 pruebas de integración PostgreSQL se omiten sin credenciales.
+
+### Siguiente bloque recomendado
+
+1. Crear presets visuales completos por marca y una previsualización comparativa T4/T2/T1/TABLE.
+2. Añadir perfil de preflight de imprenta configurable y validar una exportación en Acrobat/InDesign.
+3. Reducir pasos repetitivos dentro de la consola con un tablero de “continuar donde quedaste”.
+
 ## Sesión actual: Estudio visual de catálogos (2026-08-26)
 
 ### Resultado de esta sesión

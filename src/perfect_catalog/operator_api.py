@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 import uuid
+import webbrowser
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from importlib.resources import files
@@ -52,7 +53,7 @@ from .importer import DEFAULT_MAX_PILOT_ROWS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.7.0"
+OPERATOR_VERSION = "1.8.0"
 LOGGER = logging.getLogger(__name__)
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
@@ -1602,6 +1603,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--prompt-password", action="store_true")
     parser.add_argument("--prompt-operator", action="store_true")
     parser.add_argument("--prompt-access-code", action="store_true")
+    parser.add_argument("--operator", default=None)
+    parser.add_argument("--generate-access-code", action="store_true")
+    parser.add_argument("--open-browser", action="store_true")
     return parser
 
 
@@ -1609,6 +1613,13 @@ def _prompt_actor(enabled: bool) -> str:
     if not enabled:
         raise ValueError("Se requiere --prompt-operator; el actor no se acepta en argumentos.")
     return _require_text(input("Nombre del operador que quedará en auditoría: "), "actor")
+
+
+def _operator_actor(args: argparse.Namespace) -> str:
+    if args.prompt_operator and args.operator:
+        raise ValueError("Usa --prompt-operator o --operator, no ambos.")
+    actor = _prompt_actor(True) if args.prompt_operator else (args.operator or getpass.getuser())
+    return _require_text(actor, "actor")
 
 
 def _prompt_access_code(enabled: bool) -> str:
@@ -1619,6 +1630,16 @@ def _prompt_access_code(enabled: bool) -> str:
     if not hmac.compare_digest(first, second):
         raise ValueError("Los códigos temporales no coinciden.")
     return first
+
+
+def _operator_access_code(args: argparse.Namespace) -> tuple[str, bool]:
+    if args.prompt_access_code and args.generate_access_code:
+        raise ValueError("Usa --prompt-access-code o --generate-access-code, no ambos.")
+    if args.prompt_access_code:
+        return _prompt_access_code(True), False
+    if args.generate_access_code:
+        return "-".join(secrets.token_hex(3).upper() for _ in range(3)), True
+    raise ValueError("Se requiere --prompt-access-code o --generate-access-code.")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1638,18 +1659,25 @@ def main(argv: list[str] | None = None) -> int:
         gateway = DatabaseReviewGateway(config, database_password)
         gateway.plans(limit=1)
         gateway.intake_submissions(limit=1)
-        actor = _prompt_actor(args.prompt_operator)
-        access_code = _prompt_access_code(args.prompt_access_code)
+        actor = _operator_actor(args)
+        access_code, generated_access = _operator_access_code(args)
         authenticator = OperatorAuthenticator(actor, access_code)
         database_password = ""
-        access_code = ""
     except (ValueError, EOFError, KeyboardInterrupt, psycopg.Error) as exc:
         if gateway is not None:
             gateway.close()
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     print(f"Consola de revisión: http://{args.host}:{args.port}/operator")
+    print(f"Operador de auditoría: {actor}")
+    if generated_access:
+        print(f"Código temporal web generado: {access_code}")
+    access_code = ""
     print("Acceso temporal, solo local. Presiona Ctrl+C para detener.")
+    if args.open_browser:
+        threading.Timer(
+            1.0, lambda: webbrowser.open(f"http://{args.host}:{args.port}/operator/login")
+        ).start()
     uvicorn.run(
         create_operator_app(
             gateway,

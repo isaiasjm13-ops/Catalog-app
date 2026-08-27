@@ -17,8 +17,8 @@ La etapa actual termina en **cuarentena**. No existe una transición automática
 ## Puesta en marcha
 
 1. Ejecutar una sola vez `MIGRAR-INGRESOS.cmd` e introducir la contraseña de `postgres`.
-2. Iniciar `INICIAR-REVISOR.cmd` con la contraseña de `perfect_catalog_app`, actor y código temporal.
-3. Abrir `http://127.0.0.1:8081/operator/intake` o usar la navegación **Ingresos**.
+2. Iniciar `INICIAR-REVISOR.cmd` e introducir sólo la contraseña de `perfect_catalog_app`.
+3. Copiar en el navegador abierto el código temporal generado en la consola y usar **Ingresar**.
 
 El servidor comprueba que las tablas de ingreso sean legibles antes de escuchar en el puerto 8081.
 
