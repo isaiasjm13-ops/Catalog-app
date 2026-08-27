@@ -32,4 +32,4 @@ packages = ["perfect_catalog", "tools", "tools.odoo_profiler"]
 package-dir = {perfect_catalog = "src/perfect_catalog", tools = "tools"}
 
 [tool.setuptools.package-data]
-perfect_catalog = ["templates/*.html", "static/*.css", "assets/brands/*/*.svg"]
+perfect_catalog = ["templates/*.html", "static/*.css", "assets/brands/*/*.svg", "assets/brands/*/fonts/*.ttf", "assets/brands/*/fonts/*.txt"]

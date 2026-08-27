@@ -43,7 +43,7 @@ El color identifica la marca del producto. La marca vehicular (Toyota, Nissan, C
 - Marca de agua opcional, monocroma, entre 4% y 7% de opacidad, siempre detrás de áreas vacías y nunca debajo de referencias, OEM, aplicaciones o códigos QR.
 - En páginas densas se usa solamente el logotipo de esquina; la marca de agua se reserva para portada, separadores y fichas T1 con espacio suficiente.
 - Logo vectorial maestro incorporado desde el SVG autorizado en `src/perfect_catalog/assets/brands/natsuki/logo.svg`; el archivo AI externo permanece intacto.
-- Activos pendientes de recibir: archivos de fuente TTF/OTF autorizados para incrustación y empaquetado.
+- Fuentes maestras incorporadas desde el ZIP autorizado: Barlow Condensed Regular/Bold y DM Sans Regular/Bold, acompañadas por sus licencias OFL. PDF registra Barlow Condensed Bold para títulos y DM Sans Regular/Bold para cuerpo y datos.
 
 ## Familias de página
 

@@ -5,6 +5,7 @@ import csv
 import uuid
 from collections import defaultdict
 from html import escape
+from importlib.resources import files
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -17,7 +18,9 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.lib.utils import ImageReader
-from reportlab.platypus import CondPageBreak, HRFlowable, Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import HRFlowable, Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from .releases import release_snapshot_sha256, validate_release_definition, validate_release_items
 
@@ -28,6 +31,21 @@ THEME_PALETTES = {
     "classic": {"primary": "#8A6A2F", "ink": "#211D17", "paper": "#F5F0E5", "card": "#FFFDF8"},
 }
 CATALOG_THEMES = tuple(THEME_PALETTES)
+NATSUKI_TITLE_FONT = "BarlowCondensed-Bold"
+NATSUKI_BODY_FONT = "DMSans-Regular"
+NATSUKI_BODY_BOLD_FONT = "DMSans-Bold"
+MINIMUM_CATALOG_FONT_SIZE = 12
+
+
+def _register_natsuki_fonts() -> None:
+    font_root = files("perfect_catalog").joinpath("assets/brands/natsuki/fonts")
+    for name, filename in (
+        (NATSUKI_TITLE_FONT, "BarlowCondensed-Bold.ttf"),
+        (NATSUKI_BODY_FONT, "DMSans-Regular.ttf"),
+        (NATSUKI_BODY_BOLD_FONT, "DMSans-Bold.ttf"),
+    ):
+        if name not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(TTFont(name, str(font_root.joinpath(filename))))
 
 
 def _theme(config: dict[str, Any]) -> dict[str, str]:
@@ -133,39 +151,40 @@ def generate_catalog_pdf(
     columns = max(1, min(3, int(config.get("columns_per_row", 2))))
     title = str(config.get("title") or "Catálogo de productos")
     palette = _theme(config)
+    _register_natsuki_fonts()
     styles = getSampleStyleSheet()
     cover_title_style = ParagraphStyle(
         "PerfectCatalogCoverTitle", parent=styles["Title"],
-        textColor=colors.HexColor(palette["ink"]), fontName="Helvetica-Bold",
+        textColor=colors.HexColor(palette["ink"]), fontName=NATSUKI_TITLE_FONT,
         fontSize=38, leading=41, alignment=0, spaceAfter=14,
     )
     cover_subtitle_style = ParagraphStyle(
         "PerfectCatalogCoverSubtitle", parent=styles["Heading2"],
-        textColor=colors.HexColor(palette["ink"]), fontName="Helvetica",
+        textColor=colors.HexColor(palette["ink"]), fontName=NATSUKI_BODY_FONT,
         fontSize=15, leading=20, alignment=0,
     )
     section_style = ParagraphStyle(
         "PerfectCatalogSection", parent=styles["Heading1"],
-        textColor=colors.HexColor(palette["ink"]), fontName="Helvetica-Bold",
+        textColor=colors.HexColor(palette["ink"]), fontName=NATSUKI_TITLE_FONT,
         fontSize=23, leading=27, spaceAfter=4,
     )
     styles.add(ParagraphStyle(
         "CatalogEyebrow", parent=styles["Normal"], textColor=colors.HexColor(palette["primary"]),
-        fontName="Helvetica-Bold", fontSize=8, leading=10, spaceAfter=10,
+        fontName=NATSUKI_BODY_BOLD_FONT, fontSize=12, leading=21.6, spaceAfter=10,
     ))
     styles.add(ParagraphStyle(
         "CatalogReference", parent=styles["Normal"], textColor=colors.HexColor(palette["primary"]),
-        fontName="Helvetica-Bold", fontSize=9, leading=11, spaceAfter=5,
+        fontName=NATSUKI_BODY_BOLD_FONT, fontSize=12, leading=21.6, spaceAfter=5,
     ))
     styles.add(ParagraphStyle(
         "CatalogProductTitle", parent=styles["Heading3"], textColor=colors.HexColor(palette["ink"]),
-        fontName="Helvetica-Bold", fontSize=11 if columns == 3 else 13,
-        leading=14 if columns == 3 else 16, spaceAfter=8,
+        fontName=NATSUKI_TITLE_FONT, fontSize=14,
+        leading=22, spaceAfter=8,
     ))
     styles.add(ParagraphStyle(
         "CatalogMeta", parent=styles["BodyText"], textColor=colors.HexColor("#56645e"),
-        fontName="Helvetica", fontSize=7.5 if columns == 3 else 8.5,
-        leading=10.5 if columns == 3 else 12,
+        fontName=NATSUKI_BODY_FONT, fontSize=12,
+        leading=21.6,
     ))
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -195,27 +214,31 @@ def generate_catalog_pdf(
         rows, str(config.get("group_by") or "category_path"),
         str(config["group_by_secondary"]) if config.get("group_by_secondary") else None,
     )):
-        if section_index:
-            story.append(CondPageBreak(7 * cm))
-        story.extend([
-            Paragraph(f"SECCIÓN {section_index + 1:02d}", styles["CatalogEyebrow"]),
-            Paragraph(escape(section), section_style),
-            Paragraph(f"{len(section_rows)} productos", styles["CatalogMeta"]),
-            HRFlowable(width="100%", thickness=1, color=colors.HexColor(palette["primary"]), spaceBefore=7, spaceAfter=12),
-        ])
         cells = [_pdf_cell(row, styles, bundle_dir, palette, columns) for row in section_rows]
-        grid = [cells[index:index+columns] for index in range(0, len(cells), columns)]
-        if grid and len(grid[-1]) < columns:
-            grid[-1].extend([""] * (columns-len(grid[-1])))
-        table = Table(grid, colWidths=[(A4[0]-2.7*cm)/columns]*columns, repeatRows=0, hAlign="LEFT")
-        table.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,-1), colors.HexColor(palette["card"])),
-            ("BOX", (0,0), (-1,-1), .45, colors.HexColor("#d7ddd9")),
-            ("INNERGRID", (0,0), (-1,-1), .35, colors.HexColor("#e3e7e4")),
-            ("LINEABOVE", (0,0), (-1,0), 2, colors.HexColor(palette["primary"])),
-            ("VALIGN", (0,0), (-1,-1), "TOP"), ("PADDING", (0,0), (-1,-1), 11),
-        ]))
-        story.extend([table, Spacer(1, .5*cm)])
+        page_capacity = {1: 2, 2: 4, 3: 6}[columns]
+        chunks = [cells[index:index + page_capacity] for index in range(0, len(cells), page_capacity)]
+        for chunk_index, chunk in enumerate(chunks):
+            if section_index or chunk_index:
+                story.append(PageBreak())
+            continuation = " · CONTINUACIÓN" if chunk_index else ""
+            story.extend([
+                Paragraph(f"SECCIÓN {section_index + 1:02d}{continuation}", styles["CatalogEyebrow"]),
+                Paragraph(escape(section), section_style),
+                Paragraph(f"{len(section_rows)} productos", styles["CatalogMeta"]),
+                HRFlowable(width="100%", thickness=1, color=colors.HexColor(palette["primary"]), spaceBefore=7, spaceAfter=12),
+            ])
+            grid = [chunk[index:index + columns] for index in range(0, len(chunk), columns)]
+            if grid and len(grid[-1]) < columns:
+                grid[-1].extend([""] * (columns - len(grid[-1])))
+            table = Table(grid, colWidths=[(A4[0]-2.7*cm)/columns]*columns, repeatRows=0, hAlign="LEFT")
+            table.setStyle(TableStyle([
+                ("BACKGROUND", (0,0), (-1,-1), colors.HexColor(palette["card"])),
+                ("BOX", (0,0), (-1,-1), .45, colors.HexColor("#d7ddd9")),
+                ("INNERGRID", (0,0), (-1,-1), .35, colors.HexColor("#e3e7e4")),
+                ("LINEABOVE", (0,0), (-1,0), 2, colors.HexColor(palette["primary"])),
+                ("VALIGN", (0,0), (-1,-1), "TOP"), ("PADDING", (0,0), (-1,-1), 11),
+            ]))
+            story.extend([table, Spacer(1, .5*cm)])
 
     def decorate_cover(canvas: Any, document: Any) -> None:
         canvas.saveState()
@@ -232,7 +255,7 @@ def generate_catalog_pdf(
         canvas.setLineWidth(2)
         canvas.line(1.2 * cm, A4[1] - .8 * cm, A4[0] - 1.2 * cm, A4[1] - .8 * cm)
         canvas.setFillColor(colors.HexColor(palette["ink"]))
-        canvas.setFont("Helvetica", 7)
+        canvas.setFont(NATSUKI_BODY_FONT, MINIMUM_CATALOG_FONT_SIZE)
         canvas.drawString(1.35 * cm, A4[1] - 1.15 * cm, title[:70])
         proof = " · ".join(value for value in (version, checksum[:16]) if value)
         canvas.drawString(1.2 * cm, .65 * cm, proof)

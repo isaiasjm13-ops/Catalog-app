@@ -9,7 +9,8 @@
 - Pendiente del mismo bloque: seleccionar el perfil antes del apply, eliminar la constante NATSUKI, incorporar logos mediante ingreso seguro y propagar los colores guardados a preview, HTML, PDF, PPTX e InDesign.
 - Verificacion: 233 pruebas pasan; 6 integraciones PostgreSQL se omiten sin credenciales.
 - Identidad NATSUKI confirmada para la siguiente iteracion: Barlow Condensed en titulares, DM Sans en cuerpo, ficha T1 a 12 pt con interlineado 1.8; logo de esquina y marca de agua opcional al 4-7%. Las fuentes no estan en el repositorio y no deben simularse ni descargarse sin validar los activos autorizados.
-- Logo SVG maestro de NATSUKI incorporado desde `Z:\DOC MURILLO\logo nat.svg` sin modificar el original. Regla actualizada: 12 pt es minimo absoluto para todos los textos; faltan unicamente los archivos autorizados de Barlow Condensed y DM Sans.
+- Logo SVG maestro de NATSUKI incorporado desde `Z:\DOC MURILLO\logo nat.svg` sin modificar el original. Regla actualizada: 12 pt es minimo absoluto para todos los textos.
+- Fuentes autorizadas recibidas e incorporadas con licencias OFL: Barlow Condensed Regular/Bold y DM Sans Regular/Bold. El PDF real ya registra y usa Barlow Condensed Bold en titulos, DM Sans en cuerpo y 12 pt/21.6 pt como minimo de cuerpo, referencias, metadatos y pies.
 
 ## Bloque 2026-08-27: PDF editorial v2
 

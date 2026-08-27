@@ -2,6 +2,16 @@ from pathlib import Path
 import unittest
 import xml.etree.ElementTree as ET
 
+from reportlab.pdfbase import pdfmetrics
+
+from perfect_catalog.catalog_exports import (
+    MINIMUM_CATALOG_FONT_SIZE,
+    NATSUKI_BODY_BOLD_FONT,
+    NATSUKI_BODY_FONT,
+    NATSUKI_TITLE_FONT,
+    _register_natsuki_fonts,
+)
+
 from perfect_catalog.brand_profiles import normalize_profile_input
 
 
@@ -55,6 +65,15 @@ class BrandProfileTests(unittest.TestCase):
         self.assertEqual(ET.parse(logo).getroot().tag, "{http://www.w3.org/2000/svg}svg")
         packaging = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('"assets/brands/*/*.svg"', packaging)
+
+    def test_natsuki_fonts_register_and_minimum_is_twelve_points(self) -> None:
+        _register_natsuki_fonts()
+        registered = set(pdfmetrics.getRegisteredFontNames())
+        self.assertTrue({NATSUKI_TITLE_FONT, NATSUKI_BODY_FONT, NATSUKI_BODY_BOLD_FONT} <= registered)
+        self.assertEqual(MINIMUM_CATALOG_FONT_SIZE, 12)
+        packaging = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn('"assets/brands/*/fonts/*.ttf"', packaging)
+        self.assertIn('"assets/brands/*/fonts/*.txt"', packaging)
 
 
 if __name__ == "__main__":
