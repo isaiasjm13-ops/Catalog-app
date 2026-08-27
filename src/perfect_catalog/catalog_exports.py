@@ -61,7 +61,19 @@ def _visual(config: dict[str, Any]) -> dict[str, Any]:
     return dict(config.get("visual_profile") or {})
 
 
-def _logo_path(config: dict[str, Any]) -> Path | None:
+def _logo_path(
+    config: dict[str, Any], bundle_dir: Path | None = None, *,
+    company: bool = False, raster_only: bool = False,
+) -> Path | None:
+    profile = _visual(config)
+    filename = (profile.get("company") or {}).get("packaged_logo_path") if company else profile.get("packaged_logo_path")
+    if filename and bundle_dir:
+        candidate = (bundle_dir.resolve() / str(filename)).resolve()
+        if candidate.is_relative_to(bundle_dir.resolve()) and candidate.is_file():
+            if not raster_only or candidate.suffix.lower() in {".png", ".jpg", ".jpeg"}:
+                return candidate
+    if company:
+        return None
     if str(_visual(config).get("logo_asset_key") or "") != "brands/natsuki/logo.svg": return None
     path = files("perfect_catalog").joinpath("assets/brands/natsuki/logo.png")
     return Path(str(path)) if path.is_file() else None
@@ -313,15 +325,17 @@ def generate_catalog_pdf(
         canvas.setFillColor(colors.HexColor(palette["primary"]))
         canvas.rect(0, A4[1] - 1.1 * cm, A4[0], 1.1 * cm, stroke=0, fill=1)
         canvas.circle(A4[0] - 2.4 * cm, A4[1] - 3.5 * cm, 1.25 * cm, stroke=0, fill=1)
-        logo = _logo_path(config)
+        company_logo = _logo_path(config, bundle_dir, company=True, raster_only=True)
+        brand_logo = _logo_path(config, bundle_dir, raster_only=True)
         profile = _visual(config)
-        if logo and profile.get("watermark_enabled", True):
+        if brand_logo and profile.get("watermark_enabled", True):
             canvas.saveState()
             canvas.setFillAlpha(float(profile.get("watermark_opacity") or .05))
-            canvas.drawImage(str(logo), A4[0]-11*cm, 1.8*cm, width=9*cm, height=1.7*cm, preserveAspectRatio=True, mask="auto")
+            canvas.drawImage(str(brand_logo), A4[0]-11*cm, 1.8*cm, width=9*cm, height=1.7*cm, preserveAspectRatio=True, mask="auto")
             canvas.restoreState()
-        if logo and profile.get("corner_logo_enabled", True):
-            canvas.drawImage(str(logo), 1.35*cm, A4[1]-2.3*cm, width=4.3*cm, height=.82*cm, preserveAspectRatio=True, mask="auto")
+        corner_logo = company_logo or brand_logo
+        if corner_logo and profile.get("corner_logo_enabled", True):
+            canvas.drawImage(str(corner_logo), 1.35*cm, A4[1]-2.3*cm, width=4.3*cm, height=.82*cm, preserveAspectRatio=True, mask="auto")
         canvas.restoreState()
 
     def decorate(canvas: Any, document: Any) -> None:
@@ -335,7 +349,7 @@ def generate_catalog_pdf(
         proof = " · ".join(value for value in (version, checksum[:16]) if value)
         canvas.drawString(1.2 * cm, .65 * cm, proof)
         canvas.drawRightString(A4[0] - 1.2 * cm, .65 * cm, f"Página {document.page}")
-        logo = _logo_path(config)
+        logo = _logo_path(config, bundle_dir, raster_only=True)
         if logo and _visual(config).get("corner_logo_enabled", True):
             canvas.drawImage(str(logo), A4[0]-5.4*cm, A4[1]-1.45*cm, width=4.1*cm, height=.78*cm, preserveAspectRatio=True, mask="auto")
         canvas.restoreState()
@@ -365,7 +379,8 @@ def generate_catalog_pptx(
     ) if value)
     cover.placeholders[1].text = proof
     cover.placeholders[1].text_frame.paragraphs[0].font.color.rgb = RGBColor.from_string(palette["ink"].lstrip("#"))
-    logo = _logo_path(config)
+    logo = (_logo_path(config, bundle_dir, company=True, raster_only=True)
+            or _logo_path(config, bundle_dir, raster_only=True))
     if logo and _visual(config).get("corner_logo_enabled", True):
         cover.shapes.add_picture(str(logo), Inches(9.2), Inches(.35), width=Inches(3.5))
     for section, section_rows in _groups(
@@ -487,11 +502,13 @@ def generate_catalog_html(
         )
     checksum = escape(str(release.get("snapshot_sha256") or ""))
     version = escape(str(release.get("version") or ""))
-    logo_uri = ""
-    if _logo_path(config):
-        logo_uri = "data:image/svg+xml;base64," + base64.b64encode(
-            files("perfect_catalog").joinpath("assets/brands/natsuki/logo.svg").read_bytes()
-        ).decode("ascii")
+    def logo_uri(path: Path | None) -> str:
+        if not path: return ""
+        media = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(path.suffix.lower(), "image/png")
+        return f"data:{media};base64," + base64.b64encode(path.read_bytes()).decode("ascii")
+    brand_logo_path = _logo_path(config, bundle_dir)
+    company_logo_uri = logo_uri(_logo_path(config, bundle_dir, company=True) or brand_logo_path)
+    brand_logo_uri = logo_uri(brand_logo_path)
     html = f"""<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="generator" content="Perfect Catalog"><meta name="release-sha256" content="{checksum}">
@@ -503,8 +520,9 @@ def generate_catalog_html(
         base64.b64encode(files("perfect_catalog").joinpath("assets/brands/natsuki/fonts/BarlowCondensed-Bold.ttf").read_bytes()).decode("ascii"),
     )
     html = html.replace("</style>", brand_css + "</style>", 1)
-    if logo_uri:
-        marks = f'<img class="brand-logo" src="{logo_uri}" alt="Marca"><img class="watermark" src="{logo_uri}" alt="">'
+    if company_logo_uri or brand_logo_uri:
+        marks = ((f'<img class="brand-logo" src="{company_logo_uri}" alt="Perfect Trading">' if company_logo_uri else "")
+                 + (f'<img class="watermark" src="{brand_logo_uri}" alt="">' if brand_logo_uri else ""))
         html = html.replace('<header class="hero">', '<header class="hero">' + marks, 1)
     return html.encode("utf-8")
 

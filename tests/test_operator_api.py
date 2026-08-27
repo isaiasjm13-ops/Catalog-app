@@ -43,6 +43,7 @@ class SyntheticReviewGateway:
         self.image_candidate_data: list[dict[str, Any]] = []
         self.catalog_exports: list[dict[str, Any]] = []
         self.release_changes: list[dict[str, Any]] = []
+        self.visual_identity_records: list[dict[str, Any]] = []
         self.import_plan_status = "awaiting_review"
         self.release_data = [{
             "catalog_release_id": str(RELEASE_ID),
@@ -87,7 +88,17 @@ class SyntheticReviewGateway:
         }
 
     def brand_profiles(self) -> list[dict[str, Any]]:
-        return [{"code": "NATSUKI", "display_name": "Natsuki"}]
+        return [{"brand_profile_id": str(uuid.uuid4()), "code": "NATSUKI", "display_name": "Natsuki", "tagline": "Trust", "primary_color": "#C60012", "secondary_color": "#202327", "ink_color": "#16191D", "paper_color": "#FFFFFF"}]
+
+    def visual_identities(self) -> dict[str, Any]:
+        return {"company": None, "brands": {}}
+
+    def create_visual_identity(self, **kwargs: Any) -> dict[str, Any]:
+        self.visual_identity_records.append(kwargs)
+        return {"visual_identity_revision_id": str(uuid.uuid4()), **kwargs}
+
+    def visual_identity_asset(self, revision_id: uuid.UUID, asset_root: Path) -> tuple[Path, str]:
+        raise FileNotFoundError(revision_id)
 
     def approve_import_plan(
         self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
@@ -401,6 +412,7 @@ class SyntheticReviewGateway:
         self, release_id: uuid.UUID, output_root: Path,
         *, formats: tuple[str, ...], export_config: dict[str, Any],
         image_root: Path | None = None,
+        brand_asset_root: Path | None = None,
     ) -> dict[str, Any]:
         export_id = uuid.uuid4()
         directory = output_root / str(release_id) / str(export_id)
@@ -943,7 +955,38 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.14.0")
+        self.assertEqual(OPERATOR_VERSION, "1.15.0")
+
+    async def test_company_identity_upload_requires_csrf_and_records_logo_without_exposing_it(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/brands")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("Identidad madre", page.text)
+        csrf = hidden_value(page.text, "csrf_token")
+        fields = {
+            "csrf_token": csrf, "scope": "company", "brand_profile_id": "",
+            "display_name": "Perfect Trading International", "primary_color": "#086650",
+            "secondary_color": "#C7DF54", "ink_color": "#17211D",
+            "paper_color": "#FFFFFF", "reason": "Identidad corporativa aprobada",
+            "confirm": "yes",
+        }
+        missing_origin = await self.client.post(
+            "/operator/brands/identity", data=fields,
+            files={"logo": ("perfect.svg", b'<svg xmlns="http://www.w3.org/2000/svg"/>', "image/svg+xml")},
+        )
+        self.assertEqual(missing_origin.status_code, 403)
+        self.assertEqual(self.gateway.visual_identity_records, [])
+        accepted = await self.client.post(
+            "/operator/brands/identity", data=fields,
+            files={"logo": ("perfect.svg", b'<svg xmlns="http://www.w3.org/2000/svg"/>', "image/svg+xml")},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(accepted.status_code, 303)
+        self.assertEqual(accepted.headers["location"], "/operator/brands?result=identity_created")
+        recorded = self.gateway.visual_identity_records[-1]
+        self.assertEqual(recorded["scope"], "company")
+        self.assertEqual(recorded["filename"], "perfect.svg")
+        self.assertNotIn(b"perfect.svg", accepted.content)
 
     async def test_promotion_requires_individual_post_origin_csrf_and_confirmation(self) -> None:
         await self.login()

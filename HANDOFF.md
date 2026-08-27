@@ -722,7 +722,16 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 
 ## 2026-08-27 - Operación simplificada y auditoría preventiva
 
-- La carpeta raíz expone un solo actualizador: `ACTUALIZAR-SISTEMA.cmd`. Detecta y aplica en orden únicamente los bloques pendientes 0007–0014; si el esquema base no existe se detiene sin reconstruir ni borrar datos.
+- La carpeta raíz expone un solo actualizador: `ACTUALIZAR-SISTEMA.cmd`. Detecta y aplica en orden únicamente los bloques pendientes 0007–0015; si el esquema base no existe se detiene sin reconstruir ni borrar datos.
 - Se retiraron los ocho lanzadores públicos `MIGRAR-*`. Los SQL históricos y bootstrap internos permanecen versionados para trazabilidad y reconstrucción controlada.
 - Regla operativa: el usuario trabaja con `INICIAR-REVISOR.cmd`; ejecuta `ACTUALIZAR-SISTEMA.cmd` únicamente después de recibir código nuevo que cambie la base o cuando la consola indique que falta una actualización.
 - Imágenes: la consola permite materializar en lote hasta 500 asociaciones aprobadas, verificando el conjunto exacto y cada SHA-256. Después debe construirse una versión nueva porque los releases anteriores son inmutables.
+
+## 2026-08-27 - Identidad madre y activos visuales por marca
+
+- La migración `0015_visual_identity_assets.sql` agrega revisiones append-only para dos alcances: empresa madre y marca de producto. Conserva nombre, cuatro colores, logo, SHA-256, operador, motivo y fecha.
+- **Marcas** incluye un espacio para subir el logo y definir la paleta de Perfect Trading, además de controles equivalentes en cada tarjeta de marca. Las revisiones anteriores no se sobrescriben.
+- La carga exige sesión, mismo origen, CSRF, confirmación y motivo; limita el logo a 5 MiB, acepta PNG/JPG/SVG y rechaza SVG con scripts, `foreignObject` o recursos externos.
+- Los releases nuevos congelan las identidades madre y de producto. El empaquetador verifica ruta y SHA-256, incluye ambos logos en el bundle y los propaga a HTML, PDF, PPTX e InDesign según compatibilidad.
+- Portada: Perfect Trading actúa como firma común y la marca de producto como marca de agua. Páginas interiores: la marca de producto mantiene el logo de esquina. SVG se conserva en HTML/InDesign; para presencia idéntica en PDF/PPTX se recomienda PNG/JPG.
+- Operación: ejecutar una vez `ACTUALIZAR-SISTEMA.cmd`, entrar con `INICIAR-REVISOR.cmd`, abrir **Marcas**, guardar la identidad madre y después las marcas necesarias. Es obligatorio construir una versión nueva para incorporar los cambios.

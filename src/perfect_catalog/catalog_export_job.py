@@ -373,6 +373,27 @@ def _package_images(
     return list(packaged.values())
 
 
+def _package_visual_assets(release: dict[str, Any], output_dir: Path, asset_root: Path | None) -> list[dict[str, Any]]:
+    profile = release.get("definition", {}).get("visual_profile") or {}
+    sources = (("brand", profile), ("company", profile.get("company") or {}))
+    entries: list[dict[str, Any]] = []
+    if not any(source.get("logo_storage_relpath") or source.get("logo_relpath") for _, source in sources): return entries
+    if asset_root is None: raise RuntimeError("El release contiene logos pero no se configuró brand_asset_root.")
+    root = asset_root.resolve()
+    for role, source in sources:
+        relative = source.get("logo_storage_relpath") or source.get("logo_relpath")
+        digest = str(source.get("logo_sha256") or "")
+        if not relative: continue
+        target = (root / str(relative)).resolve()
+        if not target.is_relative_to(root) or not target.is_file() or _sha256(target.read_bytes()) != digest:
+            raise RuntimeError(f"El logo {role} no supera la verificación SHA-256.")
+        filename = f"{role}-logo{target.suffix.lower()}"; content = target.read_bytes()
+        _write_new(output_dir / filename, content)
+        source["packaged_logo_path"] = filename
+        entries.append({"format": f"{role}-logo", "filename": filename, "bytes": len(content), "sha256": digest})
+    return entries
+
+
 def _release_metadata(release: dict[str, Any], item_count: int) -> dict[str, Any]:
     return {
         "release_id": str(release["catalog_release_id"]),
@@ -482,6 +503,7 @@ def build_catalog_bundle(
     formats: Iterable[str] = DEFAULT_FORMATS,
     config: dict[str, Any] | None = None,
     image_root: Path | None = None,
+    brand_asset_root: Path | None = None,
     require_images: bool = False,
 ) -> dict[str, Any]:
     if release.get("status") != "published":
@@ -499,7 +521,6 @@ def build_catalog_bundle(
             "asociaciones y construye una versión nueva antes de exportar."
         )
     export_config = dict(config or {})
-    export_config["visual_profile"] = dict(release.get("definition", {}).get("visual_profile") or {})
     template_profile = str(export_config.get("template_profile") or "T4").upper()
     if template_profile not in INDESIGN_TEMPLATE_PROFILES:
         raise ValueError("Perfil InDesign no soportado.")
@@ -513,6 +534,9 @@ def build_catalog_bundle(
     output_dir = output_dir.resolve()
     if output_dir.exists() and any(output_dir.iterdir()):
         raise FileExistsError(f"El directorio de exportación no está vacío: {output_dir}")
+    visual_files = _package_visual_assets(release, output_dir, brand_asset_root)
+    # _package_visual_assets annotates the immutable in-memory definition copy with packaged paths.
+    export_config["visual_profile"] = release.get("definition", {}).get("visual_profile") or {}
     image_files = _package_images(rows, output_dir, image_root)
     selected_image_count = sum(bool(row.get("image_path")) for row in rows)
     selection.update({
@@ -560,11 +584,11 @@ def build_catalog_bundle(
         payloads["indesign-csv"] = (f"{stem}.datamerge.csv", datamerge_content)
         payloads["indesign-package"] = (
             f"{stem}.indesign.zip", _indesign_zip(
-                snapshot_content, datamerge_content, image_files, output_dir, export_config
+                snapshot_content, datamerge_content, visual_files + image_files, output_dir, export_config
             )
         )
 
-    files: list[dict[str, Any]] = list(image_files)
+    files: list[dict[str, Any]] = list(visual_files) + list(image_files)
     for export_format, (filename, content) in payloads.items():
         _write_new(output_dir / filename, content)
         files.append({
@@ -598,11 +622,13 @@ def export_catalog_release(
     formats: Iterable[str] = DEFAULT_FORMATS,
     config: dict[str, Any] | None = None,
     image_root: Path | None = None,
+    brand_asset_root: Path | None = None,
     require_images: bool = False,
 ) -> dict[str, Any]:
     release, items = load_published_release(release_id, database, password)
     return build_catalog_bundle(
         release, items, output_dir, formats=formats, config=config, image_root=image_root,
+        brand_asset_root=brand_asset_root,
         require_images=require_images,
     )
 
@@ -616,6 +642,7 @@ def create_operator_catalog_export(
     formats: Iterable[str],
     config: dict[str, Any],
     image_root: Path | None = None,
+    brand_asset_root: Path | None = None,
 ) -> dict[str, Any]:
     export_id = uuid.uuid4()
     root = output_root.resolve()
@@ -626,7 +653,8 @@ def create_operator_catalog_export(
     try:
         result = export_catalog_release(
             release_id, database, password, temporary,
-            formats=formats, config=config, image_root=image_root, require_images=True,
+            formats=formats, config=config, image_root=image_root,
+            brand_asset_root=brand_asset_root, require_images=True,
         )
         destination.parent.mkdir(parents=True, exist_ok=True)
         temporary.replace(destination)

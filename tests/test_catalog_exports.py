@@ -239,7 +239,7 @@ class CatalogExportTests(unittest.TestCase):
         self.assertIn("--forest:#E30613", html)
         self.assertIn("font-size:16px", html)
         self.assertIn("class=\"brand-logo\"", html)
-        self.assertIn("data:image/svg+xml;base64,", html)
+        self.assertIn("data:image/png;base64,", html)
         self.assertTrue(generate_catalog_pdf(rows, {"template_profile": "T1", "visual_profile": visual}).startswith(b"%PDF-"))
 
     def test_bundle_writes_digital_exports_indesign_snapshot_and_manifest(self) -> None:

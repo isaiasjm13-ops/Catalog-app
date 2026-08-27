@@ -187,9 +187,27 @@ def _resolve_plan_brand(connection: Connection[Any], plan: dict[str, Any]) -> tu
         raise RuntimeError("El plan aplicado no conserva un perfil de marca.")
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(
-            """SELECT b.brand_id, b.name, b.normalized_name, bp.*
+            """SELECT b.brand_id, b.name, b.normalized_name, bp.*,
+                      vi.primary_color AS revision_primary_color,
+                      vi.secondary_color AS revision_secondary_color,
+                      vi.ink_color AS revision_ink_color, vi.paper_color AS revision_paper_color,
+                      vi.logo_storage_relpath AS revision_logo_relpath,
+                      vi.logo_sha256 AS revision_logo_sha256,
+                      vi.logo_media_type AS revision_logo_media_type,
+                      company.display_name AS company_display_name,
+                      company.primary_color AS company_primary_color,
+                      company.secondary_color AS company_secondary_color,
+                      company.ink_color AS company_ink_color, company.paper_color AS company_paper_color,
+                      company.logo_storage_relpath AS company_logo_relpath,
+                      company.logo_sha256 AS company_logo_sha256,
+                      company.logo_media_type AS company_logo_media_type
                FROM perfect_catalog.brand AS b
                JOIN perfect_catalog.brand_profile AS bp USING (brand_profile_id)
+               LEFT JOIN LATERAL (SELECT * FROM perfect_catalog.visual_identity_revision
+                 WHERE scope='brand' AND brand_profile_id=bp.brand_profile_id
+                 ORDER BY created_at DESC, visual_identity_revision_id DESC LIMIT 1) AS vi ON true
+               LEFT JOIN LATERAL (SELECT * FROM perfect_catalog.visual_identity_revision
+                 WHERE scope='company' ORDER BY created_at DESC, visual_identity_revision_id DESC LIMIT 1) AS company ON true
                WHERE b.source_system_id=%s AND b.brand_profile_id=%s""",
             (plan["source_system_id"], profile_id),
         )
@@ -197,9 +215,22 @@ def _resolve_plan_brand(connection: Connection[Any], plan: dict[str, Any]) -> tu
     if len(rows) != 1:
         raise RuntimeError("El plan no resuelve una única marca materializada.")
     row = rows[0]
+    profile = visual_profile(row)
+    for field in ("primary_color", "secondary_color", "ink_color", "paper_color"):
+        profile[field] = row.get(f"revision_{field}") or profile[field]
+    profile.update({
+        "logo_storage_relpath": row.get("revision_logo_relpath"),
+        "logo_sha256": row.get("revision_logo_sha256"),
+        "logo_media_type": row.get("revision_logo_media_type"),
+        "company": {key.removeprefix("company_"): row.get(key) for key in (
+            "company_display_name", "company_primary_color", "company_secondary_color",
+            "company_ink_color", "company_paper_color", "company_logo_relpath",
+            "company_logo_sha256", "company_logo_media_type",
+        )},
+    })
     return (
         {"brand_id": row["brand_id"], "name": row["name"], "normalized_name": row["normalized_name"]},
-        json_compatible(visual_profile(row)),
+        json_compatible(profile),
     )
 
 

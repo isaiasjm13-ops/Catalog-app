@@ -993,6 +993,18 @@ class DatabaseReviewGateway:
 
         return create_brand_profile(values, actor, reason, self._config, self._password)
 
+    def visual_identities(self) -> dict[str, Any]:
+        from .visual_identities import list_visual_identities
+        return list_visual_identities(self._config, self._password)
+
+    def create_visual_identity(self, **kwargs: Any) -> dict[str, Any]:
+        from .visual_identities import create_visual_identity
+        return create_visual_identity(config=self._config, password=self._password, **kwargs)
+
+    def visual_identity_asset(self, revision_id: uuid.UUID, asset_root: Path) -> tuple[Path, str]:
+        from .visual_identities import resolve_visual_identity_asset
+        return resolve_visual_identity_asset(revision_id, asset_root, self._config, self._password)
+
     def catalog_releases(self, *, limit: int = 100) -> list[dict[str, Any]]:
         from .publication import list_catalog_releases
 
@@ -1002,12 +1014,14 @@ class DatabaseReviewGateway:
         self, release_id: uuid.UUID, output_root: Path,
         *, formats: tuple[str, ...], export_config: dict[str, Any],
         image_root: Path | None = None,
+        brand_asset_root: Path | None = None,
     ) -> dict[str, Any]:
         from .catalog_export_job import create_operator_catalog_export
 
         return create_operator_catalog_export(
             release_id, self._config, self._password, output_root,
             formats=formats, config=export_config, image_root=image_root,
+            brand_asset_root=brand_asset_root,
         )
 
     def build_catalog_release(

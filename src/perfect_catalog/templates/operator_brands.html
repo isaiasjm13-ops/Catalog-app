@@ -6,6 +6,20 @@
   <span class="safety-chip"><span>●</span> Perfiles auditados</span>
 </section>
 {% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+<section class="transition-panel brand-profile-builder">
+  <h2>Identidad madre · Perfect Trading</h2>
+  <p>Este logo aparece en la portada de todos los catálogos. Cada cambio crea una revisión nueva y conserva la anterior.</p>
+  {% set company = identities.company %}
+  {% if company %}<img class="identity-logo-preview" src="/operator/brands/identity/{{ company.visual_identity_revision_id }}/logo" alt="Logo actual de {{ company.display_name }}">{% endif %}
+  <form method="post" enctype="multipart/form-data" action="/operator/brands/identity">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><input type="hidden" name="scope" value="company"><input type="hidden" name="brand_profile_id" value="">
+    <label><span>Nombre de empresa</span><input name="display_name" value="{{ company.display_name if company else 'Perfect Trading International' }}" maxlength="120" required></label>
+    <div class="brand-color-row"><label><span>Principal</span><input type="color" name="primary_color" value="{{ company.primary_color if company else '#086650' }}"></label><label><span>Secundario</span><input type="color" name="secondary_color" value="{{ company.secondary_color if company else '#C7DF54' }}"></label><label><span>Texto</span><input type="color" name="ink_color" value="{{ company.ink_color if company else '#17211D' }}"></label><label><span>Fondo</span><input type="color" name="paper_color" value="{{ company.paper_color if company else '#FFFFFF' }}"></label></div>
+    <label><span>Logo Perfect</span><input type="file" name="logo" accept=".svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg" required><small>PNG o JPG recomendado para verlo también en PDF y PowerPoint; SVG conserva el vector en HTML e InDesign.</small></label>
+    <label><span>Motivo auditable</span><textarea name="reason" minlength="4" maxlength="500" required></textarea></label>
+    <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo logo y colores para las portadas de todos los catálogos.</span></label><button class="primary-button">Guardar identidad madre</button>
+  </form>
+</section>
 <section class="brand-profile-grid">
 {% for profile in profiles %}
   <article class="brand-profile-card">
@@ -13,12 +27,21 @@
     <small>{{ profile.code }}</small><h2>{{ profile.display_name }}</h2>
     <p>{{ profile.tagline or 'Sin eslogan' }}</p>
     <code>{{ profile.primary_color }} · {{ profile.secondary_color }}</code>
+    {% set identity = identities.brands.get(profile.brand_profile_id ~ '') %}
+    {% if identity %}<img class="identity-logo-preview compact" src="/operator/brands/identity/{{ identity.visual_identity_revision_id }}/logo" alt="Logo actual de {{ profile.display_name }}">{% endif %}
+    <details class="materialize-action"><summary>{{ 'Actualizar logo y colores' if identity else 'Añadir logo de esta marca' }}</summary>
+      <form method="post" enctype="multipart/form-data" action="/operator/brands/identity">
+        <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><input type="hidden" name="scope" value="brand"><input type="hidden" name="brand_profile_id" value="{{ profile.brand_profile_id }}"><input type="hidden" name="display_name" value="{{ profile.display_name }}">
+        <div class="brand-color-row"><label><span>Principal</span><input type="color" name="primary_color" value="{{ identity.primary_color if identity else profile.primary_color }}"></label><label><span>Secundario</span><input type="color" name="secondary_color" value="{{ identity.secondary_color if identity else profile.secondary_color }}"></label><label><span>Texto</span><input type="color" name="ink_color" value="{{ identity.ink_color if identity else profile.ink_color }}"></label><label><span>Fondo</span><input type="color" name="paper_color" value="{{ identity.paper_color if identity else profile.paper_color }}"></label></div>
+        <label><span>Logo</span><input type="file" name="logo" accept=".svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg" required><small>PNG o JPG recomendado para todos los formatos.</small></label><label><span>Motivo</span><textarea name="reason" minlength="4" maxlength="500" required></textarea></label><label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo esta revisión visual.</span></label><button class="secondary-button">Guardar revisión</button>
+      </form>
+    </details>
   </article>
 {% else %}<p>No hay perfiles de marca. Aplica la migración 0013.</p>{% endfor %}
 </section>
 <section class="transition-panel brand-profile-builder">
   <h2>Añadir una marca</h2>
-  <p>El código queda fijo para conservar trazabilidad. Los logos se incorporarán después mediante el ingreso seguro de archivos.</p>
+  <p>El código queda fijo para conservar trazabilidad. Tras crear la marca, podrás subir su logo y ajustar sus colores desde su propia tarjeta.</p>
   <form method="post" action="/operator/brands">
     <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
     <div class="brand-form-row"><label><span>Código</span><input name="code" minlength="2" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9_-]+" placeholder="PDM" required></label><label><span>Nombre público</span><input name="display_name" maxlength="120" placeholder="PDM" required></label></div>

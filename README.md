@@ -98,6 +98,13 @@ nombre o fila, filtra estados y permite aprobar/rechazar una sola ficha con moti
 el mismo fingerprint y `review_sha256` de la CLI. Está aislado en localhost, no monta el catálogo
 público ni OpenAPI, y aplica sesión firmada, CSRF, validación de origen, escape HTML y cabeceras CSP.
 
+En **Marcas** se administran dos niveles separados de identidad visual: la identidad madre de
+Perfect Trading para la portada común y el logo/colores propios de cada marca de producto. Cada
+cambio crea una revisión auditada; no sobrescribe el historial. Los logos admiten PNG, JPG y SVG
+seguros (máximo 5 MiB). Usa PNG o JPG cuando el mismo archivo deba aparecer también en PDF y
+PowerPoint; SVG se conserva para HTML e InDesign. La identidad queda congelada al construir una
+versión nueva, por lo que un release anterior no cambia retroactivamente.
+
 La misma consola incorpora un centro de ingreso en `/operator/intake`. Si el actualizador lo solicita,
 ejecuta `ACTUALIZAR-SISTEMA.cmd`. Recibe XLSX/CSV/TSV de Odoo, PDF y paquetes ZIP de imágenes o
 InDesign, calcula SHA-256 y los conserva en cuarentena sin importar ni publicar automáticamente.

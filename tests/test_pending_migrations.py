@@ -9,7 +9,7 @@ class PendingMigrationUpdaterTests(unittest.TestCase):
     def test_single_public_updater_detects_each_optional_schema_block(self) -> None:
         sql = (ROOT / "db/bootstrap/apply_pending_migrations.sql").read_text(encoding="utf-8")
         self.assertIn("to_regclass('perfect_catalog.import_plan')", sql)
-        for version in range(7, 15):
+        for version in range(7, 16):
             self.assertIn(f"../migrations/{version:04d}_", sql)
         self.assertIn("information_schema.columns", sql)
         self.assertIn("\\quit 3", sql)

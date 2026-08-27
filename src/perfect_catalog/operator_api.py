@@ -53,7 +53,7 @@ from .importer import DEFAULT_MAX_PILOT_ROWS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.14.0"
+OPERATOR_VERSION = "1.15.0"
 LOGGER = logging.getLogger(__name__)
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
@@ -167,10 +167,16 @@ class ReviewGateway(Protocol):
         self, values: dict[str, str], actor: str, reason: str,
     ) -> dict[str, Any]: ...
 
+    def visual_identities(self) -> dict[str, Any]: ...
+
+    def create_visual_identity(self, **kwargs: Any) -> dict[str, Any]: ...
+    def visual_identity_asset(self, revision_id: uuid.UUID, asset_root: Path) -> tuple[Path, str]: ...
+
     def export_catalog(
         self, release_id: uuid.UUID, output_root: Path,
         *, formats: tuple[str, ...], export_config: dict[str, Any],
         image_root: Path | None = None,
+        brand_asset_root: Path | None = None,
     ) -> dict[str, Any]: ...
 
     def build_catalog_release(
@@ -450,12 +456,14 @@ def create_operator_app(
     promotion_output_dir: Path | None = None,
     catalog_output_dir: Path | None = None,
     image_output_dir: Path | None = None,
+    brand_asset_dir: Path | None = None,
 ) -> FastAPI:
     environment = _templates()
     resolved_intake_root = intake_root or Path("data/intake")
     resolved_promotion_output = promotion_output_dir or Path("data/exports/imports")
     resolved_catalog_output = catalog_output_dir or Path("data/exports/catalogs")
     resolved_image_output = image_output_dir or Path("data/images")
+    resolved_brand_assets = brand_asset_dir or Path("data/brand-assets")
     intake_service = SecureIntakeService(resolved_intake_root, gateway)
 
     @asynccontextmanager
@@ -779,17 +787,62 @@ def create_operator_app(
             return session_or_redirect
         try:
             profiles = await run_in_threadpool(gateway.brand_profiles)
+            identities = await run_in_threadpool(gateway.visual_identities)
         except Exception:
             return _error(
                 environment, 503, "Marcas no disponibles",
-                "Aplica primero la migracion 0013 o revisa PostgreSQL.",
+                "Ejecuta ACTUALIZAR-SISTEMA.cmd o revisa PostgreSQL.",
                 session=session_or_redirect,
             )
-        message = "Marca creada. Ya esta disponible como perfil visual." if request.query_params.get("result") == "created" else None
+        message = {"created": "Marca creada. Ya está disponible como perfil visual.", "identity_created": "Logo y colores guardados como una nueva revisión auditada."}.get(request.query_params.get("result"))
         return _render(
-            environment, "operator_brands.html", profiles=profiles, message=message,
+            environment, "operator_brands.html", profiles=profiles, identities=identities, message=message,
             session=session_or_redirect, version=OPERATOR_VERSION,
         )
+
+    @app.post("/operator/brands/identity")
+    async def create_visual_identity_route(request: Request) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse): return session_or_redirect
+        session = session_or_redirect
+        try:
+            content_length = int(request.headers.get("content-length") or 0)
+            if not 0 < content_length <= 6 * 1024 * 1024: raise ValueError("La carga supera el límite permitido.")
+            async with request.form(max_files=1, max_fields=12, max_part_size=5 * 1024 * 1024 + 1) as form:
+                upload = form.get("logo")
+                if not isinstance(upload, UploadFile): raise ValueError("Debes seleccionar un logo.")
+                expected = {"csrf_token","scope","brand_profile_id","display_name","primary_color","secondary_color","ink_color","paper_color","reason","confirm","logo"}
+                if set(form) != expected: raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+                if not _same_origin(request) or not hmac.compare_digest(str(form["csrf_token"]), session.csrf_token):
+                    return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+                if str(form["confirm"]) != "yes": raise ValueError("Debes confirmar la identidad visual.")
+                content = await upload.read(5 * 1024 * 1024 + 1)
+                scope = str(form["scope"])
+                profile_id = _uuid(str(form["brand_profile_id"]), "brand_profile_id") if scope == "brand" else None
+                await run_in_threadpool(
+                    gateway.create_visual_identity, scope=scope, brand_profile_id=profile_id,
+                    display_name=str(form["display_name"]), colors={key: str(form[key]) for key in ("primary_color","secondary_color","ink_color","paper_color")},
+                    filename=str(upload.filename or "logo"), content=content, actor=session.actor,
+                    reason=str(form["reason"]), asset_root=resolved_brand_assets,
+                )
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            return _error(environment, 409, "Identidad no guardada", str(exc), session=session)
+        except Exception:
+            diagnostic_id = uuid.uuid4().hex[:12]; LOGGER.exception("Fallo de identidad visual; diagnostico=%s", diagnostic_id)
+            return _error(environment, 503, "Identidad no disponible", f"No se guardó. Diagnóstico: {diagnostic_id}.", session=session)
+        return RedirectResponse("/operator/brands?result=identity_created", status_code=303)
+
+    @app.get("/operator/brands/identity/{revision_id}/logo")
+    async def visual_identity_logo(request: Request, revision_id: str) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse): return session_or_redirect
+        try:
+            target, media_type = await run_in_threadpool(
+                gateway.visual_identity_asset, _uuid(revision_id, "revision_id"), resolved_brand_assets,
+            )
+        except (ValueError, FileNotFoundError):
+            return _error(environment, 404, "Logo no disponible", "El activo no existe o no supera SHA-256.", session=session_or_redirect)
+        return FileResponse(target, media_type=media_type)
 
     @app.post("/operator/brands")
     async def create_brand_route(request: Request) -> Response:
@@ -1032,6 +1085,7 @@ def create_operator_app(
                 resolved_catalog_output,
                 formats=selected_formats,
                 image_root=resolved_image_output,
+                brand_asset_root=resolved_brand_assets,
                 export_config={
                     "title": title,
                     "subtitle": subtitle,

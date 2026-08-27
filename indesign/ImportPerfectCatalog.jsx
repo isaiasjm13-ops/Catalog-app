@@ -65,10 +65,12 @@
         var candidate = new File(baseFolder.fsName + "/" + clean);
         return candidate.exists ? candidate : null;
     }
-    function brandMark(page, baseFolder, visual, watermark) {
-        if (!visual || !visual.logo_asset_key) return;
-        var logo = new File(baseFolder.fsName + "/brand/logo.svg");
-        if (!logo.exists) return;
+    function brandMark(page, baseFolder, visual, watermark, company) {
+        if (!visual) return;
+        var source = company ? (visual.company || {}) : visual;
+        var logo = imageFile(baseFolder, source.packaged_logo_path);
+        if (!logo && !company && visual.logo_asset_key) logo = new File(baseFolder.fsName + "/brand/logo.svg");
+        if (!logo || !logo.exists) return;
         var bounds = watermark ? [720, 300, 760, 550] : [18, 420, 48, 560];
         var box = page.rectangles.add({geometricBounds: bounds, strokeWeight: 0});
         try { box.place(logo); box.fit(FitOptions.PROPORTIONALLY); box.fit(FitOptions.CENTER_CONTENT); if (watermark) box.transparencySettings.blendingSettings.opacity = Number(visual.watermark_opacity || .05) * 100; } catch (ignored) {}
@@ -162,16 +164,16 @@
         coverBackground.sendToBack();
         frame(document.pages[0], [160, 55, 245, 540], title, 30, true, {text: theme.primary});
         frame(document.pages[0], [260, 55, 315, 540], subtitle, 16, false, {text: theme.ink});
-        brandMark(document.pages[0], baseFolder, visual, false);
-        if (!visual || visual.watermark_enabled !== false) brandMark(document.pages[0], baseFolder, visual, true);
+        brandMark(document.pages[0], baseFolder, visual, false, true);
+        if (!visual || visual.watermark_enabled !== false) brandMark(document.pages[0], baseFolder, visual, true, false);
         var definition = profileDefinition(profile), groupBy = (snapshot.layout && snapshot.layout.group_by) || "category_path";
         var secondaryGroupBy = (snapshot.layout && snapshot.layout.group_by_secondary) || "";
         var currentGroup = null, slot = definition.perPage, page = null;
         for (var index = 0; index < snapshot.products.length; index++) {
             var product = snapshot.products[index], group = value(product, groupBy, "Sin categoría");
             if (secondaryGroupBy) group += " · " + value(product, secondaryGroupBy, "Sin subgrupo");
-            if (group !== currentGroup) { separatorPage(document, group, theme); brandMark(document.pages.item(-1), baseFolder, visual, false); currentGroup = group; slot = definition.perPage; report.group_count++; }
-            if (slot >= definition.perPage) { page = document.pages.add(); brandMark(page, baseFolder, visual, false); slot = 0; }
+            if (group !== currentGroup) { separatorPage(document, group, theme); brandMark(document.pages.item(-1), baseFolder, visual, false, false); currentGroup = group; slot = definition.perPage; report.group_count++; }
+            if (slot >= definition.perPage) { page = document.pages.add(); brandMark(page, baseFolder, visual, false, false); slot = 0; }
             productFrame(page, productBounds(definition, slot), product, index, definition, baseFolder, report, theme); slot++;
         }
         report.page_count = document.pages.length;

@@ -59,5 +59,11 @@ SELECT (NOT EXISTS (
 \ir ../migrations/0014_brand_profile_workflow.sql
 \endif
 
+SELECT (to_regclass('perfect_catalog.visual_identity_revision') IS NULL) AS need_0015 \gset
+\if :need_0015
+\echo 'Aplicando 0015 - logos e identidad visual'
+\ir ../migrations/0015_visual_identity_assets.sql
+\endif
+
 RESET ROLE;
 \echo 'Base de datos actualizada. No hay migraciones pendientes.'
