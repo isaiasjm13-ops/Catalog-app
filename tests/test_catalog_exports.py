@@ -208,9 +208,10 @@ class CatalogExportTests(unittest.TestCase):
         self.assertIn('src="image-safe.png"', content)
         self.assertIn('loading="lazy" decoding="async"', content)
         self.assertIn(".photo img{display:block;width:100%;height:100%;object-fit:contain;object-position:center center}", content)
-        self.assertIn('class="photo" href="#foto-01-001"', content)
-        self.assertIn('class="lightbox" id="foto-01-001"', content)
-        self.assertIn(".lightbox-dialog img{grid-column:1/-1;width:100%;height:100%;min-height:0;object-fit:contain", content)
+        self.assertIn('<button class="photo" type="button"', content)
+        self.assertIn('<dialog class="photo-viewer" id="photo-viewer">', content)
+        self.assertIn(".photo-viewer img{grid-column:1/-1;width:100%;height:100%;min-height:0;object-fit:contain", content)
+        self.assertIn("viewerImage.src=source.currentSrc||source.src", content)
         self.assertIn("--forest:#C34A21", content)
         self.assertIn('role="search"', content)
         self.assertIn('id="catalog-query" type="search" inputmode="search"', content)
@@ -234,6 +235,7 @@ class CatalogExportTests(unittest.TestCase):
                 rows, release=release, bundle_dir=root, embed_images=True,
             ).decode("utf-8")
         self.assertIn("data:image/jpeg;base64,", content)
+        self.assertEqual(content.count("data:image/jpeg;base64,"), 1)
         self.assertNotIn('src="approved.png"', content)
         encoded = content.split("data:image/jpeg;base64,", 1)[1].split('"', 1)[0]
         with PILImage.open(io.BytesIO(base64.b64decode(encoded))) as embedded:

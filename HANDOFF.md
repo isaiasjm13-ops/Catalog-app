@@ -1,5 +1,15 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: visor móvil sin duplicación v1.22
+
+- El HTML digital usa un único visor nativo `dialog` reutilizable. Al tocar una miniatura toma la
+  misma imagen ya cargada, la presenta completa con `contain` y permite cerrar con botón, fondo o
+  tecla Escape.
+- El HTML autónomo ya no repite cada URI Base64 para construir la ampliación. Cada fotografía
+  optimizada aparece una sola vez en el archivo, reduciendo aproximadamente a la mitad la porción
+  del peso atribuible a imágenes frente al visor anterior. Búsqueda y visor siguen offline.
+- Verificación específica cubre fuente única incrustada, visor reutilizable y ausencia de recorte.
+
 ## Bloque 2026-08-27: logos de marcas vehiculares v1.21
 
 - Migración forward-only `0016` amplía las revisiones visuales con alcance `vehicle_make` y exige
