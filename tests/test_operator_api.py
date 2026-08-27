@@ -831,7 +831,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
             "snapshot_sha256": release["snapshot_sha256"], "template_profile": "T4",
             "theme": "forest", "product_count": 1, "linked_image_count": 0,
             "missing_images": [], "overflow_product_indexes": [], "unavailable_fonts": [],
-            "group_count": 1, "page_count": 3,
+            "group_count": 1, "page_count": 4,
         }
         url = f"/operator/catalogs/{release['catalog_release_id']}/exports/{export_id}/preflight"
         rejected = await self.client.post(
@@ -848,14 +848,14 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(accepted.headers["location"], "/operator/catalogs?result=preflight_recorded")
         refreshed = await self.client.get("/operator/catalogs")
         self.assertIn("Sin incidencias", refreshed.text)
-        self.assertIn("3 páginas", refreshed.text)
+        self.assertIn("4 páginas", refreshed.text)
         self.assertIn("0 imágenes faltantes", refreshed.text)
         receipt_match = re.search(r'href="([^"]+/preflights/[0-9a-f-]{36})"', refreshed.text)
         self.assertIsNotNone(receipt_match)
         receipt = await self.client.get(receipt_match.group(1))
         self.assertEqual(receipt.status_code, 200)
         self.assertEqual(receipt.json()["quality"]["status"], "passed")
-        self.assertEqual(receipt.json()["quality"]["expected_layout"]["estimated_page_count"], 3)
+        self.assertEqual(receipt.json()["quality"]["expected_layout"]["estimated_page_count"], 4)
         missing = await self.client.get(
             f"/operator/catalogs/{release['catalog_release_id']}/exports/{export_id}/preflights/{uuid.uuid4()}"
         )
@@ -1032,7 +1032,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.33.0")
+        self.assertEqual(OPERATOR_VERSION, "1.34.0")
 
     async def test_company_identity_upload_requires_csrf_and_records_logo_without_exposing_it(self) -> None:
         await self.login()

@@ -59,7 +59,7 @@ class InDesignBridgeTests(unittest.TestCase):
         self.assertIn("score > 120", script)
         self.assertIn("var imageHeight = image ? definition.imageHeight : 0", script)
         self.assertIn("Fichas ampliadas automaticamente", script)
-        self.assertIn('var SCRIPT_VERSION = "1.33.0"', script)
+        self.assertIn('var SCRIPT_VERSION = "1.34.0"', script)
         self.assertIn('insertLabel("perfect_catalog_importer_version"', script)
         self.assertIn("function repairText", script)
         self.assertIn('"\\u00c2\\u00b7": "\\u00b7"', script)
@@ -69,6 +69,10 @@ class InDesignBridgeTests(unittest.TestCase):
         self.assertIn("visual, primaryGroup)", script)
         self.assertIn('groupLabel += "\\r" + secondaryGroup', script)
         self.assertIn("separatorPage(document, groupLabel, theme)", script)
+        self.assertIn("function createContentsPages", script)
+        self.assertIn("function fillContentsPages", script)
+        self.assertIn("function addPageNumbers", script)
+        self.assertIn("separator.documentOffset + 1", script)
         self.assertNotRegex(script, r"[^\x00-\x7F]")
 
 

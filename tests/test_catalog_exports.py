@@ -74,10 +74,11 @@ class CatalogExportTests(unittest.TestCase):
             [{"count": 5}, {"count": 17}], "T4"
         )
         self.assertEqual(estimate["cover_pages"], 1)
+        self.assertEqual(estimate["contents_pages"], 1)
         self.assertEqual(estimate["separator_pages"], 2)
         self.assertEqual(estimate["product_pages"], 7)
-        self.assertEqual(estimate["estimated_page_count"], 10)
-        self.assertEqual(estimate_indesign_layout([{"count": 17}], "TABLE")["estimated_page_count"], 4)
+        self.assertEqual(estimate["estimated_page_count"], 11)
+        self.assertEqual(estimate_indesign_layout([{"count": 17}], "TABLE")["estimated_page_count"], 5)
         with self.assertRaisesRegex(ValueError, "Perfil InDesign"):
             estimate_indesign_layout([{"count": 1}], "T8")
 
@@ -91,7 +92,8 @@ class CatalogExportTests(unittest.TestCase):
         estimate = estimate_adaptive_indesign_layout(products, {"group_by": "category_path"}, "T4")
         self.assertEqual(estimate["separator_pages"], 2)
         self.assertEqual(estimate["product_pages"], 4)
-        self.assertEqual(estimate["estimated_page_count"], 7)
+        self.assertEqual(estimate["contents_pages"], 1)
+        self.assertEqual(estimate["estimated_page_count"], 8)
 
     def test_indesign_preflight_is_bound_to_verified_export_and_stored_separately(self) -> None:
         release, items = fixture_release()
@@ -109,7 +111,7 @@ class CatalogExportTests(unittest.TestCase):
                 "theme": "forest", "product_count": 1, "linked_image_count": 0,
                 "missing_images": [{"product_index": 0, "reference": "NK-001", "reason": "ausente"}],
                 "overflow_product_indexes": [], "unavailable_fonts": [],
-                "group_count": 1, "page_count": 3,
+                "group_count": 1, "page_count": 4,
             }
             receipt = record_indesign_preflight(
                 root, release["catalog_release_id"], export_id,
@@ -117,7 +119,7 @@ class CatalogExportTests(unittest.TestCase):
             )
             self.assertEqual(receipt["schema"], "perfect-catalog.indesign-preflight-receipt.v1")
             self.assertEqual(receipt["quality"]["status"], "issues")
-            self.assertEqual(receipt["quality"]["expected_layout"]["estimated_page_count"], 3)
+            self.assertEqual(receipt["quality"]["expected_layout"]["estimated_page_count"], 4)
             self.assertTrue(Path(receipt["path"]).is_file())
             self.assertNotIn("_indesign_preflight", {path.name for path in (root / str(release["catalog_release_id"]) / str(export_id)).iterdir()})
             report["theme"] = "classic"
@@ -127,7 +129,7 @@ class CatalogExportTests(unittest.TestCase):
                     json.dumps(report).encode(), actor="qa", reason="Tema incorrecto",
                 )
             report["theme"] = "forest"
-            report["page_count"] = 4
+            report["page_count"] = 5
             with self.assertRaisesRegex(ValueError, "paginación.*no coincide"):
                 record_indesign_preflight(
                     root, release["catalog_release_id"], export_id,

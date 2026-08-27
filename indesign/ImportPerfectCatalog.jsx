@@ -2,7 +2,7 @@
 
 (function () {
     var SCHEMA = "perfect-catalog.indesign-snapshot.v1";
-    var SCRIPT_VERSION = "1.33.0";
+    var SCRIPT_VERSION = "1.34.0";
     var ACTIVE_TITLE_FONT = null, ACTIVE_BODY_FONT = null;
     function fail(message) { alert("Perfect Catalog\n\n" + message); throw new Error(message); }
     function parseJson(text) {
@@ -147,6 +147,29 @@
         var heading = frame(page, [225, 55, 385, 540], repairText(label), 30, true, {text: theme.primary, leading: 1.15});
         fitFrame(heading, 30, 18, 1.15);
         frame(page, [405, 55, 455, 540], "Separador de secci\u00f3n \u00b7 Perfect Trading", 12, false, {text: theme.ink, leading: 1.4});
+        return page;
+    }
+    function createContentsPages(document, count, theme) {
+        var pages = [], total = Math.max(1, Math.ceil(count / 22));
+        for (var index = 0; index < total; index++) {
+            var page = document.pages.add();
+            page.rectangles.add({geometricBounds: page.bounds, fillColor: theme.paper, strokeWeight: 0}).sendToBack();
+            frame(page, [45, 45, 115, 550], index ? "\u00cdndice (continuaci\u00f3n)" : "\u00cdndice", 28, true, {text: theme.primary, leading: 1.15});
+            pages.push(page);
+        }
+        return pages;
+    }
+    function fillContentsPages(pages, entries, theme) {
+        for (var index = 0; index < entries.length; index++) {
+            var local = index % 22, page = pages[Math.floor(index / 22)], top = 125 + local * 27;
+            frame(page, [top, 50, top + 25, 500], entries[index].label, 12, false, {text: theme.ink, leading: 1.15});
+            frame(page, [top, 505, top + 25, 550], String(entries[index].page), 12, true, {text: theme.primary, leading: 1.15});
+        }
+    }
+    function addPageNumbers(document, firstContentPage, theme) {
+        for (var index = firstContentPage; index < document.pages.length; index++) {
+            frame(document.pages[index], [790, 270, 825, 325], String(index + 1), 12, true, {text: theme.primary, leading: 1.1});
+        }
     }
     function vehicleMakeMark(page, baseFolder, visual, makeName) {
         var source = visual && visual.vehicle_makes && visual.vehicle_makes[String(makeName)];
@@ -261,6 +284,13 @@
         if (!visual || visual.watermark_enabled !== false) brandMark(document.pages[0], baseFolder, visual, true, false);
         var definition = profileDefinition(profile), groupBy = (snapshot.layout && snapshot.layout.group_by) || "category_path";
         var secondaryGroupBy = (snapshot.layout && snapshot.layout.group_by_secondary) || "";
+        var groupKeys = {}, expectedGroups = 0;
+        for (var groupIndex = 0; groupIndex < snapshot.products.length; groupIndex++) {
+            var groupProduct = snapshot.products[groupIndex], groupKey = value(groupProduct, groupBy, "Sin categor\u00eda");
+            if (secondaryGroupBy) groupKey += " \u00b7 " + value(groupProduct, secondaryGroupBy, "Sin subgrupo");
+            if (!groupKeys[groupKey]) { groupKeys[groupKey] = true; expectedGroups++; }
+        }
+        var contentsPages = createContentsPages(document, expectedGroups, theme), contentsEntries = [];
         var currentGroup = null, activeProfile = null, slot = definition.perPage, page = null, promotedCount = 0;
         for (var index = 0; index < snapshot.products.length; index++) {
             var product = snapshot.products[index], primaryGroup = value(product, groupBy, "Sin categor\u00eda"), group = primaryGroup, groupLabel = primaryGroup;
@@ -269,12 +299,14 @@
                 group += " \u00b7 " + secondaryGroup;
                 groupLabel += "\r" + secondaryGroup;
             }
-            if (group !== currentGroup) { separatorPage(document, groupLabel, theme); brandMark(document.pages.item(-1), baseFolder, visual, false, false); if (groupBy === "vehicle_make") vehicleMakeMark(document.pages.item(-1), baseFolder, visual, primaryGroup); currentGroup = group; slot = definition.perPage; activeProfile = null; report.group_count++; }
+            if (group !== currentGroup) { var separator = separatorPage(document, groupLabel, theme); brandMark(separator, baseFolder, visual, false, false); if (groupBy === "vehicle_make") vehicleMakeMark(separator, baseFolder, visual, primaryGroup); contentsEntries.push({label: groupLabel.replace(/\r/g, " / "), page: separator.documentOffset + 1}); currentGroup = group; slot = definition.perPage; activeProfile = null; report.group_count++; }
             var effectiveProfile = adaptiveProfile(profile, product), effectiveDefinition = profileDefinition(effectiveProfile);
             if (effectiveProfile !== profile) promotedCount++;
             if (activeProfile !== effectiveProfile || slot >= effectiveDefinition.perPage) { page = document.pages.add(); brandMark(page, baseFolder, visual, false, false); slot = 0; activeProfile = effectiveProfile; }
             productFrame(page, productBounds(effectiveDefinition, slot), product, index, effectiveDefinition, baseFolder, report, theme); slot++;
         }
+        fillContentsPages(contentsPages, contentsEntries, theme);
+        addPageNumbers(document, contentsPages.length + 1, theme);
         report.page_count = document.pages.length;
         var destination = File.saveDialog("Guardar cat\u00e1logo InDesign", "InDesign document:*.indd");
         if (!destination) { document.close(SaveOptions.NO); return; }

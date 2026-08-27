@@ -1,5 +1,14 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: índice y navegación editorial InDesign v1.34
+
+- El importador reserva automáticamente las páginas de índice necesarias después de la portada,
+  registra cada separador y escribe su número de página real. Admite más de 22 secciones mediante
+  páginas de continuación.
+- Las páginas editoriales incorporan numeración consistente. El índice usa la marca y categoría
+  como jerarquía legible sin modificar las claves internas ni inventar datos de producto.
+- No requiere migración; hay que generar un paquete InDesign nuevo para usar el JSX v1.34.0.
+
 ## Bloque 2026-08-27: jerarquía vertical de separadores v1.33
 
 - En agrupaciones dobles, la marca vehicular se presenta como título principal y la categoría se
