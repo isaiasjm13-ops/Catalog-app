@@ -1,5 +1,18 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: compatibilidad JSON para InDesign antiguo v1.29
+
+- `ImportPerfectCatalog.jsx` ya no exige `JSON.parse`/`JSON.stringify` nativos. Incluye lector y
+  escritor compatibles con motores ExtendScript antiguos; si el motor moderno existe, lo reutiliza.
+- El fallback valida primero la gramática JSON y caracteres de control antes del `eval` aislado;
+  rechaza expresiones, funciones o sintaxis ajena a JSON. El escritor escapa cadenas y serializa el
+  reporte de preflight sin depender de librerías instaladas.
+- Los paquetes InDesign nuevos incluyen automáticamente el JSX corregido. Los paquetes ya generados
+  conservan la copia anterior y deben volver a generarse o sustituir su `ImportPerfectCatalog.jsx`.
+- No requiere migración de PostgreSQL.
+- Verificación: 28 pruebas focalizadas y 259 pruebas completas pasan; 6 integraciones PostgreSQL se
+  omiten sin credenciales. Queda pendiente ejecutar el JSX corregido en la versión real de InDesign.
+
 ## Bloque 2026-08-27: orden editorial y campos HTML v1.28
 
 - El selector visual incorpora una bandeja de referencias elegidas con acciones accesibles para

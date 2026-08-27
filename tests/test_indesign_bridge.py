@@ -50,6 +50,10 @@ class InDesignBridgeTests(unittest.TestCase):
         self.assertIn("function vehicleMakeMark", script)
         self.assertIn('groupBy === "vehicle_make"', script)
         self.assertIn("visual.vehicle_makes", script)
+        self.assertIn("function parseJson", script)
+        self.assertIn("function stringifyJson", script)
+        self.assertIn("El snapshot JSON contiene sintaxis no permitida", script)
+        self.assertNotIn("no ofrece JSON.parse", script)
 
 
 if __name__ == "__main__":

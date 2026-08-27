@@ -4,16 +4,51 @@
     var SCHEMA = "perfect-catalog.indesign-snapshot.v1";
     var ACTIVE_TITLE_FONT = null, ACTIVE_BODY_FONT = null;
     function fail(message) { alert("Perfect Catalog\n\n" + message); throw new Error(message); }
+    function parseJson(text) {
+        if (typeof JSON !== "undefined" && JSON.parse) return JSON.parse(text);
+        var sanitized = String(text);
+        if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(sanitized)) fail("El snapshot JSON contiene caracteres de control no permitidos.");
+        var safe = /^[\],:{}\s]*$/.test(sanitized
+            .replace(/\\(?:["\\\/bfnrt]|u[0-9a-fA-F]{4})/g, "@")
+            .replace(/"[^"\\\n\r]*"|true|false|null|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?/g, "]")
+            .replace(/(?:^|:|,)(?:\s*\[)+/g, ""));
+        if (!safe) fail("El snapshot JSON contiene sintaxis no permitida.");
+        try { return eval("(" + sanitized + ")"); }
+        catch (error) { fail("El snapshot JSON no se pudo interpretar."); }
+    }
+    function quoteJson(value) {
+        return '"' + String(value).replace(/[\\"\u0000-\u001f]/g, function (character) {
+            var escapes = {"\\": "\\\\", '"': '\\"', "\b": "\\b", "\f": "\\f", "\n": "\\n", "\r": "\\r", "\t": "\\t"};
+            if (escapes[character]) return escapes[character];
+            var code = character.charCodeAt(0).toString(16); return "\\u" + ("0000" + code).slice(-4);
+        }) + '"';
+    }
+    function stringifyJson(value) {
+        if (typeof JSON !== "undefined" && JSON.stringify) return JSON.stringify(value, null, 2);
+        if (value === null) return "null";
+        if (typeof value === "string") return quoteJson(value);
+        if (typeof value === "number") return isFinite(value) ? String(value) : "null";
+        if (typeof value === "boolean") return value ? "true" : "false";
+        var index, parts = [];
+        if (value instanceof Array) {
+            for (index = 0; index < value.length; index++) parts.push(stringifyJson(value[index]));
+            return "[" + parts.join(",") + "]";
+        }
+        if (typeof value === "object") {
+            for (var key in value) if (value.hasOwnProperty(key) && typeof value[key] !== "undefined") parts.push(quoteJson(key) + ":" + stringifyJson(value[key]));
+            return "{" + parts.join(",") + "}";
+        }
+        return "null";
+    }
     function readJson(file) {
         file.encoding = "UTF-8"; if (!file.open("r")) fail("No se pudo abrir el snapshot.");
         var text = file.read(); file.close();
         if (text.charCodeAt(0) === 65279) text = text.substring(1);
-        if (typeof JSON === "undefined" || !JSON.parse) fail("Esta versión de InDesign no ofrece JSON.parse.");
-        return JSON.parse(text);
+        return parseJson(text);
     }
     function writeJson(file, payload) {
         file.encoding = "UTF-8"; if (!file.open("w")) fail("No se pudo escribir el reporte de preflight.");
-        file.write(JSON.stringify(payload, null, 2)); file.close();
+        file.write(stringifyJson(payload)); file.close();
     }
     function value(product, key, fallback) {
         var current = product[key];
