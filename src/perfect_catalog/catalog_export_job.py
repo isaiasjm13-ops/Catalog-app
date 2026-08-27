@@ -906,6 +906,44 @@ def preview_catalog_release(
     )
 
 
+def list_catalog_release_products(
+    release_id: uuid.UUID, database: DatabaseConfig, password: str,
+    *, query: str = "", limit: int = 24, offset: int = 0,
+) -> dict[str, Any]:
+    """Lista paginada y de solo lectura para el selector visual del compositor."""
+    if limit < 1 or limit > 50:
+        raise ValueError("limit debe estar entre 1 y 50.")
+    if offset < 0 or offset > 1_000_000:
+        raise ValueError("offset no es válido.")
+    query = query.strip()
+    if len(query) > 120:
+        raise ValueError("La búsqueda no puede superar 120 caracteres.")
+    release, items = load_published_release(release_id, database, password)
+    rows = export_rows_from_release(release, items)
+    indexed = list(enumerate(rows, start=1))
+    if query:
+        needle = query.casefold()
+        indexed = [(number, row) for number, row in indexed if needle in " ".join((
+            str(row.get("internal_reference_original") or ""),
+            str(row.get("name_original") or ""), str(row.get("category_path") or ""),
+            " ".join(map(str, row.get("applications") or [])),
+            " ".join(map(str, row.get("engine_types") or [])),
+            " ".join(map(str, row.get("vehicle_makes") or [])),
+        )).casefold()]
+    total = len(indexed)
+    products = [{
+        "item_number": number,
+        "reference": str(row.get("internal_reference_original") or "Sin referencia"),
+        "name": str(row.get("name_original") or "Sin nombre"),
+        "category": str(row.get("category_path") or row.get("piece_type") or "Sin categoría"),
+        "applications": [str(value) for value in (row.get("applications") or [])][:4],
+        "engine_types": [str(value) for value in (row.get("engine_types") or [])][:4],
+        "has_image": bool(row.get("image_storage_relpath")),
+    } for number, row in indexed[offset:offset + limit]]
+    return {"release_id": str(release_id), "query": query, "limit": limit, "offset": offset,
+            "total": total, "products": products}
+
+
 def resolve_catalog_preview_image(
     release_id: uuid.UUID, item_number: int, database: DatabaseConfig, password: str,
     image_root: Path,

@@ -112,6 +112,8 @@ categoría, aplicaciones, motor y OEM; la imagen se muestra entera y el visor co
 El compositor de **Catálogos** conserva automáticamente un borrador local independiente por release
 y muestra un resumen vivo. No almacena credenciales ni confirmaciones, y puede restablecerse desde
 la misma pantalla.
+La selección de productos también puede hacerse visualmente: el buscador paginado muestra referencia,
+categoría, aplicaciones, motor y miniatura, y transfiere las casillas al contrato exacto de referencias.
 
 La misma pantalla permite asociar un logo independiente a cada marca vehicular aprobada. Este
 activo aparece únicamente junto al nombre de la marca del vehículo cuando el catálogo se agrupa

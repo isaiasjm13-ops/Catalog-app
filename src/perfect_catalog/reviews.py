@@ -1067,6 +1067,15 @@ class DatabaseReviewGateway:
             release_id, item_number, self._config, self._password, image_root
         )
 
+    def catalog_release_products(
+        self, release_id: uuid.UUID, *, query: str = "", limit: int = 24, offset: int = 0,
+    ) -> dict[str, Any]:
+        from .catalog_export_job import list_catalog_release_products
+
+        return list_catalog_release_products(
+            release_id, self._config, self._password, query=query, limit=limit, offset=offset,
+        )
+
     def plans(self, *, limit: int = 100) -> list[dict[str, Any]]:
         return list_review_plans(self._config, self._password, limit=limit)
 

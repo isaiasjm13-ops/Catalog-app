@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 import uvicorn
 import psycopg
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 from starlette.concurrency import run_in_threadpool
@@ -53,7 +53,7 @@ from .importer import DEFAULT_MAX_PILOT_ROWS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.25.0"
+OPERATOR_VERSION = "1.26.0"
 LOGGER = logging.getLogger(__name__)
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
@@ -197,6 +197,10 @@ class ReviewGateway(Protocol):
     def catalog_preview_image(
         self, release_id: uuid.UUID, item_number: int, image_root: Path,
     ) -> Path: ...
+
+    def catalog_release_products(
+        self, release_id: uuid.UUID, *, query: str = "", limit: int = 24, offset: int = 0,
+    ) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True)
@@ -944,6 +948,32 @@ def create_operator_app(
         return RedirectResponse(
             f"/operator/catalogs?{urlencode({'result': str(result['status'])})}", status_code=303
         )
+
+    @app.get("/operator/catalogs/{release_id}/products")
+    async def catalog_release_products_route(
+        request: Request, release_id: str, query: str = "", limit: int = 24, offset: int = 0,
+    ) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            result = await run_in_threadpool(
+                gateway.catalog_release_products, _uuid(release_id, "release_id"),
+                query=query, limit=limit, offset=offset,
+            )
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        except Exception as exc:
+            diagnostic_id = secrets.token_hex(6)
+            LOGGER.exception(
+                "catalog_product_picker_failed diagnostic_id=%s error_type=%s sqlstate=%s",
+                diagnostic_id, type(exc).__name__, getattr(exc, "sqlstate", None),
+            )
+            return JSONResponse(
+                {"error": "No se pudieron consultar los productos.", "diagnostic_id": diagnostic_id},
+                status_code=503,
+            )
+        return JSONResponse(result)
 
     @app.get("/operator/catalogs/{release_id}/preview", response_class=HTMLResponse)
     async def preview_catalog_release_route(

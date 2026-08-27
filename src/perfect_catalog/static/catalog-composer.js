@@ -98,6 +98,81 @@
     }));
   }
 
+  function enhanceProductPicker(form, actions) {
+    var textarea = form.elements.namedItem("selected_references");
+    if (!textarea) return;
+    var launch = document.createElement("button");
+    launch.type = "button"; launch.className = "secondary-button product-picker-launch";
+    launch.textContent = "Elegir productos visualmente";
+    textarea.parentNode.appendChild(launch);
+
+    var dialog = document.createElement("dialog");
+    dialog.className = "product-picker";
+    dialog.innerHTML = '<header><div><strong>Elegir productos</strong><small>Busca y marca referencias del release publicado.</small></div><button type="button" class="product-picker-close" aria-label="Cerrar">×</button></header><form method="dialog" class="product-picker-search"><input type="search" maxlength="120" placeholder="Referencia, producto, categoría, aplicación o motor" aria-label="Buscar productos"><button type="submit" class="secondary-button">Buscar</button></form><p class="product-picker-status" role="status" aria-live="polite"></p><div class="product-picker-grid"></div><footer><button type="button" class="secondary-button product-picker-all">Usar todos</button><div><button type="button" class="secondary-button product-picker-prev">Anterior</button><button type="button" class="secondary-button product-picker-next">Siguiente</button></div><button type="button" class="primary-button product-picker-apply">Aplicar selección</button></footer>';
+    document.body.appendChild(dialog);
+    var search = dialog.querySelector("input"), grid = dialog.querySelector(".product-picker-grid");
+    var status = dialog.querySelector(".product-picker-status"), offset = 0, limit = 24, total = 0;
+    var chosen = new Map();
+
+    function readTextarea() {
+      chosen.clear();
+      String(textarea.value || "").split(/[\n,;]+/).map(function (value) { return value.trim(); })
+        .filter(Boolean).forEach(function (value) { chosen.set(value.toLocaleUpperCase("es"), value); });
+    }
+
+    function productCard(product) {
+      var label = document.createElement("label"); label.className = "product-picker-card";
+      var checkbox = document.createElement("input"); checkbox.type = "checkbox";
+      checkbox.checked = chosen.has(product.reference.toLocaleUpperCase("es"));
+      checkbox.addEventListener("change", function () {
+        var key = product.reference.toLocaleUpperCase("es");
+        if (checkbox.checked) chosen.set(key, product.reference); else chosen.delete(key);
+        status.textContent = chosen.size ? chosen.size + " productos seleccionados" : "Todos los productos se incluirán";
+      });
+      label.appendChild(checkbox);
+      if (product.has_image) {
+        var image = document.createElement("img");
+        image.src = actions.getAttribute("data-preview-url") + "/images/" + product.item_number;
+        image.alt = ""; image.loading = "lazy"; label.appendChild(image);
+      } else {
+        var placeholder = document.createElement("span"); placeholder.className = "product-picker-placeholder";
+        placeholder.textContent = "Sin imagen"; label.appendChild(placeholder);
+      }
+      var content = document.createElement("span"); content.className = "product-picker-copy";
+      var reference = document.createElement("code"); reference.textContent = product.reference;
+      var name = document.createElement("strong"); name.textContent = product.name;
+      var category = document.createElement("small"); category.textContent = product.category;
+      content.append(reference, name, category);
+      if (product.applications.length) {
+        var applications = document.createElement("small"); applications.textContent = product.applications.join(" · "); content.appendChild(applications);
+      }
+      label.appendChild(content); return label;
+    }
+
+    function load() {
+      status.textContent = "Cargando productos…"; grid.replaceChildren();
+      var endpoint = actions.getAttribute("data-preview-url").replace(/\/preview$/, "/products");
+      var query = new URLSearchParams({query: search.value.trim(), limit: String(limit), offset: String(offset)});
+      window.fetch(endpoint + "?" + query.toString(), {headers: {Accept: "application/json"}})
+        .then(function (response) { if (!response.ok) throw new Error("request"); return response.json(); })
+        .then(function (payload) {
+          total = payload.total; grid.replaceChildren.apply(grid, payload.products.map(productCard));
+          status.textContent = total ? (offset + 1) + "–" + Math.min(offset + limit, total) + " de " + total + " · " + (chosen.size ? chosen.size + " seleccionados" : "se incluirán todos") : "No se encontraron productos";
+          dialog.querySelector(".product-picker-prev").disabled = offset === 0;
+          dialog.querySelector(".product-picker-next").disabled = offset + limit >= total;
+        }).catch(function () { status.textContent = "No se pudieron cargar los productos. Reintenta."; });
+    }
+
+    launch.addEventListener("click", function () { readTextarea(); offset = 0; dialog.showModal(); load(); });
+    dialog.querySelector(".product-picker-close").addEventListener("click", function () { dialog.close(); });
+    dialog.querySelector(".product-picker-search").addEventListener("submit", function (event) { event.preventDefault(); offset = 0; load(); });
+    dialog.querySelector(".product-picker-prev").addEventListener("click", function () { offset = Math.max(0, offset - limit); load(); });
+    dialog.querySelector(".product-picker-next").addEventListener("click", function () { offset += limit; load(); });
+    dialog.querySelector(".product-picker-all").addEventListener("click", function () { chosen.clear(); textarea.value = ""; textarea.dispatchEvent(new Event("input", {bubbles: true})); dialog.close(); });
+    dialog.querySelector(".product-picker-apply").addEventListener("click", function () { textarea.value = Array.from(chosen.values()).join("\n"); textarea.dispatchEvent(new Event("input", {bubbles: true})); dialog.close(); });
+    dialog.addEventListener("click", function (event) { if (event.target === dialog) dialog.close(); });
+  }
+
   function enhanceComposer(form, actions) {
     var key = storageKey(actions);
     var summary = document.createElement("ul");
@@ -111,6 +186,7 @@
     tools.appendChild(reset);
     actions.parentNode.insertBefore(summary, actions);
     actions.parentNode.insertBefore(tools, actions);
+    enhanceProductPicker(form, actions);
 
     var restored = restore(form, readDraft(key));
     var status = tools.querySelector("span");

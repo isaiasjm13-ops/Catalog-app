@@ -408,6 +408,19 @@ class SyntheticReviewGateway:
             raise FileNotFoundError
         return Path(__file__)
 
+    def catalog_release_products(
+        self, release_id: uuid.UUID, *, query: str = "", limit: int = 24, offset: int = 0,
+    ) -> dict[str, Any]:
+        products = [{
+            "item_number": 1, "reference": "NK-001", "name": "Empaque de motor",
+            "category": "Motor / Empaques", "applications": ["Toyota Corolla"],
+            "engine_types": ["1.8L"], "has_image": True,
+        }]
+        if query and query.casefold() not in "nk-001 empaque motor toyota corolla 1.8l":
+            products = []
+        return {"release_id": str(release_id), "query": query, "limit": limit,
+                "offset": offset, "total": len(products), "products": products}
+
     def export_catalog(
         self, release_id: uuid.UUID, output_root: Path,
         *, formats: tuple[str, ...], export_config: dict[str, Any],
@@ -764,6 +777,8 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("window.localStorage", script.text)
         self.assertIn("composer-live-summary", script.text)
         self.assertIn("Borrador recuperado", script.text)
+        self.assertIn("Elegir productos visualmente", script.text)
+        self.assertIn("/products", script.text)
         fields = {
             "csrf_token": hidden_value(page.text, "csrf_token"),
             "title": "Catálogo web", "subtitle": "", "group_by": "category_path",
@@ -919,6 +934,21 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(invalid_profile.status_code, 400)
 
+    async def test_catalog_product_picker_is_authenticated_searchable_and_paged(self) -> None:
+        denied = await self.client.get(f"/operator/catalogs/{RELEASE_ID}/products")
+        self.assertEqual(denied.status_code, 303)
+        await self.login()
+        response = await self.client.get(
+            f"/operator/catalogs/{RELEASE_ID}/products",
+            params={"query": "Toyota", "limit": 24, "offset": 0},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual(payload["products"][0]["reference"], "NK-001")
+        self.assertEqual(payload["products"][0]["category"], "Motor / Empaques")
+        self.assertEqual(payload["products"][0]["applications"], ["Toyota Corolla"])
+
     async def test_decision_requires_same_origin_and_exact_csrf(self) -> None:
         await self.login()
         queue = await self.client.get(f"/operator/plans/{PLAN_ID}?state=pending")
@@ -986,7 +1016,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.25.0")
+        self.assertEqual(OPERATOR_VERSION, "1.26.0")
 
     async def test_company_identity_upload_requires_csrf_and_records_logo_without_exposing_it(self) -> None:
         await self.login()

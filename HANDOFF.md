@@ -1,5 +1,17 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: selector visual de productos v1.26
+
+- El compositor permite buscar y seleccionar visualmente productos de un release publicado. La
+  búsqueda incluye referencia, nombre, categoría/tipo, aplicaciones, motor y marca vehicular;
+  pagina 24 resultados y muestra la miniatura aprobada con `contain` cuando existe.
+- Las casillas se sincronizan con `selected_references`, por lo que preview y exportación conservan
+  la validación exacta, el límite y el checksum existentes. **Usar todos** vacía la selección explícita.
+- La nueva lectura JSON es autenticada, de solo lectura, limita búsqueda/paginación y vuelve a
+  validar el release completo antes de responder. Errores inesperados reciben diagnóstico seguro.
+- Verificación: 57 pruebas focalizadas, sintaxis JavaScript y 258 pruebas completas pasan; 6
+  integraciones PostgreSQL se omiten sin credenciales. No requiere migración.
+
 ## Bloque 2026-08-27: compositor web persistente v1.25
 
 - La configuración de cada release se guarda automáticamente en `localStorage`: título, subtítulo,
