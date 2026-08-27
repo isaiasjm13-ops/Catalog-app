@@ -72,6 +72,33 @@ def promote_intake_to_dry_run(
     reason: str,
     max_rows: int = DEFAULT_MAX_PILOT_ROWS,
 ) -> dict[str, Any]:
+    lock_kwargs = config.connection_kwargs(password)
+    with psycopg.connect(**lock_kwargs, autocommit=True) as lock_connection:
+        lock_connection.execute(
+            "SELECT pg_advisory_lock(hashtextextended(%s, 0))", (str(submission_id),)
+        )
+        try:
+            return _promote_intake_to_dry_run_locked(
+                submission_id, intake_root, config, password, output_dir,
+                actor=actor, reason=reason, max_rows=max_rows,
+            )
+        finally:
+            lock_connection.execute(
+                "SELECT pg_advisory_unlock(hashtextextended(%s, 0))", (str(submission_id),)
+            )
+
+
+def _promote_intake_to_dry_run_locked(
+    submission_id: uuid.UUID,
+    intake_root: Path,
+    config: DatabaseConfig,
+    password: str,
+    output_dir: Path,
+    *,
+    actor: str,
+    reason: str,
+    max_rows: int = DEFAULT_MAX_PILOT_ROWS,
+) -> dict[str, Any]:
     actor, reason = _actor(actor), _reason(reason)
     root = Path(intake_root).resolve()
     promotion_id = uuid.uuid4()
@@ -79,7 +106,6 @@ def promote_intake_to_dry_run(
     dry_run: dict[str, Any] | None = None
     with psycopg.connect(**config.connection_kwargs(password)) as connection:
         connection.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
-        connection.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (str(submission_id),))
         with connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
                 """
@@ -119,6 +145,11 @@ def promote_intake_to_dry_run(
             raise RuntimeError("El objeto en cuarentena falta o no coincide con su tamaño registrado.")
         if _sha256(source) != submission["sha256"]:
             raise RuntimeError("El objeto en cuarentena no coincide con su SHA-256 registrado.")
+
+        # run_dry_run persiste el plan mediante otra conexión. Cerrar este snapshot
+        # SERIALIZABLE antes de ejecutarlo permite que la transacción siguiente vea
+        # ese plan al validar la FK; el advisory lock de sesión conserva exclusión.
+        connection.commit()
 
         relative = PurePosixPath("processing", str(promotion_id), submission["original_name"])
         processing_path = _confined(root, relative.as_posix())

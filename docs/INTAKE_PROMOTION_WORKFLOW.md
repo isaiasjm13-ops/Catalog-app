@@ -28,7 +28,10 @@ La operación sólo admite `odoo_data` con estado `quarantined`. Antes de proces
 6. registra el vínculo inmutable con el plan generado.
 
 La promoción repetida devuelve `already_promoted`; un bloqueo PostgreSQL por submission evita dos
-ejecuciones concurrentes. Ningún paso aprueba, aplica, activa o publica productos. Ante un fallo
+ejecuciones concurrentes. El bloqueo es de sesión y vive en una conexión autocommit separada: la
+transacción SERIALIZABLE de lectura se confirma antes de que otra conexión cree el plan del dry-run,
+y el enlace final usa un snapshot nuevo que ya puede validar su FK. Ningún paso aprueba, aplica,
+activa o publica productos. Ante un fallo
 antes de completar el dry-run se elimina la copia de procesamiento; si el plan ya quedó persistido,
 la copia se conserva para no romper la ruta auditada en `import_file`. El original permanece intacto.
 
@@ -38,3 +41,5 @@ Después de aplicar `0008`, `INICIAR-REVISOR.cmd` muestra **Promover a dry-run**
 Odoo aceptados que aún no tengan promoción. La acción requiere un POST individual, sesión vigente,
 Origin local, CSRF exacto, motivo y confirmación. No existe promoción por GET ni selección masiva.
 Al completar, el historial muestra el plan enlazado; éste continúa en `awaiting_review`.
+Un fallo inesperado devuelve un identificador diagnóstico de 8 caracteres que también aparece en la
+consola junto al tipo de excepción y SQLSTATE, pero no muestra ni registra el mensaje crudo potencialmente sensible.

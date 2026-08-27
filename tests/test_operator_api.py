@@ -6,6 +6,7 @@ import json
 import tempfile
 import unittest
 import uuid
+from unittest import mock
 from pathlib import Path
 from typing import Any
 
@@ -812,6 +813,26 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         history = await self.client.get("/operator/intake")
         self.assertIn("Dry-run creado", history.text)
         self.assertNotIn("Promover a dry-run", history.text)
+
+    async def test_unexpected_promotion_failure_has_safe_correlated_diagnostic(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/intake")
+        csrf = hidden_value(page.text, "csrf_token")
+        submission_id = str(uuid.uuid4())
+        with (
+            mock.patch.object(self.gateway, "promote_intake", side_effect=OSError("sensitive raw detail")),
+            self.assertLogs("perfect_catalog.operator_api", level="ERROR") as captured,
+        ):
+            response = await self.client.post(
+                f"/operator/intake/{submission_id}/promote",
+                data={"csrf_token": csrf, "reason": "Reintento controlado", "confirm": "yes"},
+                headers={"Origin": "http://testserver"},
+            )
+        self.assertEqual(response.status_code, 503)
+        self.assertRegex(response.text, r"Diagnóstico [0-9a-f]{8}")
+        self.assertNotIn("sensitive raw detail", response.text)
+        self.assertNotIn("sensitive raw detail", "\n".join(captured.output))
+        self.assertIn("error_type=OSError", "\n".join(captured.output))
 
     async def test_image_archive_index_is_individual_and_never_extracts_from_route(self) -> None:
         await self.login()

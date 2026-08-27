@@ -5,6 +5,7 @@ import base64
 import getpass
 import hashlib
 import hmac
+import logging
 import secrets
 import sys
 import threading
@@ -52,6 +53,7 @@ from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
 OPERATOR_VERSION = "1.5.0"
+LOGGER = logging.getLogger(__name__)
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
 LOGIN_COOKIE_PATH = "/operator"
@@ -1187,10 +1189,15 @@ def create_operator_app(
             )
         except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
             return _error(environment, 409, "Promoción no aplicada", str(exc), session=session)
-        except Exception:
+        except Exception as exc:
+            diagnostic_id = secrets.token_hex(4)
+            LOGGER.error(
+                "promotion_failed diagnostic_id=%s submission_id=%s error_type=%s sqlstate=%s",
+                diagnostic_id, submission_id, type(exc).__name__, getattr(exc, "sqlstate", None),
+            )
             return _error(
                 environment, 503, "Promoción no disponible",
-                "No se creó el dry-run. Verifica que la migración 0008 esté aplicada y revisa la consola.",
+                f"No se creó el dry-run. Diagnóstico {diagnostic_id}; revisa esa referencia en la consola.",
                 session=session,
             )
         return RedirectResponse(

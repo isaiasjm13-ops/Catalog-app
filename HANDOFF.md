@@ -136,7 +136,12 @@
   una ruta autenticada limitada a UUID de release, exportación y recibo. UUID ajeno devuelve 404.
 - El JSX deja de heredar preferencias del puesto: fija A4 vertical, puntos, origen por página, páginas no
   enfrentadas y sangrado uniforme de 3 mm antes de crear marcos. El INDD conserva formato/sangrado en labels.
-- Suite local actual: 206 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
+- Corregido el fallo real de `Promover a dry-run`: una transacción SERIALIZABLE permanecía abierta mientras
+  otra conexión creaba el plan, por lo que el snapshot inicial no podía verlo al insertar la FK de `0008`.
+- La exclusión usa ahora advisory lock de sesión en una conexión autocommit; la lectura termina antes del
+  dry-run y la escritura final abre un snapshot nuevo. Fallos inesperados muestran/loguean un ID correlacionado
+  de 8 hex sin exponer el texto crudo de la excepción.
+- Suite local actual: 208 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
 
