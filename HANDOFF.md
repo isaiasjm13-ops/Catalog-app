@@ -4,6 +4,12 @@
 
 ### Resultado de esta sesión
 
+- Parser vehicular v2 calibrado de forma agregada contra las muestras locales Perfect (896 filas) y
+  PDM (154), sin copiar datos reales al repositorio. Añade perfiles de fuente, marcas/abreviaturas,
+  años validados, cilindrada/códigos de motor con confianza diferenciada, posiciones canónicas, FMSI,
+  referencias adicionales y corchetes PDM prudentes. El importador Natsuki incluye `name_enrichment`
+  pendiente dentro de cada plan/fingerprint, pero apply/publicación aún no materializan inferencias.
+  Las cantidades alternativas de PDM se ignoran deliberadamente según decisión del usuario.
 - Consola operador v1.7 permite aprobar o rechazar en una sola transacción hasta 500 identidades
   pendientes del filtro actual. Exige motivo y confirmación específica, vuelve a consultar el conjunto,
   compara el conteo esperado y recalcula cada `review_sha256`; ante cualquier cambio revierte todo.
@@ -151,7 +157,7 @@
 - La exclusión usa ahora advisory lock de sesión en una conexión autocommit; la lectura termina antes del
   dry-run y la escritura final abre un snapshot nuevo. Fallos inesperados muestran/loguean un ID correlacionado
   de 8 hex sin exponer el texto crudo de la excepción.
-- Suite local actual: 212 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
+- Suite local actual: 218 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
 

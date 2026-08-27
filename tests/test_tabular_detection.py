@@ -8,10 +8,14 @@ class TabularDetectionTests(unittest.TestCase):
         headers = ["SKU", "Descripción", "Campo nuevo"]
         self.assertEqual(detect_columns(headers), {"name": "Descripción", "internal_reference": "SKU"})
 
+    def test_pdm_additional_reference_column_is_detected_without_quantity_mapping(self) -> None:
+        result = detect_columns(("Nombre", "Referencia interna", "Referencias Adicionales", "Cantidad a mano"))
+        self.assertEqual(result["additional_references"], "Referencias Adicionales")
+        self.assertNotIn("quantity_available", result)
+
     def test_cp1252_and_semicolon_are_profiled(self) -> None:
         profile = profile_text_table("CÓDIGO;DESCRIPCIÓN\nA-1;Empaque\n".encode("cp1252"))
         self.assertEqual(profile.encoding, "cp1252")
         self.assertEqual(profile.delimiter, ";")
         self.assertEqual(profile.suggestions["internal_reference"], "CÓDIGO")
         self.assertEqual(profile.suggestions["name"], "DESCRIPCIÓN")
-

@@ -12,6 +12,7 @@ ALIASES = {
     "internal_reference": ("referencia interna", "internal reference", "default code", "sku", "codigo", "código"),
     "category": ("categoria de producto", "categoría de producto", "category", "categoria"),
     "quantity_available": ("cantidad disponible", "available quantity", "qty available"),
+    "additional_references": ("referencias adicionales", "additional references", "referencias alternas"),
 }
 
 

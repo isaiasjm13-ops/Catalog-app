@@ -5,10 +5,18 @@ SQLite ni upsert. Los módulos son servicios puros y no ejecutan consultas ni es
 
 ## Sugerencias desde nombres
 
-`perfect_catalog.name_parser.parse_product_name()` reconoce algunas marcas, años, motores,
-posiciones y referencias OEM. Todo resultado declara `parser_version` y
-`review_status=pending_review`; es evidencia propuesta, no una aplicación vehicular aprobada y no
-puede activar o publicar un producto.
+`perfect_catalog.name_parser.parse_product_name()` v2 reconoce marcas y abreviaturas, rangos de años,
+cilindradas, códigos de motor candidatos, posiciones canónicas, FMSI y referencias adicionales. Los
+perfiles `perfect`, `pdm` y `generic` conservan procedencia separada: en particular, PDM mantiene el
+contenido entre corchetes como referencia candidata y no lo afirma automáticamente como OEM. Cada
+aplicación y evidencia declara confianza, versión y `review_status=pending_review`; no puede activar
+ni publicar un producto.
+
+El importador Natsuki incorpora este resultado completo a `name_enrichment` dentro del dry-run y del
+fingerprint. La aplicación empresarial todavía ignora esas sugerencias: materializarlas en las tablas
+vehiculares requiere un workflow humano posterior. `Referencias Adicionales`, cuando existe como
+columna dedicada, se conserva con confianza 1.0 como evidencia exacta de la fuente, no como referencia
+primaria aprobada.
 
 ## Detección tabular
 

@@ -74,6 +74,7 @@ data/exports/indd/
 data/exports/idml/
 data/exports/imports/
 data/exports/profiles/
+data/exports/catalogs/
 !data/exports/.gitkeep
 
 # === BASES DE DATOS ===

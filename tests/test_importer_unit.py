@@ -198,6 +198,20 @@ class RowPreparationTests(unittest.TestCase):
         self.assertEqual(contract.unknown, ("Campo nuevo de Odoo",))
         self.assertEqual(row.raw_values["Campo nuevo de Odoo"], "evidencia")
 
+    def test_name_enrichment_preserves_additional_reference_as_pending_evidence(self) -> None:
+        headers = ("Referencia interna", "Nombre", "Referencias Adicionales", "Cantidad a mano")
+        row = prepare_rows(
+            "Synthetic", headers,
+            [["PDM-001", "PASTILLA CHEV. AVEO 04-10 DEL. [D1035-7779]", "ALT-99", 12]],
+            [2],
+        )[0]
+        enrichment = row.normalized["name_enrichment"]
+        self.assertEqual(enrichment["review_status"], "pending_review")
+        self.assertEqual(enrichment["additional_references"], ["ALT-99"])
+        self.assertEqual(enrichment["applications"][0]["vehicle_brand"], "Chevrolet")
+        self.assertIsNone(row.normalized["quantity_on_hand"])
+        self.assertNotIn("quantity_on_hand_invalid", {issue["code"] for issue in row.issue_specs})
+
     def test_missing_required_header_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "columnas críticas"):
             validate_headers(header for header in EXPECTED_HEADERS if header != "Referencia interna")

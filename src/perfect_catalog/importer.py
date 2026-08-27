@@ -18,6 +18,7 @@ from tools.odoo_profiler import read_tabular_source, sha256_file
 
 from .canonical import canonical_sha256, normalize_name, normalize_reference
 from .config import DatabaseConfig
+from .name_parser import parse_product_name
 
 
 CONTRACT_VERSION = "natsuki-empaques-v0.2"
@@ -294,6 +295,11 @@ def prepare_rows(sheet_name: str, headers: tuple[str, ...], rows: list[list[Any]
             "show_quantity_status": _as_bool(field("Mostrar botón de estado de cantidad real")),
             "source_active": None,
             "catalog_status": "pending_review",
+            "name_enrichment": parse_product_name(
+                name_original,
+                source_profile="perfect",
+                additional_references=field("Referencias Adicionales") or "",
+            ),
         }
         row_evidence = {
             "headers": list(headers),
@@ -446,6 +452,10 @@ def _write_reports(summary: dict[str, Any], output_dir: Path) -> tuple[Path, Pat
         f"- Warnings / errores / bloqueos / conflictos: {summary['issues']['warning']} / {summary['issues']['error']} / {summary['plan_counts']['blocked']} / {summary['plan_counts']['conflict']}",
         f"- Grupos de nombres duplicados: {summary['duplicate_name_groups']}",
         f"- Referencias únicas: {summary['unique_references']}",
+        f"- Parser vehicular: `{summary['name_enrichment']['parser_version']}` (`pending_review`)",
+        f"- Aplicaciones sugeridas / confianza alta: {summary['name_enrichment']['application_suggestions']} / {summary['name_enrichment']['high_confidence_applications']}",
+        f"- Motores sugeridos / filas con años / filas con posición: {summary['name_enrichment']['engine_suggestions']} / {summary['name_enrichment']['with_year_range']} / {summary['name_enrichment']['with_position']}",
+        f"- OEM / FMSI / referencias adicionales sugeridas: {summary['name_enrichment']['oem_reference_suggestions']} / {summary['name_enrichment']['fmsi_reference_suggestions']} / {summary['name_enrichment']['dedicated_additional_references']}",
         f"- Escrituras empresariales: {summary['business_writes']}",
         "",
         "El contenido Base64 no se incluye en este reporte y ninguna imagen fue decodificada.",
@@ -697,6 +707,7 @@ def run_dry_run(
                         "source_updated_at": row.normalized["source_updated_at"],
                         "catalog_status": "pending_review",
                         "source_active": None,
+                        "name_enrichment": row.normalized["name_enrichment"],
                     },
                     row_issue_codes,
                 ))
@@ -786,6 +797,12 @@ def run_dry_run(
         raise RuntimeError("El hash del archivo cambió después del dry-run.")
     names = Counter(row.normalized["name_normalized"] for row in prepared)
     references = [row.normalized["internal_reference_normalized"] for row in prepared]
+    enrichments = [row.normalized["name_enrichment"] for row in prepared]
+    application_suggestions = [
+        application
+        for enrichment in enrichments
+        for application in enrichment["applications"]
+    ]
     summary = {
         "batch_id": str(batch_id),
         "file_id": str(file_id),
@@ -802,6 +819,23 @@ def run_dry_run(
         "classified_rows": len(prepared),
         "unique_references": len(set(references)),
         "duplicate_name_groups": sum(count > 1 for count in names.values()),
+        "name_enrichment": {
+            "parser_version": enrichments[0]["parser_version"] if enrichments else None,
+            "review_status": "pending_review",
+            "application_suggestions": len(application_suggestions),
+            "high_confidence_applications": sum(
+                application["confidence"] >= 0.8 for application in application_suggestions
+            ),
+            "engine_suggestions": sum(len(item["engine_suggestions"]) for item in enrichments),
+            "with_year_range": sum(
+                any(application["years"] is not None for application in item["applications"])
+                for item in enrichments
+            ),
+            "with_position": sum(bool(item["positions"]) for item in enrichments),
+            "oem_reference_suggestions": sum(len(item["oem_references"]) for item in enrichments),
+            "fmsi_reference_suggestions": sum(len(item["fmsi_references"]) for item in enrichments),
+            "dedicated_additional_references": sum(len(item["additional_references"]) for item in enrichments),
+        },
         "media_present": sum(row.normalized["image_status"] == "present" for row in prepared),
         "media_absent": sum(row.normalized["image_status"] == "absent" for row in prepared),
         "media_not_exported": sum(row.normalized["image_status"] == "not_exported" for row in prepared),
