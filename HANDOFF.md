@@ -16,6 +16,9 @@
   **Catálogos**, crear una versión nueva (por ejemplo `2026.27.08-r2`), publicar y exportar. El
   release anterior conserva cero imágenes por diseño y no se modifica.
 - Verificación automatizada: 246 pruebas pasan; 6 integraciones PostgreSQL se omiten sin contraseña.
+- Ajuste posterior de composición: las fotografías usan encaje proporcional completo en vista
+  previa, HTML, PDF, PowerPoint e InDesign. Las cajas pueden dejar espacio libre, pero nunca recortan
+  ni deforman el producto; PowerPoint calcula además el centrado para formatos extremos.
 
 ## Bloque 2026-08-27: perfiles de marca v1
 

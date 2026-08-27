@@ -10,7 +10,10 @@ import uuid
 import zipfile
 from pathlib import Path
 
-from perfect_catalog.catalog_exports import export_rows_from_release, generate_catalog_html, generate_catalog_pdf, generate_catalog_pptx, generate_indesign_datamerge_csv
+from perfect_catalog.catalog_exports import (
+    _contained_size, export_rows_from_release, generate_catalog_html,
+    generate_catalog_pdf, generate_catalog_pptx, generate_indesign_datamerge_csv,
+)
 from perfect_catalog.catalog_export_job import (
     build_catalog_bundle,
     build_catalog_preview,
@@ -45,6 +48,13 @@ def fixture_release():
 
 
 class CatalogExportTests(unittest.TestCase):
+    def test_contained_image_size_never_crops_distorts_or_upscales(self) -> None:
+        self.assertEqual(_contained_size(2000, 500, 4, 3), (4, 1))
+        self.assertEqual(_contained_size(500, 2000, 4, 3), (.75, 3))
+        self.assertEqual(_contained_size(2, 1, 4, 3), (2, 1))
+        with self.assertRaises(ValueError):
+            _contained_size(0, 1, 4, 3)
+
     def test_indesign_layout_estimate_matches_cover_separators_and_profile_capacity(self) -> None:
         estimate = estimate_indesign_layout(
             [{"count": 5}, {"count": 17}], "T4"
