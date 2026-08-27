@@ -92,8 +92,10 @@ vez, ejecuta `MIGRAR-INGRESOS.cmd`. Recibe XLSX/CSV/TSV de Odoo, PDF y paquetes 
 InDesign, calcula SHA-256 y los conserva en cuarentena sin importar ni publicar automáticamente.
 Véase [`docs/INTAKE_WORKFLOW.md`](docs/INTAKE_WORKFLOW.md).
 
-Actualmente la pantalla mostrará “No hay planes aplicados para revisar”: es correcto, porque ningún
-plan empresarial ha sido aplicado. Véase [`docs/OPERATOR_WEB.md`](docs/OPERATOR_WEB.md).
+Un dry-run se inspecciona desde **Ingresos** mediante **Inspeccionar y autorizar plan**. La consola
+web exige dos decisiones separadas y auditadas: primero aprobar el fingerprint exacto (sin escribir
+productos) y luego aplicar el plan aprobado. Los productos aplicados quedan pendientes de revisión
+individual; nunca se publican automáticamente. Véase [`docs/OPERATOR_WEB.md`](docs/OPERATOR_WEB.md).
 
 Sin `--source` ni `--source-dir`, la API v1.1 lee por defecto el último release publicado de la
 marca solicitada y expone UUID estables. El release completo y cada snapshot se validan contra sus

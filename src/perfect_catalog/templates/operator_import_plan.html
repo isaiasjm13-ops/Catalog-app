@@ -1,0 +1,51 @@
+{% extends "operator_base.html" %}
+{% block title %}Inspección del plan{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><span class="kicker">Control de importación</span><h1>Inspección del dry-run</h1><p>Verifica la evidencia antes de permitir cualquier escritura empresarial.</p></div>
+  <span class="state-pill {% if plan.plan_status == 'applied' %}complete{% else %}pending{% endif %}">{{ plan.plan_status }}</span>
+</section>
+{% if message %}<div class="notice success">{{ message }}</div>{% endif %}
+<section class="plan-inspection">
+  <article>
+    <span class="row-label">Alcance calculado</span>
+    <strong>{{ plan.item_count }}</strong><span>operaciones del plan</span>
+  </article>
+  <dl>
+    <div><dt>UUID</dt><dd><code>{{ plan.plan_id }}</code></dd></div>
+    <div><dt>Estado</dt><dd>{{ plan.plan_status }}</dd></div>
+    <div><dt>Contrato</dt><dd>{{ plan.contract_version }}</dd></div>
+    <div><dt>Reglas</dt><dd>{{ plan.rules_version }}</dd></div>
+    <div><dt>SHA-256 del archivo</dt><dd><code>{{ plan.file_sha256 }}</code></dd></div>
+    <div><dt>SHA-256 del plan</dt><dd><code>{{ plan.plan_sha256 }}</code></dd></div>
+    <div><dt>Fingerprint de autorización</dt><dd><code>{{ plan.approval_fingerprint_sha256 }}</code></dd></div>
+  </dl>
+</section>
+{% if plan.plan_status == 'awaiting_review' %}
+<section class="transition-panel">
+  <h2>1. Aprobar evidencia exacta</h2>
+  <p>Comprueba la integridad y autoriza este fingerprint. Esta acción todavía no crea productos.</p>
+  <form method="post" action="/operator/import-plans/{{ plan.plan_id }}/approve">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><input type="hidden" name="fingerprint" value="{{ plan.approval_fingerprint_sha256 }}">
+    <label><span>Motivo de aprobación</span><textarea name="reason" minlength="4" maxlength="500" required></textarea></label>
+    <label class="confirm-field"><input type="checkbox" name="confirm" value="approve" required><span>Confirmo que revisé el UUID, hashes, versiones y alcance de este plan.</span></label>
+    <button class="primary-button" type="submit">Aprobar plan exacto</button>
+  </form>
+</section>
+{% elif plan.plan_status == 'approved' %}
+<section class="transition-panel danger-zone">
+  <h2>2. Aplicar plan aprobado</h2>
+  <p>Esta acción crea los productos admitidos en estado pendiente. Después deberás revisar cada identidad antes de publicar.</p>
+  <form method="post" action="/operator/import-plans/{{ plan.plan_id }}/apply">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><input type="hidden" name="fingerprint" value="{{ plan.approval_fingerprint_sha256 }}">
+    <label><span>Motivo de aplicación</span><textarea name="reason" minlength="4" maxlength="500" required></textarea></label>
+    <label class="confirm-field"><input type="checkbox" name="confirm" value="apply" required><span>Confirmo la escritura de este plan aprobado y la revisión individual posterior.</span></label>
+    <button class="primary-button" type="submit">Aplicar plan aprobado</button>
+  </form>
+</section>
+{% elif plan.plan_status == 'applied' %}
+<section class="transition-panel"><h2>Plan aplicado</h2><p>Continúa con la revisión individual; ningún producto queda publicado automáticamente.</p><a class="primary-button" href="/operator/plans/{{ plan.plan_id }}?state=pending">Abrir cola de revisión</a></section>
+{% else %}
+<section class="transition-panel"><h2>Acción bloqueada</h2><p>El estado actual no admite aprobación ni aplicación desde esta pantalla.</p></section>
+{% endif %}
+{% endblock %}

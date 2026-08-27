@@ -32,6 +32,9 @@ Al cerrar la ventana se pierden clave de sesión, código y sesiones activas.
 ## Flujo visible
 
 - La portada enumera únicamente planes en estado `applied` que crearon identidades.
+- Tras crear un dry-run, **Ingresos** enlaza una inspección separada que muestra UUID, cantidad de
+  operaciones, versiones, hashes y fingerprint completos. Un primer POST aprueba la evidencia sin
+  escribir productos; sólo un segundo POST explícito permite aplicar el plan aprobado.
 - Cada plan muestra pendientes, aprobadas, rechazadas e inconsistentes.
 - La cola usa 50 registros por página y consulta set-based; admite más de 25,000 sin cargar todo el
   catálogo en HTML ni ejecutar una consulta por producto.
@@ -42,8 +45,9 @@ Al cerrar la ventana se pierden clave de sesión, código y sesiones activas.
 - Tras la decisión se usa redirect-after-POST; refrescar no repite la escritura.
 - Inconsistencias estructurales se muestran bloqueadas y deben investigarse fuera de la UI.
 
-La decisión vuelve a verificar el plan completo, fingerprint, identidad y hash dentro de una
-transacción serializable. La web no implementa una ruta de aprobación masiva.
+Cada transición vuelve a verificar el plan completo, fingerprint, archivo físico, identidad y hashes.
+La aplicación usa una transacción serializable y la revisión continúa siendo estrictamente individual;
+la web no implementa aprobación masiva de productos.
 
 ## Controles de seguridad
 
@@ -62,11 +66,11 @@ transacción serializable. La web no implementa una ruta de aprobación masiva.
 El uso es local, pero eso no reemplaza los controles: un navegador puede recibir solicitudes de
 otros sitios aun cuando el servidor escuche solo en loopback.
 
-## Estado esperado hoy
+## Estado esperado tras el dry-run
 
-La portada debe indicar que no hay planes aplicados. El dry-run crea evidencia y planes pendientes,
-pero no productos revisables. No se debe ejecutar `approve-plan` ni `apply-plan` sobre el archivo
-empresarial solo para poblar esta pantalla; hace falta autorización explícita para ese fingerprint.
+La portada indica que no hay planes aplicados hasta completar las dos decisiones explícitas desde
+la inspección enlazada en **Ingresos**. La primera deja el plan en `approved`; la segunda lo lleva a
+`applied` y habilita la cola. Ninguna de las dos publica el catálogo.
 # Promoción individual de ingresos
 
 La versión 1.2 añade en `/operator/intake` una acción individual para datos Odoo en cuarentena. Sólo

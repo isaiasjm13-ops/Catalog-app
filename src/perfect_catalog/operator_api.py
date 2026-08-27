@@ -52,7 +52,7 @@ from .importer import DEFAULT_MAX_PILOT_ROWS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.5.0"
+OPERATOR_VERSION = "1.6.0"
 LOGGER = logging.getLogger(__name__)
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
@@ -70,6 +70,16 @@ class ReviewGateway(Protocol):
     def plans(self, *, limit: int = 100) -> list[dict[str, Any]]: ...
 
     def plan(self, plan_id: uuid.UUID) -> dict[str, Any] | None: ...
+
+    def import_plan(self, plan_id: uuid.UUID) -> dict[str, Any]: ...
+
+    def approve_import_plan(
+        self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
+    ) -> dict[str, Any]: ...
+
+    def apply_import_plan(
+        self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
+    ) -> dict[str, Any]: ...
 
     def page(
         self,
@@ -1426,6 +1436,68 @@ def create_operator_app(
             session=session_or_redirect,
             version=OPERATOR_VERSION,
         )
+
+    @app.get("/operator/import-plans/{plan_id}", response_class=HTMLResponse)
+    async def inspect_import_plan_route(request: Request, plan_id: str) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            plan = await run_in_threadpool(gateway.import_plan, _uuid(plan_id, "plan_id"))
+        except ValueError as exc:
+            return _error(environment, 404, "Plan no encontrado", str(exc), session=session_or_redirect)
+        except Exception:
+            return _error(environment, 503, "PostgreSQL no disponible", "No se pudo inspeccionar el plan. Revisa la consola.", session=session_or_redirect)
+        result = request.query_params.get("result")
+        message = {
+            "approved": "Plan aprobado. Aún no se han creado productos.",
+            "applied": "Plan aplicado. Sus productos ya están pendientes de revisión individual.",
+            "already_applied": "El plan ya estaba aplicado.",
+        }.get(result)
+        return _render(
+            environment, "operator_import_plan.html", plan=plan, message=message,
+            session=session_or_redirect, version=OPERATOR_VERSION,
+        )
+
+    async def _import_plan_transition(
+        request: Request, plan_id: str, transition: str,
+    ) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "fingerprint", "reason", "confirm"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
+                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            reason = _require_text(form["reason"], "reason")
+            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
+                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
+            if form["confirm"] != transition:
+                raise ValueError("La confirmación explícita no coincide con la operación.")
+            parsed_plan_id = _uuid(plan_id, "plan_id")
+            action = gateway.approve_import_plan if transition == "approve" else gateway.apply_import_plan
+            result = await run_in_threadpool(
+                action, parsed_plan_id, form["fingerprint"], session.actor, reason,
+            )
+        except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
+            return _error(environment, 409, "Operación no aplicada", str(exc), session=session)
+        except Exception:
+            return _error(environment, 503, "Operación no disponible", "No se modificó el plan. Revisa la consola.", session=session)
+        return RedirectResponse(
+            f"/operator/import-plans/{plan_id}?{urlencode({'result': str(result['status'])})}",
+            status_code=303,
+        )
+
+    @app.post("/operator/import-plans/{plan_id}/approve")
+    async def approve_import_plan_route(request: Request, plan_id: str) -> Response:
+        return await _import_plan_transition(request, plan_id, "approve")
+
+    @app.post("/operator/import-plans/{plan_id}/apply")
+    async def apply_import_plan_route(request: Request, plan_id: str) -> Response:
+        return await _import_plan_transition(request, plan_id, "apply")
 
     @app.post("/operator/plans/{plan_id}/products/{product_id}/decision")
     async def decide(request: Request, plan_id: str, product_id: str) -> Response:

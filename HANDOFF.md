@@ -4,6 +4,11 @@
 
 ### Resultado de esta sesión
 
+- Consola operador v1.6 elimina el callejón sin salida posterior al dry-run: el enlace de Ingresos
+  abre una inspección del UUID, alcance, versiones, hashes y fingerprint. Desde allí se puede aprobar
+  y, en un segundo formulario explícito, aplicar el plan. Ambas transiciones conservan sesión local,
+  CSRF, validación de origen, actor, motivo, confirmación y verificación criptográfica; aplicar sólo
+  crea productos pendientes y conduce a la revisión individual.
 - Nueva navegación `Catálogos` en la consola operador con listado de planes, releases y entregables.
 - Construcción individual de borradores y publicación por checksum exacto desde formularios con sesión,
   Origin, CSRF, confirmación y actor derivado de la sesión; no existen acciones masivas.
@@ -141,7 +146,7 @@
 - La exclusión usa ahora advisory lock de sesión en una conexión autocommit; la lectura termina antes del
   dry-run y la escritura final abre un snapshot nuevo. Fallos inesperados muestran/loguean un ID correlacionado
   de 8 hex sin exponer el texto crudo de la excepción.
-- Suite local actual: 208 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
+- Suite local actual: 209 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
 

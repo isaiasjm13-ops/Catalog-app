@@ -38,6 +38,7 @@ class SyntheticReviewGateway:
         self.image_candidate_data: list[dict[str, Any]] = []
         self.catalog_exports: list[dict[str, Any]] = []
         self.release_changes: list[dict[str, Any]] = []
+        self.import_plan_status = "awaiting_review"
         self.release_data = [{
             "catalog_release_id": str(RELEASE_ID),
             "brand_id": str(uuid.uuid4()), "version": "2026.08", "status": "published",
@@ -68,6 +69,32 @@ class SyntheticReviewGateway:
 
     def plan(self, plan_id: uuid.UUID) -> dict[str, Any] | None:
         return self.plan_data if plan_id == PLAN_ID else None
+
+    def import_plan(self, plan_id: uuid.UUID) -> dict[str, Any]:
+        if plan_id != PLAN_ID:
+            raise ValueError(f"No existe el plan {plan_id}.")
+        return {
+            "plan_id": str(plan_id), "plan_status": self.import_plan_status,
+            "plan_sha256": "d" * 64, "approval_fingerprint_sha256": FINGERPRINT,
+            "file_sha256": "e" * 64, "contract_version": "contract-test",
+            "rules_version": "rules-test", "item_count": 1,
+        }
+
+    def approve_import_plan(
+        self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
+    ) -> dict[str, Any]:
+        if plan_id != PLAN_ID or fingerprint != FINGERPRINT or self.import_plan_status != "awaiting_review":
+            raise PermissionError("Aprobación rechazada")
+        self.import_plan_status = "approved"
+        return {"plan_id": str(plan_id), "status": "approved", "approved_by": actor}
+
+    def apply_import_plan(
+        self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
+    ) -> dict[str, Any]:
+        if plan_id != PLAN_ID or fingerprint != FINGERPRINT or self.import_plan_status != "approved":
+            raise PermissionError("Aplicación rechazada")
+        self.import_plan_status = "applied"
+        return {"plan_id": str(plan_id), "status": "applied", "counts": {"create": 1}}
 
     def page(
         self,
@@ -480,6 +507,50 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(REVIEW_SHA256, queue.text)
         self.assertNotIn("<script>incorrecto</script>", queue.text)
 
+    async def test_import_plan_requires_explicit_approve_then_apply(self) -> None:
+        await self.login()
+        detail = await self.client.get(f"/operator/import-plans/{PLAN_ID}")
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn("Aprobar plan exacto", detail.text)
+        self.assertIn(FINGERPRINT, detail.text)
+
+        rejected = await self.client.post(
+            f"/operator/import-plans/{PLAN_ID}/approve",
+            data={
+                "csrf_token": hidden_value(detail.text, "csrf_token"),
+                "fingerprint": FINGERPRINT, "reason": "Revisión piloto", "confirm": "wrong",
+            },
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(rejected.status_code, 409)
+        self.assertEqual(self.gateway.import_plan_status, "awaiting_review")
+
+        approved = await self.client.post(
+            f"/operator/import-plans/{PLAN_ID}/approve",
+            data={
+                "csrf_token": hidden_value(detail.text, "csrf_token"),
+                "fingerprint": FINGERPRINT, "reason": "Revisión piloto", "confirm": "approve",
+            },
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(approved.status_code, 303)
+        self.assertIn("result=approved", approved.headers["location"])
+
+        approved_detail = await self.client.get(f"/operator/import-plans/{PLAN_ID}")
+        self.assertIn("Aplicar plan aprobado", approved_detail.text)
+        applied = await self.client.post(
+            f"/operator/import-plans/{PLAN_ID}/apply",
+            data={
+                "csrf_token": hidden_value(approved_detail.text, "csrf_token"),
+                "fingerprint": FINGERPRINT, "reason": "Aplicación autorizada", "confirm": "apply",
+            },
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(applied.status_code, 303)
+        self.assertIn("result=applied", applied.headers["location"])
+        final_detail = await self.client.get(f"/operator/import-plans/{PLAN_ID}?result=applied")
+        self.assertIn("Abrir cola de revisión", final_detail.text)
+
     async def test_catalog_workspace_exports_and_downloads_manifest_files(self) -> None:
         await self.login()
         page = await self.client.get("/operator/catalogs")
@@ -771,7 +842,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.5.0")
+        self.assertEqual(OPERATOR_VERSION, "1.6.0")
 
     async def test_promotion_requires_individual_post_origin_csrf_and_confirmation(self) -> None:
         await self.login()

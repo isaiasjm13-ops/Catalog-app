@@ -909,6 +909,25 @@ class DatabaseReviewGateway:
     def plan(self, plan_id: uuid.UUID) -> dict[str, Any] | None:
         return get_review_plan(plan_id, self._config, self._password)
 
+    def import_plan(self, plan_id: uuid.UUID) -> dict[str, Any]:
+        from .importer import inspect_plan
+
+        return inspect_plan(plan_id, self._config, self._password)
+
+    def approve_import_plan(
+        self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
+    ) -> dict[str, Any]:
+        from .application import approve_plan
+
+        return approve_plan(plan_id, fingerprint, actor, reason, self._config, self._password)
+
+    def apply_import_plan(
+        self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
+    ) -> dict[str, Any]:
+        from .application import apply_approved_plan
+
+        return apply_approved_plan(plan_id, fingerprint, actor, reason, self._config, self._password)
+
     def page(
         self,
         plan_id: uuid.UUID,
