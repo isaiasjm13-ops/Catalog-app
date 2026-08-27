@@ -635,3 +635,12 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 - Antes de limpiar crea un `pg_dump` y mueve `data/imports`, `data/intake`, `data/images` y `data/exports` a `data/backups/limpieza-<fecha>`; no borra respaldos anteriores.
 - Reconstruye el esquema `perfect_catalog` y reaplica en orden las migraciones 0001-0012, eliminando importaciones y derivados sin dejar referencias huerfanas.
 - La limpieza no se ejecuta durante desarrollo ni pruebas: solo se realiza al abrir voluntariamente el nuevo lanzador y confirmar.
+- Verificacion real: la limpieza del 2026-08-27 creo un dump PostgreSQL valido de 138 MB y archivo 104 elementos (aprox. 275 MB) en `data/backups/limpieza-20260827-092235`; las cuatro carpetas activas quedaron vacias.
+- Se corrigio el limpiador para conservar `.gitkeep` sin modificarlo en futuras ejecuciones.
+
+## Proximo bloque acordado - Perfiles de marca y direccion visual
+
+- La referencia visual objetivo admite portada de marca, cuadricula de productos y ficha individual para PDF/InDesign.
+- La consola solo ofrece actualmente cuatro paletas fijas (`forest`, `industrial`, `midnight`, `classic`); todavia no guarda colores o logos por marca.
+- Bloqueo funcional confirmado: `application.py` materializa altas nuevas con la constante `NATSUKI`. El campo Marca al construir un release resuelve una marca existente, no es un alta de marca.
+- Implementar antes del siguiente catalogo multimarca: migracion de perfil de marca, pantalla `Marcas`, alta/edicion auditada de nombre/codigo/logo/eslogan/colores, seleccion de marca al preparar la importacion y propagacion exacta a PDF, HTML, PPTX e InDesign.

@@ -33,6 +33,7 @@ class ClearImportedDataScriptTests(unittest.TestCase):
         self.assertIn("Assert-ChildPath -Candidate $source -Parent $dataRoot", script)
         self.assertNotIn("'backups'", script.split("$activeFolders =", 1)[1].splitlines()[0])
         self.assertIn("Move-Item", script)
+        self.assertIn("$_.Name -ne '.gitkeep'", script)
         self.assertNotIn("Remove-Item -Recurse", script)
 
     def test_public_launcher_calls_guarded_runner(self) -> None:

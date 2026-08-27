@@ -62,12 +62,17 @@ try {
         Assert-ChildPath -Candidate $destination -Parent $backupDir
         New-Item -ItemType Directory -Path $destination -Force | Out-Null
         if (Test-Path -LiteralPath $source) {
-            Get-ChildItem -LiteralPath $source -Force | Move-Item -Destination $destination -Force
+            Get-ChildItem -LiteralPath $source -Force |
+                Where-Object { $_.Name -ne '.gitkeep' } |
+                Move-Item -Destination $destination -Force
         }
         else {
             New-Item -ItemType Directory -Path $source -Force | Out-Null
         }
-        New-Item -ItemType File -Path (Join-Path $source '.gitkeep') -Force | Out-Null
+        $gitkeep = Join-Path $source '.gitkeep'
+        if (-not (Test-Path -LiteralPath $gitkeep)) {
+            New-Item -ItemType File -Path $gitkeep | Out-Null
+        }
     }
 
     Write-Host 'Limpiando datos y reaplicando migraciones...'
