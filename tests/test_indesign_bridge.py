@@ -27,6 +27,8 @@ class InDesignBridgeTests(unittest.TestCase):
             self.assertIn(f"{theme}:", script)
         self.assertIn('insertLabel("perfect_catalog_theme"', script)
         self.assertIn("themeDefinition(document, themeName, visual)", script)
+        self.assertIn("visual.secondary_color", script)
+        self.assertIn("fillColor: theme.secondary", script)
         self.assertIn("fillColor: theme.paper", script)
         self.assertIn("strokeColor = theme.primary", script)
         self.assertIn("group_count", script)

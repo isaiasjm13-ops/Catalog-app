@@ -406,6 +406,7 @@ def _release_metadata(release: dict[str, Any], item_count: int) -> dict[str, Any
         "status": str(release["status"]),
         "snapshot_sha256": str(release["snapshot_sha256"]),
         "item_count": item_count,
+        "visual_profile": dict((release.get("definition") or {}).get("visual_profile") or {}),
     }
 
 

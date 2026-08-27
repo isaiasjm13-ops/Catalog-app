@@ -13,6 +13,7 @@ from typing import Any, Iterable
 from PIL import Image as PILImage, ImageOps
 from pptx import Presentation
 from pptx.dml.color import RGBColor
+from pptx.enum.shapes import MSO_SHAPE
 from pptx.util import Inches, Pt
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -27,10 +28,10 @@ from reportlab.platypus import HRFlowable, Image, PageBreak, Paragraph, SimpleDo
 from .releases import release_snapshot_sha256, validate_release_definition, validate_release_items
 
 THEME_PALETTES = {
-    "forest": {"primary": "#086650", "ink": "#17231F", "paper": "#F4F1E8", "card": "#FFFFFF"},
-    "industrial": {"primary": "#C34A21", "ink": "#22272B", "paper": "#ECEBE7", "card": "#FFFFFF"},
-    "midnight": {"primary": "#2E63C7", "ink": "#111827", "paper": "#E9EEF7", "card": "#FFFFFF"},
-    "classic": {"primary": "#8A6A2F", "ink": "#211D17", "paper": "#F5F0E5", "card": "#FFFDF8"},
+    "forest": {"primary": "#086650", "secondary": "#C7DF54", "ink": "#17231F", "paper": "#F4F1E8", "card": "#FFFFFF"},
+    "industrial": {"primary": "#C34A21", "secondary": "#202327", "ink": "#22272B", "paper": "#ECEBE7", "card": "#FFFFFF"},
+    "midnight": {"primary": "#2E63C7", "secondary": "#7AA2F7", "ink": "#111827", "paper": "#E9EEF7", "card": "#FFFFFF"},
+    "classic": {"primary": "#8A6A2F", "secondary": "#C9A96A", "ink": "#211D17", "paper": "#F5F0E5", "card": "#FFFDF8"},
 }
 CATALOG_THEMES = tuple(THEME_PALETTES)
 NATSUKI_TITLE_FONT = "BarlowCondensed-Bold"
@@ -354,6 +355,7 @@ def generate_catalog_pdf(
         canvas.rect(0, 0, A4[0], A4[1], stroke=0, fill=1)
         canvas.setFillColor(colors.HexColor(palette["primary"]))
         canvas.rect(0, A4[1] - 1.1 * cm, A4[0], 1.1 * cm, stroke=0, fill=1)
+        canvas.setFillColor(colors.HexColor(palette["secondary"]))
         canvas.circle(A4[0] - 2.4 * cm, A4[1] - 3.5 * cm, 1.25 * cm, stroke=0, fill=1)
         company_logo = _logo_path(config, bundle_dir, company=True, raster_only=True)
         brand_logo = _logo_path(config, bundle_dir, raster_only=True)
@@ -398,11 +400,15 @@ def generate_catalog_pptx(
     title = str(config.get("title") or "Catálogo de productos")
     palette = _theme(config)
     primary_rgb = RGBColor.from_string(palette["primary"].lstrip("#"))
+    secondary_rgb = RGBColor.from_string(palette["secondary"].lstrip("#"))
     prs = Presentation()
     cover = prs.slides.add_slide(prs.slide_layouts[0])
     cover.background.fill.solid(); cover.background.fill.fore_color.rgb = RGBColor.from_string(palette["paper"].lstrip("#"))
     cover.shapes.title.text = title
     cover.shapes.title.text_frame.paragraphs[0].font.color.rgb = primary_rgb
+    accent = cover.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(.65), Inches(6.7), Inches(3.1), Inches(.12))
+    accent.fill.solid(); accent.fill.fore_color.rgb = secondary_rgb
+    accent.line.fill.background()
     proof = " · ".join(value for value in (
         str(config.get("subtitle") or ""), str(release.get("version") or ""),
         str(release.get("snapshot_sha256") or "")[:16],
@@ -425,6 +431,9 @@ def generate_catalog_pptx(
             heading.text_frame.paragraphs[0].font.size = Pt(22)
             heading.text_frame.paragraphs[0].font.bold = True
             heading.text_frame.paragraphs[0].font.color.rgb = primary_rgb
+            section_accent = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(.4), Inches(.73), Inches(2.2), Inches(.07))
+            section_accent.fill.solid(); section_accent.fill.fore_color.rgb = secondary_rgb
+            section_accent.line.fill.background()
             vehicle_logo = _vehicle_logo_path(config, section, bundle_dir, raster_only=True) if str(config.get("group_by") or "") == "vehicle_make" else None
             if vehicle_logo:
                 slide.shapes.add_picture(str(vehicle_logo), Inches(8.8), Inches(.18), width=Inches(1.2), height=Inches(.42))
@@ -576,6 +585,7 @@ def generate_catalog_html(
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="generator" content="Perfect Catalog"><meta name="release-sha256" content="{checksum}">
 <title>{title}</title><style>
+:root{{--secondary:{palette['secondary']}}}.hero:before{{border-color:var(--secondary)!important;opacity:.45!important}}
 :root{{--ink:{palette['ink']};--forest:{palette['primary']};--paper:{palette['paper']};--card:{palette['card']};--line:#d9d5c9;--muted:#65716b}}*{{box-sizing:border-box}}html{{scroll-behavior:smooth}}body{{margin:0;color:var(--ink);background:var(--paper);font:15px/1.55 Arial,sans-serif}}main{{max-width:1280px;margin:auto;padding:clamp(24px,5vw,72px)}}.hero{{position:relative;min-height:48vh;display:grid;align-content:end;padding:8vw clamp(0px,2vw,28px) 4vw;border-bottom:4px solid var(--ink)}}.hero:before{{content:"";position:absolute;top:12%;right:2%;width:clamp(90px,14vw,190px);aspect-ratio:1;border:1px solid var(--forest);border-radius:50%;opacity:.22}}.hero small{{color:var(--forest);font-weight:800;letter-spacing:.16em;text-transform:uppercase}}h1{{position:relative;max-width:900px;margin:.2em 0;font:500 clamp(44px,8vw,104px)/.9 Georgia,serif;letter-spacing:-.035em}}.hero p{{max-width:700px;font-size:18px}}.contents{{display:flex;gap:8px;padding:20px 0;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:thin}}.contents a{{min-height:44px;display:inline-flex;gap:9px;align-items:center;flex:0 0 auto;padding:8px 13px;border:1px solid var(--line);border-radius:999px;color:var(--ink);background:var(--card);text-decoration:none}}.contents a:hover,.contents a:focus-visible{{border-color:var(--forest)}}.contents span{{color:var(--forest);font-weight:800}}section{{scroll-margin-top:18px;padding:clamp(38px,6vw,72px) 0}}section>header{{display:flex;justify-content:space-between;gap:20px;align-items:end;border-bottom:1px solid var(--line)}}h2{{margin:.25em 0;font:500 clamp(27px,4vw,48px) Georgia,serif;letter-spacing:-.02em}}section>header span{{padding-bottom:1.2em;color:var(--muted)}}.products{{display:grid;grid-template-columns:repeat({columns},minmax(0,1fr));gap:20px;padding-top:24px}}.product{{min-width:0;padding:20px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(20,42,34,.06);overflow:hidden}}.photo{{height:210px;margin:-20px -20px 20px;padding:10px;background:#f8f8f5;display:grid;place-items:center;overflow:hidden;border-bottom:1px solid var(--line)}}.photo img{{display:block;width:100%;height:100%;object-fit:contain;object-position:center center}}code{{color:var(--forest);font-weight:800;letter-spacing:.035em}}h3{{margin:.5em 0;font:500 22px/1.15 Georgia,serif}}.meta{{color:var(--muted);font-size:13px}}.specifications{{display:grid;gap:8px;margin:15px 0 0}}.specifications div{{display:grid;grid-template-columns:minmax(92px,.34fr) 1fr;gap:10px;padding-top:8px;border-top:1px solid var(--line)}}.specifications dt{{color:var(--forest);font-weight:800}}.specifications dd{{margin:0;overflow-wrap:anywhere}}.proof{{padding:28px 0;border-top:1px solid var(--line);overflow-wrap:anywhere;color:var(--muted);font-size:12px}}@media(max-width:760px){{html{{scroll-behavior:auto}}.products{{grid-template-columns:1fr}}.hero{{min-height:38vh}}section>header{{align-items:start;flex-direction:column;gap:0}}section>header span{{padding-bottom:1em}}}}@media(prefers-reduced-motion:reduce){{html{{scroll-behavior:auto}}}}@media print{{@page{{size:A4;margin:12mm}}body{{background:#fff}}main{{max-width:none;padding:0}}.hero{{min-height:245mm;break-after:page}}.contents{{display:none}}section{{break-before:page;padding:0}}.product{{break-inside:avoid;box-shadow:none}}.products{{gap:6mm}}}}
 /* Visor ampliado sin JavaScript: mantiene el catálogo autónomo y portable. */
 .photo{{position:relative;width:calc(100% + 40px);border:0;color:var(--ink);font:inherit;text-decoration:none;cursor:zoom-in}}.zoom-hint{{position:absolute;right:12px;bottom:12px;padding:6px 10px;border-radius:999px;color:#fff;background:rgba(17,30,25,.78);font-size:12px;font-weight:800;opacity:0;transform:translateY(4px);transition:.18s ease}}.photo:hover .zoom-hint,.photo:focus-visible .zoom-hint{{opacity:1;transform:none}}.photo-viewer{{width:min(94vw,1400px);height:min(92vh,1000px);padding:16px;border:0;border-radius:16px;background:var(--card);box-shadow:0 24px 80px rgba(0,0,0,.45)}}.photo-viewer::backdrop{{background:rgba(8,15,12,.9)}}.photo-viewer[open]{{display:grid;grid-template-columns:1fr auto;grid-template-rows:minmax(0,1fr) auto;gap:12px}}.photo-viewer img{{grid-column:1/-1;width:100%;height:100%;min-height:0;object-fit:contain;object-position:center;background:#f8f8f5}}.photo-viewer p{{align-self:center;margin:0;overflow-wrap:anywhere}}.photo-viewer form{{align-self:center}}.photo-viewer-close{{min-height:44px;padding:10px 16px;border:1px solid var(--line);border-radius:999px;color:var(--ink);background:var(--card);font:inherit;font-weight:800}}@media(max-width:760px){{.zoom-hint{{opacity:1;transform:none}}}}@media(prefers-reduced-motion:reduce){{.zoom-hint{{transition:none}}}}@media print{{.photo-viewer{{display:none!important}}}}

@@ -104,6 +104,9 @@ cambio crea una revisión auditada; no sobrescribe el historial. Los logos admit
 seguros (máximo 5 MiB). Usa PNG o JPG cuando el mismo archivo deba aparecer también en PDF y
 PowerPoint; SVG se conserva para HTML e InDesign. La identidad queda congelada al construir una
 versión nueva, por lo que un release anterior no cambia retroactivamente.
+Los cuatro colores congelados gobiernan también la vista previa y todos los formatos exportados:
+el principal define jerarquía, el secundario aporta acentos, y texto/fondo controlan legibilidad.
+El tema editorial elegido solo actúa como respaldo si no existe un perfil de marca.
 
 La misma pantalla permite asociar un logo independiente a cada marca vehicular aprobada. Este
 activo aparece únicamente junto al nombre de la marca del vehículo cuando el catálogo se agrupa

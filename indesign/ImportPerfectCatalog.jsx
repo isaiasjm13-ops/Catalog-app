@@ -51,16 +51,17 @@
     }
     function themeDefinition(document, name, visual) {
         var palettes = {
-            forest: {primary: [8, 102, 80], ink: [23, 35, 31], paper: [244, 241, 232], card: [255, 255, 255]},
-            industrial: {primary: [195, 74, 33], ink: [34, 39, 43], paper: [236, 235, 231], card: [255, 255, 255]},
-            midnight: {primary: [46, 99, 199], ink: [17, 24, 39], paper: [233, 238, 247], card: [255, 255, 255]},
-            classic: {primary: [138, 106, 47], ink: [33, 29, 23], paper: [245, 240, 229], card: [255, 253, 248]}
+            forest: {primary: [8, 102, 80], secondary: [199, 223, 84], ink: [23, 35, 31], paper: [244, 241, 232], card: [255, 255, 255]},
+            industrial: {primary: [195, 74, 33], secondary: [32, 35, 39], ink: [34, 39, 43], paper: [236, 235, 231], card: [255, 255, 255]},
+            midnight: {primary: [46, 99, 199], secondary: [122, 162, 247], ink: [17, 24, 39], paper: [233, 238, 247], card: [255, 255, 255]},
+            classic: {primary: [138, 106, 47], secondary: [201, 169, 106], ink: [33, 29, 23], paper: [245, 240, 229], card: [255, 253, 248]}
         };
         if (!palettes[name]) fail("El tema editorial no es compatible.");
         var palette = palettes[name], prefix = "Perfect Catalog " + name + " ";
-        if (visual) palette = {primary: hexRgb(visual.primary_color, palette.primary), ink: hexRgb(visual.ink_color, palette.ink), paper: hexRgb(visual.paper_color, palette.paper), card: [255,255,255]};
+        if (visual) palette = {primary: hexRgb(visual.primary_color, palette.primary), secondary: hexRgb(visual.secondary_color, palette.secondary), ink: hexRgb(visual.ink_color, palette.ink), paper: hexRgb(visual.paper_color, palette.paper), card: [255,255,255]};
         return {name: name,
             primary: documentColor(document, prefix + "Primary", palette.primary),
+            secondary: documentColor(document, prefix + "Secondary", palette.secondary),
             ink: documentColor(document, prefix + "Ink", palette.ink),
             paper: documentColor(document, prefix + "Paper", palette.paper),
             card: documentColor(document, prefix + "Card", palette.card)};
@@ -86,6 +87,7 @@
         var page = document.pages.add();
         var background = page.rectangles.add({geometricBounds: page.bounds, fillColor: theme.paper, strokeWeight: 0});
         background.sendToBack();
+        page.rectangles.add({geometricBounds: [235, 55, 247, 245], fillColor: theme.secondary, strokeWeight: 0});
         frame(page, [260, 55, 335, 430], String(label), 30, true, {text: theme.primary});
         frame(page, [350, 55, 390, 540], "Separador de sección · Perfect Trading", 11, false, {text: theme.ink});
     }

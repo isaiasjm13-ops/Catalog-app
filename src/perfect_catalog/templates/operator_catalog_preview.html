@@ -34,7 +34,8 @@
   <span>Vista {{ 'InDesign ' ~ template_profile if preview_target == 'indesign' else 'digital' }} · no genera archivos</span>
 </div>
 
-<section class="catalog-preview-sheet theme-{{ theme }} target-{{ preview_target }} profile-{{ template_profile }}">
+{% set visual = preview.release.get('visual_profile', {}) %}
+<section class="catalog-preview-sheet theme-{{ theme }} target-{{ preview_target }} profile-{{ template_profile }}"{% if visual %} data-brand-primary="{{ visual.primary_color }}" data-brand-secondary="{{ visual.secondary_color }}" data-brand-ink="{{ visual.ink_color }}" data-brand-paper="{{ visual.paper_color }}"{% endif %}>
   <header class="preview-cover"><span>Perfect Trading · {{ preview.release.version }}</span><strong>{{ title }}</strong><small>{{ subtitle or (preview.total_count|string ~ ' referencias verificadas') }}</small>{% if preview.selected_references %}<small>{{ preview.selected_references|length }} referencias manuales exactas</small>{% endif %}{% if preview_target == 'indesign' %}<em>Portada · página 1</em>{% endif %}</header>
   {% for group in preview.groups %}
     {% if group.products %}
@@ -63,3 +64,4 @@
   {% if preview.sample_count < preview.total_count %}<footer>Vista limitada · {{ preview.total_count - preview.sample_count }} productos adicionales se incluirán al exportar</footer>{% endif %}
 </section>
 {% endblock %}
+{% block scripts %}<script src="/operator/static/catalog-preview.js" defer></script>{% endblock %}

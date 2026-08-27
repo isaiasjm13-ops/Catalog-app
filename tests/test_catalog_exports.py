@@ -247,12 +247,17 @@ class CatalogExportTests(unittest.TestCase):
         visual = {"primary_color": "#E30613", "secondary_color": "#12355B", "ink_color": "#111111", "paper_color": "#FFFFFF", "logo_asset_key": "brands/natsuki/logo.svg", "corner_logo_enabled": True, "watermark_enabled": True, "watermark_opacity": .05}
         html = generate_catalog_html(rows, {"template_profile": "T4", "visual_profile": visual}).decode("utf-8")
         self.assertIn("--forest:#E30613", html)
+        self.assertIn("--secondary:#12355B", html)
         self.assertIn("font-size:16px", html)
         self.assertIn("class=\"brand-logo\"", html)
         self.assertIn("data:image/png;base64,", html)
         self.assertIn('class="contents" aria-label="Secciones del catálogo"', html)
         self.assertIn('id="seccion-01"', html)
         self.assertTrue(generate_catalog_pdf(rows, {"template_profile": "T1", "visual_profile": visual}).startswith(b"%PDF-"))
+        pptx = generate_catalog_pptx(rows, {"template_profile": "T1", "visual_profile": visual})
+        with zipfile.ZipFile(io.BytesIO(pptx)) as presentation:
+            slide_xml = b"".join(presentation.read(name) for name in presentation.namelist() if name.startswith("ppt/slides/slide"))
+        self.assertIn(b"12355B", slide_xml)
 
     def test_bundle_writes_digital_exports_indesign_snapshot_and_manifest(self) -> None:
         release, items = fixture_release()

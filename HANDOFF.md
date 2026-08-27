@@ -1,5 +1,19 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: dirección visual derivada de marca v1.23
+
+- La paleta congelada de la marca del producto gobierna ahora la composición completa: principal,
+  secundario, texto y fondo. El tema editorial queda como respaldo cuando el release no tiene perfil
+  y ya no sustituye una identidad de marca disponible.
+- El color secundario, antes almacenado pero sin uso efectivo, aparece como acento en portada y
+  separadores de HTML, PDF, PowerPoint e InDesign. Las cuatro paletas de respaldo también definen
+  un secundario explícito.
+- La vista previa lee la identidad congelada del release y aplica sus cuatro colores mediante un
+  script local con validación hexadecimal, compatible con la CSP estricta. El logo vehicular conserva
+  su función limitada: acompañar el nombre del fabricante del automóvil, no dirigir el diseño.
+- Verificación: 58 pruebas focalizadas y 257 pruebas completas pasan; 6 integraciones PostgreSQL
+  se omiten sin credenciales. No requiere migración nueva.
+
 ## Bloque 2026-08-27: visor móvil sin duplicación v1.22
 
 - El HTML digital usa un único visor nativo `dialog` reutilizable. Al tocar una miniatura toma la
