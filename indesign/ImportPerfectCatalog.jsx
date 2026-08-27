@@ -2,7 +2,7 @@
 
 (function () {
     var SCHEMA = "perfect-catalog.indesign-snapshot.v1";
-    var SCRIPT_VERSION = "1.34.0";
+    var SCRIPT_VERSION = "1.35.0";
     var ACTIVE_TITLE_FONT = null, ACTIVE_BODY_FONT = null;
     function fail(message) { alert("Perfect Catalog\n\n" + message); throw new Error(message); }
     function parseJson(text) {
@@ -65,6 +65,12 @@
     function value(product, key, fallback) {
         var current = product[key];
         if (current === null || current === undefined || current === "") return repairText(fallback);
+        if (current instanceof Array) return repairText(current.join("; "));
+        return repairText(current);
+    }
+    function optionalValue(product, key) {
+        var current = product[key];
+        if (current === null || current === undefined || current === "") return "";
         if (current instanceof Array) return repairText(current.join("; "));
         return repairText(current);
     }
@@ -150,7 +156,7 @@
         return page;
     }
     function createContentsPages(document, count, theme) {
-        var pages = [], total = Math.max(1, Math.ceil(count / 22));
+        var pages = [], total = Math.max(1, Math.ceil(count / 15));
         for (var index = 0; index < total; index++) {
             var page = document.pages.add();
             page.rectangles.add({geometricBounds: page.bounds, fillColor: theme.paper, strokeWeight: 0}).sendToBack();
@@ -161,9 +167,9 @@
     }
     function fillContentsPages(pages, entries, theme) {
         for (var index = 0; index < entries.length; index++) {
-            var local = index % 22, page = pages[Math.floor(index / 22)], top = 125 + local * 27;
-            frame(page, [top, 50, top + 25, 500], entries[index].label, 12, false, {text: theme.ink, leading: 1.15});
-            frame(page, [top, 505, top + 25, 550], String(entries[index].page), 12, true, {text: theme.primary, leading: 1.15});
+            var local = index % 15, page = pages[Math.floor(index / 15)], top = 125 + local * 42;
+            frame(page, [top, 50, top + 40, 500], entries[index].label, 12, false, {text: theme.ink, leading: 1.15});
+            frame(page, [top, 505, top + 40, 550], String(entries[index].page), 12, true, {text: theme.primary, leading: 1.15});
         }
     }
     function addPageNumbers(document, firstContentPage, theme) {
@@ -234,16 +240,23 @@
                 report.linked_image_count++;
             } catch (imageError) { report.missing_images.push({product_index: index, reference: reference, reason: imageError.message}); }
         } else { report.missing_images.push({product_index: index, reference: reference, reason: "Ruta ausente o no segura"}); }
-        var contents = reference + "\r" + value(product, "name_original", "Sin nombre") + "\r" +
-            value(product, "piece_type", value(product, "category_path", "Sin categor\u00eda")) + " \u00b7 " + value(product, "brand", "Sin marca") + "\r" +
-            "OEM: " + value(product, "oem_references", "No indicadas") + "\r" +
-            "Aplicaciones: " + value(product, "applications", "No indicadas") + "\r" +
-            "Motor: " + value(product, "engine_types", "No indicado");
+        var lines = [reference, value(product, "name_original", "Sin nombre")];
+        var category = optionalValue(product, "piece_type") || optionalValue(product, "category_path"), brand = optionalValue(product, "brand");
+        if (category || brand) lines.push(category + (category && brand ? " \u00b7 " : "") + brand);
+        var oem = optionalValue(product, "oem_references"), applications = optionalValue(product, "applications"), engines = optionalValue(product, "engine_types");
+        if (oem) lines.push("OEM: " + oem);
+        if (applications) lines.push("Aplicaciones: " + applications);
+        if (engines) lines.push("Motor: " + engines);
+        var contents = lines.join("\r");
         var cardTop = image ? top + imageHeight + 6 : top;
         var card = frame(page, [cardTop, left, bottom, right], contents, 12, false,
             {fill: theme.card, stroke: theme.primary, text: theme.ink, strokeWeight: 0.75});
         try { card.paragraphs[0].fontStyle = "Bold"; } catch (ignored) {}
         card.paragraphs[0].pointSize = 13; card.insertLabel("perfect_catalog_product_index", String(index));
+        if (card.paragraphs.length > 1) {
+            try { card.paragraphs[1].fontStyle = "Bold"; } catch (ignoredName) {}
+            card.paragraphs[1].pointSize = 14; card.paragraphs[1].fillColor = theme.primary;
+        }
         if (card.overflows) report.overflow_product_indexes.push(index);
     }
     function render(snapshot, baseFolder) {
@@ -321,7 +334,8 @@
         var reportFile = new File(destination.fsName.replace(/\.indd$/i, "") + ".preflight.json");
         writeJson(reportFile, report);
         alert("Perfect Catalog Importer v" + SCRIPT_VERSION + "\n\nCat\u00e1logo creado: " + snapshot.products.length + " productos.\nIm\u00e1genes faltantes: " + report.missing_images.length +
-            ".\nFichas ampliadas automaticamente: " + promotedCount + ".\nTextos desbordados: " + report.overflow_product_indexes.length + ".\n\n" + destination.fsName);
+            ".\nFichas ampliadas automaticamente: " + promotedCount + ".\nTextos desbordados: " + report.overflow_product_indexes.length +
+            ".\nFuentes no disponibles: " + report.unavailable_fonts.length + ".\nPaginas generadas: " + report.page_count + ".\n\n" + destination.fsName);
     }
     try {
         var scriptFile = new File($.fileName);

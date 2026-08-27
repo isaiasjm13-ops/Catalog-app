@@ -47,7 +47,7 @@ def estimate_indesign_layout(groups: Iterable[dict[str, Any]], template_profile:
     per_page = INDESIGN_PRODUCTS_PER_PAGE[profile]
     product_pages = sum((count + per_page - 1) // per_page for count in counts)
     separator_pages = len(counts)
-    contents_pages = (separator_pages + 21) // 22
+    contents_pages = (separator_pages + 14) // 15
     return {
         "schema": "perfect-catalog.indesign-layout-estimate.v1",
         "template_profile": profile,
@@ -106,7 +106,7 @@ def estimate_adaptive_indesign_layout(
             slot = 0
             product_pages += 1
         slot += 1
-    contents_pages = (group_count + 21) // 22
+    contents_pages = (group_count + 14) // 15
     return {"contents_pages": contents_pages, "separator_pages": group_count, "product_pages": product_pages,
             "estimated_page_count": 1 + contents_pages + group_count + product_pages}
 

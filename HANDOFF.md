@@ -1,9 +1,18 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: contenido editorial automático v1.35
+
+- Las fichas omiten OEM, aplicaciones, motor, categoría o marca cuando el dato no existe, evitando
+  llenar el catálogo con textos como `No indicadas`. Referencia y nombre siguen siendo obligatorios.
+- El nombre del producto obtiene jerarquía automática en 14 pt, negrita y color primario; la
+  referencia conserva 13 pt. Los títulos largos del índice intentan ajustarse dentro de su fila.
+- El aviso final informa además la cantidad de fuentes no disponibles y las páginas generadas.
+- No requiere migración; hay que generar un paquete InDesign nuevo para usar el JSX v1.35.0.
+
 ## Bloque 2026-08-27: índice y navegación editorial InDesign v1.34
 
 - El importador reserva automáticamente las páginas de índice necesarias después de la portada,
-  registra cada separador y escribe su número de página real. Admite más de 22 secciones mediante
+  registra cada separador y escribe su número de página real. Admite más de 15 secciones mediante
   páginas de continuación.
 - Las páginas editoriales incorporan numeración consistente. El índice usa la marca y categoría
   como jerarquía legible sin modificar las claves internas ni inventar datos de producto.
