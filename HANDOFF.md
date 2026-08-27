@@ -1,5 +1,12 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: logos vehiculares con agrupación secundaria v1.32
+
+- El separador ahora conserva por separado la marca vehicular primaria y el título editorial
+  combinado. De este modo `Chevrolet · RODAMIENTOS` busca el logo de `Chevrolet` y lo muestra aunque
+  el catálogo también esté agrupado por categoría, pieza u otro segundo nivel.
+- No requiere migración. Los paquetes InDesign deben regenerarse para incluir el JSX v1.32.0.
+
 ## Bloque 2026-08-27: importador InDesign v1.31 y separadores robustos
 
 - Corregido el mojibake heredado en snapshots (`Â·`, vocales acentuadas, `ñ` y `ü`) antes de
