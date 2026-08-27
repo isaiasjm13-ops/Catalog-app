@@ -42,6 +42,9 @@ Al cerrar la ventana se pierden clave de sesión, código y sesiones activas.
 - Cada tarjeta muestra UUID, fila fuente, referencia, estados y `review_sha256` completo.
 - Solo una identidad coherente y pendiente presenta botones. Aprobar o rechazar exige un motivo de
   4 a 500 caracteres y una confirmación explícita por ficha.
+- El filtro `pending` ofrece además una decisión atómica para todo su resultado (máximo 500). El
+  operador puede acotar por búsqueda y aprobar o rechazar con un motivo común; el servidor exige
+  que el conteo siga idéntico y recalcula la evidencia individual antes de escribir cada auditoría.
 - Tras la decisión se usa redirect-after-POST; refrescar no repite la escritura.
 - Inconsistencias estructurales se muestran bloqueadas y deben investigarse fuera de la UI.
 

@@ -52,7 +52,7 @@ from .importer import DEFAULT_MAX_PILOT_ROWS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.6.0"
+OPERATOR_VERSION = "1.7.0"
 LOGGER = logging.getLogger(__name__)
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
@@ -101,6 +101,11 @@ class ReviewGateway(Protocol):
         decision: str,
         actor: str,
         reason: str,
+    ) -> dict[str, Any]: ...
+
+    def decide_many(
+        self, plan_id: uuid.UUID, fingerprint: str, decision: str,
+        actor: str, reason: str, *, query: str, expected_count: int,
     ) -> dict[str, Any]: ...
 
     def intake_submissions(
@@ -1420,6 +1425,8 @@ def create_operator_app(
             "rejected": "Producto rechazado y conservado para corrección.",
             "already_approved": "La aprobación ya existía con la misma evidencia.",
             "already_rejected": "El rechazo ya existía con la misma evidencia.",
+            "bulk_approved": "Lote pendiente aprobado y auditado identidad por identidad.",
+            "bulk_rejected": "Lote pendiente rechazado y auditado identidad por identidad.",
         }.get(result)
         return _render(
             environment,
@@ -1537,6 +1544,41 @@ def create_operator_app(
         result_code = str(result["status"])
         return RedirectResponse(
             f"/operator/plans/{plan_id}?{urlencode({'state': 'pending', 'result': result_code})}",
+            status_code=303,
+        )
+
+    @app.post("/operator/plans/{plan_id}/bulk-decision")
+    async def decide_bulk(request: Request, plan_id: str) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "fingerprint", "query", "expected_count", "decision", "reason", "confirm"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
+                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            decision = form["decision"]
+            if decision not in {"approve", "reject"} or form["confirm"] != decision:
+                raise ValueError("Debes confirmar exactamente la decisión del lote.")
+            reason = _require_text(form["reason"], "reason")
+            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
+                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
+            query = form["query"].strip()
+            if len(query) > 200:
+                raise ValueError("La búsqueda no puede superar 200 caracteres.")
+            expected_count = int(form["expected_count"])
+            result = await run_in_threadpool(
+                gateway.decide_many, _uuid(plan_id, "plan_id"), form["fingerprint"],
+                decision, session.actor, reason, query=query, expected_count=expected_count,
+            )
+        except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
+            return _error(environment, 409, "Lote no aplicado", str(exc), session=session)
+        except Exception:
+            return _error(environment, 503, "PostgreSQL no disponible", "Ninguna decisión del lote fue escrita. Revisa la consola.", session=session)
+        return RedirectResponse(
+            f"/operator/plans/{plan_id}?{urlencode({'state': 'pending', 'result': str(result['status'])})}",
             status_code=303,
         )
 

@@ -833,6 +833,50 @@ def review_product(
         )
 
 
+def review_products_bulk(
+    plan_id: uuid.UUID,
+    expected_fingerprint: str,
+    decision: str,
+    actor: str,
+    reason: str,
+    config: DatabaseConfig,
+    password: str,
+    *,
+    query: str = "",
+    expected_count: int,
+    max_items: int = 500,
+) -> dict[str, Any]:
+    """Atomically decide the exact pending result set after recomputing every hash."""
+    if not 1 <= expected_count <= max_items:
+        raise ValueError(f"expected_count debe estar entre 1 y {max_items}.")
+    with psycopg.connect(**config.connection_kwargs(password)) as connection:
+        connection.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+        queue = _review_queue_page_in_connection(
+            connection, plan_id, expected_fingerprint,
+            query=query, state="pending", limit=max_items, offset=0,
+            _max_limit=max_items,
+        )
+        if queue["filtered_count"] != expected_count:
+            raise PermissionError(
+                "La cantidad pendiente cambió desde que abriste la pantalla; recarga antes de decidir."
+            )
+        if len(queue["items"]) != expected_count:
+            raise PermissionError("El lote excede el límite seguro de decisión.")
+        statuses: dict[str, int] = {}
+        for item in queue["items"]:
+            result = _review_product_in_connection(
+                connection, plan_id, uuid.UUID(item["product_id"]), expected_fingerprint,
+                item["review_sha256"], decision, actor, reason,
+            )
+            status = str(result["status"])
+            statuses[status] = statuses.get(status, 0) + 1
+        return {
+            "plan_id": str(plan_id),
+            "status": "bulk_approved" if decision == "approve" else "bulk_rejected",
+            "count": expected_count, "statuses": statuses,
+        }
+
+
 class DatabaseReviewGateway:
     """Small web-facing adapter that never exposes or persists DB credentials."""
 
@@ -908,6 +952,15 @@ class DatabaseReviewGateway:
 
     def plan(self, plan_id: uuid.UUID) -> dict[str, Any] | None:
         return get_review_plan(plan_id, self._config, self._password)
+
+    def decide_many(
+        self, plan_id: uuid.UUID, fingerprint: str, decision: str,
+        actor: str, reason: str, *, query: str, expected_count: int,
+    ) -> dict[str, Any]:
+        return review_products_bulk(
+            plan_id, fingerprint, decision, actor, reason, self._config, self._password,
+            query=query, expected_count=expected_count,
+        )
 
     def import_plan(self, plan_id: uuid.UUID) -> dict[str, Any]:
         from .importer import inspect_plan

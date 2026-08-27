@@ -18,7 +18,7 @@
   <code>{{ plan.approval_fingerprint_sha256 }}</code>
 </section>
 
-<form class="filter-bar" method="get">
+<form class="filter-bar" method="get" autocomplete="off">
   <label class="search-field"><span>Buscar</span><input name="q" value="{{ q }}" maxlength="200" placeholder="Referencia, nombre o fila"></label>
   <label><span>Estado</span><select name="state">
     {% for state in states %}<option value="{{ state }}" {% if state == selected_state %}selected{% endif %}>{{ {'pending':'Pendientes','approved':'Aprobadas','rejected':'Rechazadas','inconsistent':'Inconsistentes','all':'Todas'}[state] }}</option>{% endfor %}
@@ -27,6 +27,30 @@
 </form>
 
 <div class="result-summary"><strong>{{ queue.filtered_count }}</strong> resultados · página {{ page }}</div>
+
+{% if selected_state == 'pending' and queue.filtered_count and queue.filtered_count <= 500 %}
+<details class="bulk-review-panel">
+  <summary>Decidir las {{ queue.filtered_count }} pendientes de este filtro</summary>
+  <form method="post" action="/operator/plans/{{ plan.import_plan_id }}/bulk-decision">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+    <input type="hidden" name="fingerprint" value="{{ plan.approval_fingerprint_sha256 }}">
+    <input type="hidden" name="query" value="{{ q }}">
+    <input type="hidden" name="expected_count" value="{{ queue.filtered_count }}">
+    <label><span>Motivo común auditable</span><textarea name="reason" minlength="4" maxlength="500" required placeholder="Qué comprobación justifica la decisión del lote"></textarea></label>
+    <p>El servidor volverá a calcular las {{ queue.filtered_count }} evidencias. Si cambió una sola identidad o la cantidad, no aplicará ninguna.</p>
+    <div class="bulk-actions">
+      <label class="confirm-field"><input type="checkbox" name="confirm" value="reject"><span>Confirmo rechazar todas las pendientes de este filtro.</span></label>
+      <button class="reject-button" type="submit" name="decision" value="reject">Rechazar {{ queue.filtered_count }}</button>
+    </div>
+    <div class="bulk-actions">
+      <label class="confirm-field"><input type="checkbox" name="confirm" value="approve"><span>Confirmo aprobar todas las pendientes de este filtro.</span></label>
+      <button class="approve-button" type="submit" name="decision" value="approve">Aprobar {{ queue.filtered_count }}</button>
+    </div>
+  </form>
+</details>
+{% elif selected_state == 'pending' and queue.filtered_count > 500 %}
+<div class="blocked-note">El lote supera 500 identidades. Usa la búsqueda para dividirlo en grupos verificables.</div>
+{% endif %}
 
 {% if queue["items"] %}
 <section class="review-list">

@@ -32,6 +32,7 @@ class SyntheticReviewGateway:
     def __init__(self) -> None:
         self.closed = False
         self.decisions: list[dict[str, Any]] = []
+        self.bulk_decisions: list[dict[str, Any]] = []
         self.intake_records: list[dict[str, Any]] = []
         self.promotions: list[dict[str, Any]] = []
         self.image_indexes: list[dict[str, Any]] = []
@@ -276,6 +277,23 @@ class SyntheticReviewGateway:
             "offset": offset,
         }
 
+    def decide_many(
+        self, plan_id: uuid.UUID, fingerprint: str, decision: str,
+        actor: str, reason: str, *, query: str, expected_count: int,
+    ) -> dict[str, Any]:
+        if plan_id != PLAN_ID or fingerprint != FINGERPRINT:
+            raise PermissionError("evidencia incorrecta")
+        record = {
+            "decision": decision, "actor": actor, "reason": reason,
+            "query": query, "expected_count": expected_count,
+        }
+        self.bulk_decisions.append(record)
+        return {
+            "plan_id": str(plan_id),
+            "status": "bulk_approved" if decision == "approve" else "bulk_rejected",
+            "count": expected_count,
+        }
+
     def catalog_releases(self, *, limit: int = 100) -> list[dict[str, Any]]:
         return self.release_data[:limit]
 
@@ -506,6 +524,37 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Empaque &lt;script&gt;incorrecto", queue.text)
         self.assertIn(REVIEW_SHA256, queue.text)
         self.assertNotIn("<script>incorrecto</script>", queue.text)
+
+    async def test_bulk_review_requires_exact_confirmation_and_redirects(self) -> None:
+        await self.login()
+        page = await self.client.get(f"/operator/plans/{PLAN_ID}?state=pending&q=ABC")
+        self.assertIn("Decidir las 1 pendientes de este filtro", page.text)
+        csrf = hidden_value(page.text, "csrf_token")
+        rejected_confirmation = await self.client.post(
+            f"/operator/plans/{PLAN_ID}/bulk-decision",
+            data={
+                "csrf_token": csrf, "fingerprint": FINGERPRINT, "query": "ABC",
+                "expected_count": "1", "decision": "reject", "reason": "Lote inválido",
+                "confirm": "approve",
+            },
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(rejected_confirmation.status_code, 409)
+        self.assertEqual(self.gateway.bulk_decisions, [])
+
+        response = await self.client.post(
+            f"/operator/plans/{PLAN_ID}/bulk-decision",
+            data={
+                "csrf_token": csrf, "fingerprint": FINGERPRINT, "query": "ABC",
+                "expected_count": "1", "decision": "reject", "reason": "Fuera del catálogo",
+                "confirm": "reject",
+            },
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("result=bulk_rejected", response.headers["location"])
+        self.assertEqual(self.gateway.bulk_decisions[0]["expected_count"], 1)
+        self.assertEqual(self.gateway.bulk_decisions[0]["actor"], "web-reviewer")
 
     async def test_import_plan_requires_explicit_approve_then_apply(self) -> None:
         await self.login()
@@ -842,7 +891,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.6.0")
+        self.assertEqual(OPERATOR_VERSION, "1.7.0")
 
     async def test_promotion_requires_individual_post_origin_csrf_and_confirmation(self) -> None:
         await self.login()

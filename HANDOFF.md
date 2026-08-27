@@ -4,6 +4,11 @@
 
 ### Resultado de esta sesión
 
+- Consola operador v1.7 permite aprobar o rechazar en una sola transacción hasta 500 identidades
+  pendientes del filtro actual. Exige motivo y confirmación específica, vuelve a consultar el conjunto,
+  compara el conteo esperado y recalcula cada `review_sha256`; ante cualquier cambio revierte todo.
+  Cada identidad conserva su propio evento de auditoría. El filtro desactiva restauración automática
+  del navegador para que el selector visible corresponda a la consulta enviada.
 - Consola operador v1.6 elimina el callejón sin salida posterior al dry-run: el enlace de Ingresos
   abre una inspección del UUID, alcance, versiones, hashes y fingerprint. Desde allí se puede aprobar
   y, en un segundo formulario explícito, aplicar el plan. Ambas transiciones conservan sesión local,
@@ -146,7 +151,7 @@
 - La exclusión usa ahora advisory lock de sesión en una conexión autocommit; la lectura termina antes del
   dry-run y la escritura final abre un snapshot nuevo. Fallos inesperados muestran/loguean un ID correlacionado
   de 8 hex sin exponer el texto crudo de la excepción.
-- Suite local actual: 209 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
+- Suite local actual: 212 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)
 

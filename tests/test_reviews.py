@@ -4,8 +4,11 @@ import io
 import unittest
 import uuid
 from contextlib import redirect_stderr
+from unittest import mock
 
 from perfect_catalog.cli import build_parser
+from perfect_catalog.config import DatabaseConfig
+from perfect_catalog import reviews
 from perfect_catalog.reviews import (
     _require_decision,
     _require_review_state,
@@ -97,6 +100,53 @@ class ReviewContractTests(unittest.TestCase):
         )
         self.assertEqual(reviewed.decision, "reject")
         self.assertEqual(reviewed.actor, "reviewer")
+
+    def test_bulk_review_rejects_changed_count_before_any_decision(self) -> None:
+        connection = mock.MagicMock()
+        context = mock.MagicMock()
+        context.__enter__.return_value = connection
+        context.__exit__.return_value = False
+        with mock.patch.object(reviews.psycopg, "connect", return_value=context), mock.patch.object(
+            reviews, "_review_queue_page_in_connection",
+            return_value={"filtered_count": 2, "items": []},
+        ), mock.patch.object(reviews, "_review_product_in_connection") as decide:
+            with self.assertRaisesRegex(PermissionError, "cantidad pendiente cambió"):
+                reviews.review_products_bulk(
+                    uuid.uuid4(), "a" * 64, "reject", "qa", "Fuera de catálogo",
+                    DatabaseConfig(), "secret", query="", expected_count=3,
+                )
+        decide.assert_not_called()
+
+    def test_bulk_review_recomputes_and_decides_each_exact_identity(self) -> None:
+        plan_id = uuid.uuid4()
+        ids = [uuid.uuid4(), uuid.uuid4()]
+        connection = mock.MagicMock()
+        context = mock.MagicMock()
+        context.__enter__.return_value = connection
+        context.__exit__.return_value = False
+        queue = {
+            "filtered_count": 2,
+            "items": [
+                {"product_id": str(ids[0]), "review_sha256": "b" * 64},
+                {"product_id": str(ids[1]), "review_sha256": "c" * 64},
+            ],
+        }
+        decisions = [
+            {"status": "rejected"}, {"status": "rejected"},
+        ]
+        with mock.patch.object(reviews.psycopg, "connect", return_value=context), mock.patch.object(
+            reviews, "_review_queue_page_in_connection", return_value=queue,
+        ), mock.patch.object(
+            reviews, "_review_product_in_connection", side_effect=decisions,
+        ) as decide:
+            result = reviews.review_products_bulk(
+                plan_id, "a" * 64, "reject", "qa", "Fuera de catálogo",
+                DatabaseConfig(), "secret", query="MY", expected_count=2,
+            )
+        self.assertEqual(result["status"], "bulk_rejected")
+        self.assertEqual(result["count"], 2)
+        self.assertEqual(decide.call_count, 2)
+        self.assertEqual(decide.call_args_list[0].args[2], ids[0])
 
 
 if __name__ == "__main__":
