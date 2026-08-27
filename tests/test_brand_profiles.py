@@ -75,6 +75,17 @@ class BrandProfileTests(unittest.TestCase):
         self.assertIn('"assets/brands/*/fonts/*.ttf"', packaging)
         self.assertIn('"assets/brands/*/fonts/*.txt"', packaging)
 
+    def test_brand_workflow_migration_binds_plan_brand_and_visual_contract(self) -> None:
+        sql = (ROOT / "db/migrations/0014_brand_profile_workflow.sql").read_text(encoding="utf-8")
+        self.assertTrue(sql.startswith("BEGIN;"))
+        self.assertTrue(sql.rstrip().endswith("COMMIT;"))
+        self.assertIn("brand_profile_id", sql)
+        self.assertIn("minimum_font_size_pt", sql)
+        self.assertIn("watermark_opacity", sql)
+        self.assertNotIn("DROP ", sql.upper())
+        template = (ROOT / "src/perfect_catalog/templates/operator_import_plan.html").read_text(encoding="utf-8")
+        self.assertIn('name="brand_code"', template)
+
 
 if __name__ == "__main__":
     unittest.main()

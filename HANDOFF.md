@@ -658,3 +658,13 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 - Implementar antes del siguiente catalogo multimarca: migracion de perfil de marca, pantalla `Marcas`, alta/edicion auditada de nombre/codigo/logo/eslogan/colores, seleccion de marca al preparar la importacion y propagacion exacta a PDF, HTML, PPTX e InDesign.
 - Investigación visual y funcional documentada en `docs/DIRECCION-VISUAL-CATALOGOS.md`, con referencias de NSK, ZF, HELLA, Parker Racor, Brembo, TecDoc y Adobe InDesign.
 - Sistema de páginas definido: portada P0, separador S, cuadrículas T4/T2, ficha T1 y guía técnica TABLE.
+
+## 2026-08-27 - Marca vinculada y sistema editorial 1-4
+
+- La migración `0014_brand_profile_workflow.sql` vincula cada plan y marca materializada con un perfil visual: tipografías, mínimo 12 pt, interlineado 1.8, logo de esquina y marca de agua configurable (4-7%).
+- `MIGRAR-MARCA-CATALOGO.cmd` aplica el cambio en Windows y debe ejecutarse una vez antes de preparar una importación nueva.
+- El dry-run exige elegir la marca. La selección se audita, se materializa y queda congelada en el release; las altas ya no usan una constante NATSUKI.
+- PDF, HTML digital, PPTX e InDesign reciben el perfil inmutable. Natsuki usa su paleta, Barlow Condensed, DM Sans, logo oficial y marca de agua.
+- Sistema: P0 portada, S separador automático, T4 (4 fichas), T2 (2), T1 (1) y TABLE (10 filas legibles a 12 pt). El ZIP InDesign incluye logo y `Document fonts`.
+- QA visual: PDF Natsuki T2 renderizado a PNG e inspeccionado en portada y página de producto.
+- Suite completa: 237 pruebas aprobadas y 6 omitidas de PostgreSQL opt-in.

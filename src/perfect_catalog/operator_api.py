@@ -53,7 +53,7 @@ from .importer import DEFAULT_MAX_PILOT_ROWS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.12.0"
+OPERATOR_VERSION = "1.13.0"
 LOGGER = logging.getLogger(__name__)
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
@@ -84,6 +84,7 @@ class ReviewGateway(Protocol):
 
     def prepare_import_plan(
         self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
+        brand_code: str,
     ) -> dict[str, Any]: ...
 
     def page(
@@ -1547,6 +1548,7 @@ def create_operator_app(
             return session_or_redirect
         try:
             plan = await run_in_threadpool(gateway.import_plan, _uuid(plan_id, "plan_id"))
+            profiles = await run_in_threadpool(gateway.brand_profiles)
         except ValueError as exc:
             return _error(environment, 404, "Plan no encontrado", str(exc), session=session_or_redirect)
         except Exception:
@@ -1559,7 +1561,7 @@ def create_operator_app(
             "already_applied": "El plan ya estaba aplicado.",
         }.get(result)
         return _render(
-            environment, "operator_import_plan.html", plan=plan, message=message,
+            environment, "operator_import_plan.html", plan=plan, profiles=profiles, message=message,
             session=session_or_redirect, version=OPERATOR_VERSION,
         )
 
@@ -1572,7 +1574,10 @@ def create_operator_app(
         session = session_or_redirect
         try:
             form = await _parse_form(request)
-            if set(form) != {"csrf_token", "fingerprint", "reason", "confirm"}:
+            expected_fields = {"csrf_token", "fingerprint", "reason", "confirm"}
+            if transition == "prepare":
+                expected_fields.add("brand_code")
+            if set(form) != expected_fields:
                 raise ValueError("El formulario contiene campos ausentes o desconocidos.")
             if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
                 return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
@@ -1587,9 +1592,10 @@ def create_operator_app(
                 else gateway.approve_import_plan if transition == "approve"
                 else gateway.apply_import_plan
             )
-            result = await run_in_threadpool(
-                action, parsed_plan_id, form["fingerprint"], session.actor, reason,
-            )
+            args = [parsed_plan_id, form["fingerprint"], session.actor, reason]
+            if transition == "prepare":
+                args.append(_require_text(form["brand_code"], "brand_code"))
+            result = await run_in_threadpool(action, *args)
         except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
             return _error(environment, 409, "Operación no aplicada", str(exc), session=session)
         except Exception:

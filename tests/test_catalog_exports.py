@@ -190,6 +190,17 @@ class CatalogExportTests(unittest.TestCase):
         self.assertIn("<b>OEM:</b> OEM-123", content)
         self.assertIn("<b>Aplicaciones:</b> Toyota Hilux", content)
 
+    def test_visual_profile_overrides_palette_embeds_brand_and_minimum_type(self) -> None:
+        release, items = fixture_release()
+        rows = export_rows_from_release(release, items)
+        visual = {"primary_color": "#E30613", "secondary_color": "#12355B", "ink_color": "#111111", "paper_color": "#FFFFFF", "logo_asset_key": "brands/natsuki/logo.svg", "corner_logo_enabled": True, "watermark_enabled": True, "watermark_opacity": .05}
+        html = generate_catalog_html(rows, {"template_profile": "T4", "visual_profile": visual}).decode("utf-8")
+        self.assertIn("--forest:#E30613", html)
+        self.assertIn("font-size:16px", html)
+        self.assertIn("class=\"brand-logo\"", html)
+        self.assertIn("data:image/svg+xml;base64,", html)
+        self.assertTrue(generate_catalog_pdf(rows, {"template_profile": "T1", "visual_profile": visual}).startswith(b"%PDF-"))
+
     def test_bundle_writes_digital_exports_indesign_snapshot_and_manifest(self) -> None:
         release, items = fixture_release()
         with tempfile.TemporaryDirectory() as temporary:

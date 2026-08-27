@@ -17,7 +17,6 @@ from tools.odoo_profiler import sha256_file
 from .canonical import canonical_sha256, json_compatible, normalize_name, normalize_reference
 from .config import DatabaseConfig
 from .importer import (
-    BRAND,
     CONTRACT_VERSION,
     NAMESPACE,
     RULES_VERSION,
@@ -53,6 +52,8 @@ def _load_plan(connection: Connection[Any], plan_id: uuid.UUID, *, lock: bool) -
                    p.file_sha256, p.contract_version, p.rules_version,
                    p.plan_status, p.plan_sha256, p.approval_fingerprint_sha256,
                    p.generated_at, p.approved_at, p.approved_by, p.applied_at, p.applied_by,
+                   p.brand_profile_id, bp.code AS brand_profile_code,
+                   bp.display_name AS brand_profile_name,
                    f.sha256 AS registered_file_sha256, f.storage_uri,
                    b.source_system_id
             FROM perfect_catalog.import_plan AS p
@@ -61,6 +62,8 @@ def _load_plan(connection: Connection[Any], plan_id: uuid.UUID, *, lock: bool) -
              AND f.import_batch_id = p.import_batch_id
             JOIN perfect_catalog.import_batch AS b
               ON b.import_batch_id = p.import_batch_id
+            LEFT JOIN perfect_catalog.brand_profile AS bp
+              ON bp.brand_profile_id = p.brand_profile_id
             WHERE p.import_plan_id = %s{suffix}
             """,
             (plan_id,),
@@ -293,27 +296,28 @@ def approve_plan(
 
 
 def _ensure_brand(
-    connection: Connection[Any], source_system_id: uuid.UUID, brand_name: str
+    connection: Connection[Any], source_system_id: uuid.UUID, brand_profile_id: uuid.UUID,
+    brand_code: str, brand_name: str,
 ) -> uuid.UUID:
     normalized = normalize_name(brand_name)
-    code = normalized.replace(" ", "-")
+    code = brand_code
     brand_id = uuid.uuid5(NAMESPACE, f"brand:{normalized}")
     connection.execute(
         """
         INSERT INTO perfect_catalog.brand (
-            brand_id, source_system_id, code, name, normalized_name
-        ) VALUES (%s,%s,%s,%s,%s)
+            brand_id, source_system_id, brand_profile_id, code, name, normalized_name
+        ) VALUES (%s,%s,%s,%s,%s,%s)
         ON CONFLICT DO NOTHING
         """,
-        (brand_id, source_system_id, code, brand_name, normalized),
+        (brand_id, source_system_id, brand_profile_id, code, brand_name, normalized),
     )
     row = connection.execute(
-        "SELECT brand_id, source_system_id, normalized_name FROM perfect_catalog.brand WHERE code=%s",
+        "SELECT brand_id, source_system_id, normalized_name, brand_profile_id FROM perfect_catalog.brand WHERE code=%s",
         (code,),
     ).fetchone()
     if row is None:
         raise RuntimeError(f"No se pudo resolver la marca {code!r} después del insert idempotente.")
-    if row[1] != source_system_id or row[2] != normalized:
+    if row[1] != source_system_id or row[2] != normalized or row[3] != brand_profile_id:
         raise RuntimeError(
             f"La marca existente con código {code!r} no coincide con la fuente y nombre del plan."
         )
@@ -635,10 +639,14 @@ def _apply_plan_in_connection(
     )
     plan["plan_status"] = "applying"
     correlation_id = uuid.uuid4()
+    creates_products = any(item["operation_type"] == "create" for item in items)
+    if creates_products and not plan.get("brand_profile_id"):
+        raise RuntimeError("Selecciona un perfil de marca antes de aplicar el plan.")
     brand_id = (
-        _ensure_brand(connection, plan["source_system_id"], BRAND)
-        if any(item["operation_type"] == "create" for item in items)
-        else None
+        _ensure_brand(
+            connection, plan["source_system_id"], plan["brand_profile_id"],
+            plan["brand_profile_code"], plan["brand_profile_name"],
+        ) if creates_products else None
     )
     counts = {"create": 0, "inventory_snapshot": 0, "media_pending": 0, "no_change": 0}
     for item in items:
@@ -706,11 +714,30 @@ def apply_approved_plan(
 
 def approve_and_apply_plan(
     plan_id: uuid.UUID, expected_fingerprint: str, actor: str, reason: str,
-    config: DatabaseConfig, password: str,
+    config: DatabaseConfig, password: str, *, brand_code: str,
 ) -> dict[str, Any]:
     """Una confirmación del operador; dos eventos auditados en una transacción."""
     with psycopg.connect(**config.connection_kwargs(password)) as connection:
         connection.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+        plan = _load_plan(connection, plan_id, lock=True)
+        if plan["plan_status"] != "awaiting_review":
+            raise PermissionError("La marca solo puede elegirse antes de aprobar el plan.")
+        profile = connection.execute(
+            "SELECT brand_profile_id, code, display_name FROM perfect_catalog.brand_profile WHERE code=%s",
+            (str(brand_code or "").strip().upper(),),
+        ).fetchone()
+        if profile is None:
+            raise ValueError("El perfil de marca seleccionado no existe.")
+        connection.execute(
+            "UPDATE perfect_catalog.import_plan SET brand_profile_id=%s WHERE import_plan_id=%s AND plan_status='awaiting_review'",
+            (profile[0], plan_id),
+        )
+        _insert_audit_event(
+            connection, plan=plan, event_type="import_plan.brand_selected",
+            entity_type="import_plan", entity_id=plan_id, actor=actor, reason=reason,
+            before_data={"brand_profile_id": str(plan["brand_profile_id"]) if plan["brand_profile_id"] else None},
+            after_data={"brand_profile_id": str(profile[0]), "brand_code": profile[1]},
+        )
         _approve_plan_in_connection(
             connection, plan_id, expected_fingerprint, actor, reason
         )

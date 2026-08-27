@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import csv
+import base64
 import uuid
 from collections import defaultdict
 from html import escape
@@ -49,7 +50,28 @@ def _register_natsuki_fonts() -> None:
 
 
 def _theme(config: dict[str, Any]) -> dict[str, str]:
+    profile = config.get("visual_profile") or {}
+    if profile:
+        return {"primary": str(profile.get("primary_color") or "#E30613"), "secondary": str(profile.get("secondary_color") or "#12355B"), "ink": str(profile.get("ink_color") or "#111111"), "paper": str(profile.get("paper_color") or "#FFFFFF"), "card": "#FFFFFF"}
     return THEME_PALETTES.get(str(config.get("theme") or "forest"), THEME_PALETTES["forest"])
+
+
+def _visual(config: dict[str, Any]) -> dict[str, Any]:
+    return dict(config.get("visual_profile") or {})
+
+
+def _logo_path(config: dict[str, Any]) -> Path | None:
+    if str(_visual(config).get("logo_asset_key") or "") != "brands/natsuki/logo.svg": return None
+    path = files("perfect_catalog").joinpath("assets/brands/natsuki/logo.png")
+    return Path(str(path)) if path.is_file() else None
+
+
+def _layout(config: dict[str, Any]) -> tuple[int, int]:
+    layouts = {"T4": (2, 4), "T2": (1, 2), "T1": (1, 1), "TABLE": (1, 10)}
+    profile = str(config.get("template_profile") or "").upper()
+    if profile in layouts: return layouts[profile]
+    columns = max(1, min(3, int(config.get("columns_per_row", 2))))
+    return columns, {1: 2, 2: 4, 3: 6}[columns]
 
 
 def export_rows_from_release(release: dict[str, Any], items: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -148,7 +170,7 @@ def generate_catalog_pdf(
 ) -> bytes:
     config = config or {}
     release = release or {}
-    columns = max(1, min(3, int(config.get("columns_per_row", 2))))
+    columns, page_capacity = _layout(config)
     title = str(config.get("title") or "Catálogo de productos")
     palette = _theme(config)
     _register_natsuki_fonts()
@@ -215,7 +237,6 @@ def generate_catalog_pdf(
         str(config["group_by_secondary"]) if config.get("group_by_secondary") else None,
     )):
         cells = [_pdf_cell(row, styles, bundle_dir, palette, columns) for row in section_rows]
-        page_capacity = {1: 2, 2: 4, 3: 6}[columns]
         chunks = [cells[index:index + page_capacity] for index in range(0, len(cells), page_capacity)]
         for chunk_index, chunk in enumerate(chunks):
             if section_index or chunk_index:
@@ -247,6 +268,15 @@ def generate_catalog_pdf(
         canvas.setFillColor(colors.HexColor(palette["primary"]))
         canvas.rect(0, A4[1] - 1.1 * cm, A4[0], 1.1 * cm, stroke=0, fill=1)
         canvas.circle(A4[0] - 2.4 * cm, A4[1] - 3.5 * cm, 1.25 * cm, stroke=0, fill=1)
+        logo = _logo_path(config)
+        profile = _visual(config)
+        if logo and profile.get("watermark_enabled", True):
+            canvas.saveState()
+            canvas.setFillAlpha(float(profile.get("watermark_opacity") or .05))
+            canvas.drawImage(str(logo), A4[0]-11*cm, 1.8*cm, width=9*cm, height=1.7*cm, preserveAspectRatio=True, mask="auto")
+            canvas.restoreState()
+        if logo and profile.get("corner_logo_enabled", True):
+            canvas.drawImage(str(logo), 1.35*cm, A4[1]-2.3*cm, width=4.3*cm, height=.82*cm, preserveAspectRatio=True, mask="auto")
         canvas.restoreState()
 
     def decorate(canvas: Any, document: Any) -> None:
@@ -260,6 +290,9 @@ def generate_catalog_pdf(
         proof = " · ".join(value for value in (version, checksum[:16]) if value)
         canvas.drawString(1.2 * cm, .65 * cm, proof)
         canvas.drawRightString(A4[0] - 1.2 * cm, .65 * cm, f"Página {document.page}")
+        logo = _logo_path(config)
+        if logo and _visual(config).get("corner_logo_enabled", True):
+            canvas.drawImage(str(logo), A4[0]-5.4*cm, A4[1]-1.45*cm, width=4.1*cm, height=.78*cm, preserveAspectRatio=True, mask="auto")
         canvas.restoreState()
 
     doc.build(story, onFirstPage=decorate_cover, onLaterPages=decorate)
@@ -272,7 +305,7 @@ def generate_catalog_pptx(
 ) -> bytes:
     config = config or {}
     release = release or {}
-    columns = max(1, min(3, int(config.get("columns_per_row", 2))))
+    columns, per_slide = _layout(config)
     title = str(config.get("title") or "Catálogo de productos")
     palette = _theme(config)
     primary_rgb = RGBColor.from_string(palette["primary"].lstrip("#"))
@@ -287,7 +320,9 @@ def generate_catalog_pptx(
     ) if value)
     cover.placeholders[1].text = proof
     cover.placeholders[1].text_frame.paragraphs[0].font.color.rgb = RGBColor.from_string(palette["ink"].lstrip("#"))
-    per_slide = columns * 3
+    logo = _logo_path(config)
+    if logo and _visual(config).get("corner_logo_enabled", True):
+        cover.shapes.add_picture(str(logo), Inches(9.2), Inches(.35), width=Inches(3.5))
     for section, section_rows in _groups(
         rows, str(config.get("group_by") or "category_path"),
         str(config["group_by_secondary"]) if config.get("group_by_secondary") else None,
@@ -318,14 +353,18 @@ def generate_catalog_pptx(
                     except Exception:
                         pass
                 p = frame.paragraphs[0]; p.text = str(row.get("internal_reference_original") or ""); p.font.bold = True; p.font.size = Pt(12)
-                p = frame.add_paragraph(); p.text = str(row.get("name_original") or ""); p.font.size = Pt(11)
+                p = frame.add_paragraph(); p.text = str(row.get("name_original") or ""); p.font.size = Pt(12)
                 if row.get("category_path") or row.get("brand"):
                     metadata = " · ".join(str(value) for value in (row.get("category_path"), row.get("brand")) if value)
-                    p = frame.add_paragraph(); p.text = metadata; p.font.size = Pt(8)
+                    p = frame.add_paragraph(); p.text = metadata; p.font.size = Pt(12)
                 if row.get("oem_references"):
-                    p = frame.add_paragraph(); p.text = "OEM: " + ", ".join(map(str, row["oem_references"])); p.font.size = Pt(8)
+                    p = frame.add_paragraph(); p.text = "OEM: " + ", ".join(map(str, row["oem_references"])); p.font.size = Pt(12)
                 if row.get("applications"):
-                    p = frame.add_paragraph(); p.text = "Aplicaciones: " + "; ".join(map(str, row["applications"])); p.font.size = Pt(8)
+                    p = frame.add_paragraph(); p.text = "Aplicaciones: " + "; ".join(map(str, row["applications"])); p.font.size = Pt(12)
+                for paragraph in frame.paragraphs:
+                    paragraph.font.name = "DM Sans"
+            if logo and _visual(config).get("corner_logo_enabled", True):
+                slide.shapes.add_picture(str(logo), Inches(10.7), Inches(.15), width=Inches(2.0))
     output = io.BytesIO(); prs.save(output)
     return output.getvalue()
 
@@ -337,7 +376,7 @@ def generate_catalog_html(
     """Genera una edición digital portable; no consulta estado mutable ni ejecuta JavaScript."""
     config = config or {}
     release = release or {}
-    columns = max(1, min(3, int(config.get("columns_per_row", 2))))
+    columns, _ = _layout(config)
     palette = _theme(config)
     title = escape(str(config.get("title") or "Catálogo de productos"))
     subtitle = escape(str(config.get("subtitle") or ""))
@@ -372,12 +411,25 @@ def generate_catalog_html(
         )
     checksum = escape(str(release.get("snapshot_sha256") or ""))
     version = escape(str(release.get("version") or ""))
+    logo_uri = ""
+    if _logo_path(config):
+        logo_uri = "data:image/svg+xml;base64," + base64.b64encode(
+            files("perfect_catalog").joinpath("assets/brands/natsuki/logo.svg").read_bytes()
+        ).decode("ascii")
     html = f"""<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="generator" content="Perfect Catalog"><meta name="release-sha256" content="{checksum}">
 <title>{title}</title><style>
 :root{{--ink:{palette['ink']};--forest:{palette['primary']};--paper:{palette['paper']};--card:{palette['card']};--line:#d9d5c9;--muted:#65716b}}*{{box-sizing:border-box}}html{{scroll-behavior:smooth}}body{{margin:0;color:var(--ink);background:var(--paper);font:15px/1.55 Arial,sans-serif}}main{{max-width:1280px;margin:auto;padding:clamp(24px,5vw,72px)}}.hero{{position:relative;min-height:48vh;display:grid;align-content:end;padding:8vw clamp(0px,2vw,28px) 4vw;border-bottom:4px solid var(--ink)}}.hero:before{{content:"";position:absolute;top:12%;right:2%;width:clamp(90px,14vw,190px);aspect-ratio:1;border:1px solid var(--forest);border-radius:50%;opacity:.22}}.hero small{{color:var(--forest);font-weight:800;letter-spacing:.16em;text-transform:uppercase}}h1{{position:relative;max-width:900px;margin:.2em 0;font:500 clamp(44px,8vw,104px)/.9 Georgia,serif;letter-spacing:-.035em}}.hero p{{max-width:700px;font-size:18px}}section{{padding:clamp(38px,6vw,72px) 0}}section>header{{display:flex;justify-content:space-between;gap:20px;align-items:end;border-bottom:1px solid var(--line)}}h2{{margin:.25em 0;font:500 clamp(27px,4vw,48px) Georgia,serif;letter-spacing:-.02em}}section>header span{{padding-bottom:1.2em;color:var(--muted)}}.products{{display:grid;grid-template-columns:repeat({columns},minmax(0,1fr));gap:20px;padding-top:24px}}.product{{min-width:0;padding:20px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(20,42,34,.06);overflow:hidden}}.photo{{height:210px;margin:-20px -20px 20px;background:#f8f8f5;display:grid;place-items:center;overflow:hidden;border-bottom:1px solid var(--line)}}.photo img{{width:100%;height:100%;object-fit:contain}}code{{color:var(--forest);font-weight:800;letter-spacing:.035em}}h3{{margin:.5em 0;font:500 22px/1.15 Georgia,serif}}.meta{{color:var(--muted);font-size:13px}}.proof{{padding:28px 0;border-top:1px solid var(--line);overflow-wrap:anywhere;color:var(--muted);font-size:12px}}@media(max-width:760px){{html{{scroll-behavior:auto}}.products{{grid-template-columns:1fr}}.hero{{min-height:38vh}}section>header{{align-items:start;flex-direction:column;gap:0}}section>header span{{padding-bottom:1em}}}}
 </style></head><body><main><header class="hero"><small>Perfect Trading · edición {version}</small><h1>{title}</h1><p>{subtitle}</p></header>{''.join(sections)}<footer class="proof">Release SHA-256: {checksum}</footer></main></body></html>"""
+    brand_css = """@font-face{font-family:'DM Sans';src:url(data:font/ttf;base64,%s)}@font-face{font-family:'Barlow Condensed';src:url(data:font/ttf;base64,%s);font-weight:700}body{font-family:'DM Sans',sans-serif;font-size:16px;line-height:1.8}h1,h2,h3{font-family:'Barlow Condensed',sans-serif;font-weight:700}.meta,.proof{font-size:16px}.brand-logo{position:absolute;right:2rem;top:2rem;width:min(260px,35vw);z-index:2}.watermark{position:absolute;right:5%%;bottom:8%%;width:55%%;opacity:.05;pointer-events:none}""" % (
+        base64.b64encode(files("perfect_catalog").joinpath("assets/brands/natsuki/fonts/DMSans-Regular.ttf").read_bytes()).decode("ascii"),
+        base64.b64encode(files("perfect_catalog").joinpath("assets/brands/natsuki/fonts/BarlowCondensed-Bold.ttf").read_bytes()).decode("ascii"),
+    )
+    html = html.replace("</style>", brand_css + "</style>", 1)
+    if logo_uri:
+        marks = f'<img class="brand-logo" src="{logo_uri}" alt="Marca"><img class="watermark" src="{logo_uri}" alt="">'
+        html = html.replace('<header class="hero">', '<header class="hero">' + marks, 1)
     return html.encode("utf-8")
 
 

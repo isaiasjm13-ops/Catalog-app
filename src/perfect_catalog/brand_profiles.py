@@ -16,6 +16,19 @@ CODE_PATTERN = re.compile(r"[A-Z0-9][A-Z0-9_-]{1,31}")
 COLOR_PATTERN = re.compile(r"#[0-9A-F]{6}")
 
 
+def visual_profile(row: dict[str, Any]) -> dict[str, Any]:
+    """Serializable, immutable subset used by release/export snapshots."""
+    return {
+        key: row.get(key) for key in (
+            "code", "display_name", "tagline", "primary_color", "secondary_color",
+            "ink_color", "paper_color", "public_base_url", "title_font_family",
+            "body_font_family", "minimum_font_size_pt", "body_line_height",
+            "logo_asset_key", "corner_logo_enabled", "watermark_enabled",
+            "watermark_opacity",
+        )
+    }
+
+
 def normalize_profile_input(values: dict[str, str]) -> dict[str, str | None]:
     code = str(values.get("code") or "").strip().upper()
     if not CODE_PATTERN.fullmatch(code):

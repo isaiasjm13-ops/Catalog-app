@@ -170,6 +170,26 @@ def _resolve_brand(
     return rows[0]
 
 
+def _resolve_plan_brand(connection: Connection[Any], plan: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    from .brand_profiles import visual_profile
+    profile_id = plan.get("brand_profile_id")
+    if not profile_id:
+        raise RuntimeError("El plan aplicado no conserva un perfil de marca.")
+    with connection.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(
+            """SELECT b.brand_id, b.name, b.normalized_name, bp.*
+               FROM perfect_catalog.brand AS b
+               JOIN perfect_catalog.brand_profile AS bp USING (brand_profile_id)
+               WHERE b.source_system_id=%s AND b.brand_profile_id=%s""",
+            (plan["source_system_id"], profile_id),
+        )
+        rows = [dict(row) for row in cursor.fetchall()]
+    if len(rows) != 1:
+        raise RuntimeError("El plan no resuelve una única marca materializada.")
+    row = rows[0]
+    return ({"brand_id": row["brand_id"], "name": row["name"], "normalized_name": row["normalized_name"]}, visual_profile(row))
+
+
 def _load_release_records(
     connection: Connection[Any], brand_id: uuid.UUID
 ) -> list[dict[str, Any]]:
@@ -483,7 +503,7 @@ def _build_release_in_connection(
     actor = _require_text(actor, "actor")
     reason = _require_text(reason, "reason")
     plan = _load_applied_plan(connection, plan_id, expected_fingerprint)
-    brand = _resolve_brand(connection, plan["source_system_id"], brand_name)
+    brand, brand_visual = _resolve_plan_brand(connection, plan)
     records = _load_release_records(connection, brand["brand_id"])
     items = _release_items(records)
     definition = {
@@ -503,6 +523,7 @@ def _build_release_in_connection(
             "reference_review_status": "approved",
             "primary_reference_required": True,
         },
+        "visual_profile": brand_visual,
         "item_count": len(items),
     }
     release_id = uuid.uuid5(

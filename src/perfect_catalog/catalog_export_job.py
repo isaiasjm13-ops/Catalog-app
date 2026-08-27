@@ -9,6 +9,7 @@ import uuid
 import io
 import zipfile
 from datetime import datetime, timezone
+from importlib.resources import files
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -21,7 +22,7 @@ EXPORT_MANIFEST_SCHEMA = "perfect-catalog.export-manifest.v1"
 EXPORT_VERIFICATION_SCHEMA = "perfect-catalog.export-verification.v1"
 SUPPORTED_FORMATS = ("html", "pdf", "pptx", "indesign-json")
 INDESIGN_TEMPLATE_PROFILES = ("T4", "T2", "T1", "TABLE")
-INDESIGN_PRODUCTS_PER_PAGE = {"T4": 4, "T2": 2, "T1": 1, "TABLE": 16}
+INDESIGN_PRODUCTS_PER_PAGE = {"T4": 4, "T2": 2, "T1": 1, "TABLE": 10}
 CATALOG_GROUP_FIELDS = ("category_path", "brand", "vehicle_make", "internal_reference_original")
 CATALOG_FILTER_FIELDS = ("all", "category_path", "brand", "vehicle_make", "internal_reference_original", "name_original")
 MAX_SELECTED_REFERENCES = 5000
@@ -289,7 +290,8 @@ def _digital_zip(
 
 def _indesign_zip(
     snapshot_content: bytes, datamerge_content: bytes,
-    image_files: list[dict[str, Any]], output_dir: Path
+    image_files: list[dict[str, Any]], output_dir: Path,
+    config: dict[str, Any],
 ) -> bytes:
     script_path = Path(__file__).resolve().parents[2] / "indesign" / "ImportPerfectCatalog.jsx"
     if not script_path.is_file():
@@ -310,6 +312,16 @@ def _indesign_zip(
         ("ImportPerfectCatalog.jsx", script_path.read_bytes()),
         ("LEEME-INDESIGN.txt", instructions),
     ]
+    if (config.get("visual_profile") or {}).get("logo_asset_key") == "brands/natsuki/logo.svg":
+        assets = files("perfect_catalog").joinpath("assets/brands/natsuki")
+        entries.extend([
+            ("brand/logo.svg", assets.joinpath("logo.svg").read_bytes()),
+            ("brand/logo.png", assets.joinpath("logo.png").read_bytes()),
+            ("Document fonts/BarlowCondensed-Regular.ttf", assets.joinpath("fonts/BarlowCondensed-Regular.ttf").read_bytes()),
+            ("Document fonts/BarlowCondensed-Bold.ttf", assets.joinpath("fonts/BarlowCondensed-Bold.ttf").read_bytes()),
+            ("Document fonts/DMSans-Regular.ttf", assets.joinpath("fonts/DMSans-Regular.ttf").read_bytes()),
+            ("Document fonts/DMSans-Bold.ttf", assets.joinpath("fonts/DMSans-Bold.ttf").read_bytes()),
+        ])
     entries.extend(
         (str(item["filename"]), (output_dir / str(item["filename"])).read_bytes())
         for item in image_files
@@ -480,6 +492,7 @@ def build_catalog_bundle(
     materialized = list(items)
     source_rows = export_rows_from_release(release, materialized)
     export_config = dict(config or {})
+    export_config["visual_profile"] = dict(release.get("definition", {}).get("visual_profile") or {})
     template_profile = str(export_config.get("template_profile") or "T4").upper()
     if template_profile not in INDESIGN_TEMPLATE_PROFILES:
         raise ValueError("Perfil InDesign no soportado.")
@@ -525,7 +538,7 @@ def build_catalog_bundle(
         payloads["indesign-csv"] = (f"{stem}.datamerge.csv", datamerge_content)
         payloads["indesign-package"] = (
             f"{stem}.indesign.zip", _indesign_zip(
-                snapshot_content, datamerge_content, image_files, output_dir
+                snapshot_content, datamerge_content, image_files, output_dir, export_config
             )
         )
 

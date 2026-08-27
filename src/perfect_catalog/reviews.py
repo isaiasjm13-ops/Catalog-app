@@ -1089,11 +1089,13 @@ class DatabaseReviewGateway:
 
     def prepare_import_plan(
         self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
+        brand_code: str,
     ) -> dict[str, Any]:
         from .application import approve_and_apply_plan
 
         return approve_and_apply_plan(
-            plan_id, fingerprint, actor, reason, self._config, self._password
+            plan_id, fingerprint, actor, reason, self._config, self._password,
+            brand_code=brand_code,
         )
 
     def page(

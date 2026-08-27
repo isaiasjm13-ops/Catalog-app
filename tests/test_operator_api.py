@@ -83,7 +83,11 @@ class SyntheticReviewGateway:
             "plan_sha256": "d" * 64, "approval_fingerprint_sha256": FINGERPRINT,
             "file_sha256": "e" * 64, "contract_version": "contract-test",
             "rules_version": "rules-test", "item_count": 1,
+            "brand_profile_code": None, "brand_profile_name": None,
         }
+
+    def brand_profiles(self) -> list[dict[str, Any]]:
+        return [{"code": "NATSUKI", "display_name": "Natsuki"}]
 
     def approve_import_plan(
         self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
@@ -103,8 +107,9 @@ class SyntheticReviewGateway:
 
     def prepare_import_plan(
         self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
+        brand_code: str,
     ) -> dict[str, Any]:
-        if plan_id != PLAN_ID or fingerprint != FINGERPRINT or self.import_plan_status != "awaiting_review":
+        if plan_id != PLAN_ID or fingerprint != FINGERPRINT or self.import_plan_status != "awaiting_review" or brand_code != "NATSUKI":
             raise PermissionError("Preparación rechazada")
         self.import_plan_status = "applied"
         return {"plan_id": str(plan_id), "status": "prepared", "counts": {"create": 1}}
@@ -608,7 +613,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         rejected = await self.client.post(
             f"/operator/import-plans/{PLAN_ID}/prepare",
             data={
-                "csrf_token": hidden_value(detail.text, "csrf_token"),
+                "csrf_token": hidden_value(detail.text, "csrf_token"), "brand_code": "NATSUKI",
                 "fingerprint": FINGERPRINT, "reason": "Revisión piloto", "confirm": "wrong",
             },
             headers={"Origin": "http://testserver"},
@@ -619,7 +624,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         prepared = await self.client.post(
             f"/operator/import-plans/{PLAN_ID}/prepare",
             data={
-                "csrf_token": hidden_value(detail.text, "csrf_token"),
+                "csrf_token": hidden_value(detail.text, "csrf_token"), "brand_code": "NATSUKI",
                 "fingerprint": FINGERPRINT, "reason": "Revisión piloto", "confirm": "prepare",
             },
             headers={"Origin": "http://testserver"},
@@ -920,7 +925,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.12.0")
+        self.assertEqual(OPERATOR_VERSION, "1.13.0")
 
     async def test_promotion_requires_individual_post_origin_csrf_and_confirmation(self) -> None:
         await self.login()

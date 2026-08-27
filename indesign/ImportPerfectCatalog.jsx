@@ -22,7 +22,8 @@
     }
     function frame(page, bounds, contents, pointSize, bold, style) {
         var box = page.textFrames.add({geometricBounds: bounds, contents: contents});
-        box.textFramePreferences.insetSpacing = [8, 8, 8, 8]; box.texts[0].pointSize = pointSize;
+        box.textFramePreferences.insetSpacing = [8, 8, 8, 8]; box.texts[0].pointSize = Math.max(12, pointSize);
+        box.texts[0].leading = box.texts[0].pointSize * 1.8;
         if (bold) { try { box.texts[0].fontStyle = "Bold"; } catch (ignored) {} }
         if (style) {
             if (style.fill) box.fillColor = style.fill;
@@ -36,7 +37,12 @@
         if (!color.isValid) color = document.colors.add({name: name, model: ColorModel.PROCESS, space: ColorSpace.RGB, colorValue: values});
         return color;
     }
-    function themeDefinition(document, name) {
+    function hexRgb(value, fallback) {
+        var match = /^#([0-9a-f]{6})$/i.exec(String(value || ""));
+        if (!match) return fallback;
+        return [parseInt(match[1].substr(0,2),16), parseInt(match[1].substr(2,2),16), parseInt(match[1].substr(4,2),16)];
+    }
+    function themeDefinition(document, name, visual) {
         var palettes = {
             forest: {primary: [8, 102, 80], ink: [23, 35, 31], paper: [244, 241, 232], card: [255, 255, 255]},
             industrial: {primary: [195, 74, 33], ink: [34, 39, 43], paper: [236, 235, 231], card: [255, 255, 255]},
@@ -45,6 +51,7 @@
         };
         if (!palettes[name]) fail("El tema editorial no es compatible.");
         var palette = palettes[name], prefix = "Perfect Catalog " + name + " ";
+        if (visual) palette = {primary: hexRgb(visual.primary_color, palette.primary), ink: hexRgb(visual.ink_color, palette.ink), paper: hexRgb(visual.paper_color, palette.paper), card: [255,255,255]};
         return {name: name,
             primary: documentColor(document, prefix + "Primary", palette.primary),
             ink: documentColor(document, prefix + "Ink", palette.ink),
@@ -58,6 +65,14 @@
         var candidate = new File(baseFolder.fsName + "/" + clean);
         return candidate.exists ? candidate : null;
     }
+    function brandMark(page, baseFolder, visual, watermark) {
+        if (!visual || !visual.logo_asset_key) return;
+        var logo = new File(baseFolder.fsName + "/brand/logo.svg");
+        if (!logo.exists) return;
+        var bounds = watermark ? [720, 300, 760, 550] : [18, 420, 48, 560];
+        var box = page.rectangles.add({geometricBounds: bounds, strokeWeight: 0});
+        try { box.place(logo); box.fit(FitOptions.PROPORTIONALLY); box.fit(FitOptions.CENTER_CONTENT); if (watermark) box.transparencySettings.blendingSettings.opacity = Number(visual.watermark_opacity || .05) * 100; } catch (ignored) {}
+    }
     function separatorPage(document, label, theme) {
         var page = document.pages.add();
         var background = page.rectangles.add({geometricBounds: page.bounds, fillColor: theme.paper, strokeWeight: 0});
@@ -68,7 +83,7 @@
     function profileDefinition(profile) {
         if (profile === "T1") return {perPage: 1, columns: 1, rows: 1, imageHeight: 300};
         if (profile === "T2") return {perPage: 2, columns: 1, rows: 2, imageHeight: 150};
-        if (profile === "TABLE") return {perPage: 16, columns: 1, rows: 16, imageHeight: 0};
+        if (profile === "TABLE") return {perPage: 10, columns: 1, rows: 10, imageHeight: 0};
         return {perPage: 4, columns: 2, rows: 2, imageHeight: 125};
     }
     function configureDocument(document) {
@@ -84,8 +99,8 @@
         document.insertLabel("perfect_catalog_bleed_mm", "3");
     }
     function productBounds(definition, slot) {
-        if (definition.perPage === 16) {
-            var rowTop = 50 + slot * 43; return [rowTop, 35, rowTop + 37, 560];
+        if (definition.perPage === 10) {
+            var rowTop = 50 + slot * 67; return [rowTop, 35, rowTop + 59, 560];
         }
         var column = slot % definition.columns, row = Math.floor(slot / definition.columns);
         var width = 525 / definition.columns, height = 690 / definition.rows;
@@ -93,7 +108,7 @@
     }
     function productFrame(page, bounds, product, index, definition, baseFolder, report, theme) {
         var reference = value(product, "internal_reference_original", "Sin referencia");
-        if (definition.perPage === 16) {
+        if (definition.perPage === 10) {
             var tableRow = frame(page, bounds, reference + "\t" + value(product, "name_original", "Sin nombre") + "\t" + value(product, "applications", "No indicadas"), 8, false,
                 {fill: index % 2 ? theme.card : theme.paper, stroke: theme.primary, text: theme.ink, strokeWeight: 0.35});
             tableRow.insertLabel("perfect_catalog_product_index", String(index));
@@ -113,7 +128,7 @@
             value(product, "category_path", "Sin categoría") + " · " + value(product, "brand", "Sin marca") + "\r" +
             "OEM: " + value(product, "oem_references", "No indicadas") + "\r" +
             "Aplicaciones: " + value(product, "applications", "No indicadas");
-        var card = frame(page, [top + definition.imageHeight + 6, left, bottom, right], contents, 9, false,
+        var card = frame(page, [top + definition.imageHeight + 6, left, bottom, right], contents, 12, false,
             {fill: theme.card, stroke: theme.primary, text: theme.ink, strokeWeight: 0.75});
         try { card.paragraphs[0].fontStyle = "Bold"; } catch (ignored) {}
         card.paragraphs[0].pointSize = 13; card.insertLabel("perfect_catalog_product_index", String(index));
@@ -129,7 +144,8 @@
         if (!/^(forest|industrial|midnight|classic)$/.test(themeName)) fail("El tema editorial no es compatible.");
         var document = app.documents.add();
         configureDocument(document);
-        var theme = themeDefinition(document, themeName);
+        var visual = (snapshot.layout && snapshot.layout.visual_profile) || null;
+        var theme = themeDefinition(document, themeName, visual);
         document.insertLabel("perfect_catalog_schema", snapshot.schema);
         document.insertLabel("perfect_catalog_release_id", snapshot.release.release_id);
         document.insertLabel("perfect_catalog_snapshot_sha256", snapshot.release.snapshot_sha256);
@@ -145,14 +161,16 @@
         coverBackground.sendToBack();
         frame(document.pages[0], [160, 55, 245, 540], title, 30, true, {text: theme.primary});
         frame(document.pages[0], [260, 55, 315, 540], subtitle, 16, false, {text: theme.ink});
+        brandMark(document.pages[0], baseFolder, visual, false);
+        if (!visual || visual.watermark_enabled !== false) brandMark(document.pages[0], baseFolder, visual, true);
         var definition = profileDefinition(profile), groupBy = (snapshot.layout && snapshot.layout.group_by) || "category_path";
         var secondaryGroupBy = (snapshot.layout && snapshot.layout.group_by_secondary) || "";
         var currentGroup = null, slot = definition.perPage, page = null;
         for (var index = 0; index < snapshot.products.length; index++) {
             var product = snapshot.products[index], group = value(product, groupBy, "Sin categoría");
             if (secondaryGroupBy) group += " · " + value(product, secondaryGroupBy, "Sin subgrupo");
-            if (group !== currentGroup) { separatorPage(document, group, theme); currentGroup = group; slot = definition.perPage; report.group_count++; }
-            if (slot >= definition.perPage) { page = document.pages.add(); slot = 0; }
+            if (group !== currentGroup) { separatorPage(document, group, theme); brandMark(document.pages.item(-1), baseFolder, visual, false); currentGroup = group; slot = definition.perPage; report.group_count++; }
+            if (slot >= definition.perPage) { page = document.pages.add(); brandMark(page, baseFolder, visual, false); slot = 0; }
             productFrame(page, productBounds(definition, slot), product, index, definition, baseFolder, report, theme); slot++;
         }
         report.page_count = document.pages.length;

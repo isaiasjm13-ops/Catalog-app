@@ -27,6 +27,7 @@
   <p>Una sola confirmación verifica el archivo y aplica el plan. Los productos y sus aplicaciones vehiculares quedarán visibles para revisión; nada se publica todavía.</p>
   <form method="post" action="/operator/import-plans/{{ plan.plan_id }}/prepare">
     <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><input type="hidden" name="fingerprint" value="{{ plan.approval_fingerprint_sha256 }}">
+    <label><span>Marca del catálogo</span><select name="brand_code" required><option value="">Selecciona una marca</option>{% for profile in profiles %}<option value="{{ profile.code }}"{% if plan.brand_profile_code == profile.code %} selected{% endif %}>{{ profile.display_name }} · {{ profile.code }}</option>{% endfor %}</select></label>
     <label><span>Motivo de la importación</span><textarea name="reason" minlength="4" maxlength="500" required placeholder="Ej. Exportación Odoo verificada para catálogo"></textarea></label>
     <label class="confirm-field"><input type="checkbox" name="confirm" value="prepare" required><span>Confirmo el archivo, sus hashes y la creación de identidades pendientes.</span></label>
     <button class="primary-button" type="submit">Verificar y preparar</button>

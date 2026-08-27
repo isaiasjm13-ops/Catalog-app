@@ -823,9 +823,11 @@ def inspect_plan(plan_id: uuid.UUID, config: DatabaseConfig, password: str) -> d
                 SELECT p.import_plan_id, p.plan_status, p.plan_sha256,
                        p.approval_fingerprint_sha256, p.file_sha256,
                        p.contract_version, p.rules_version,
-                       count(i.import_plan_item_id)
+                       count(i.import_plan_item_id), bp.code, bp.display_name
                 FROM perfect_catalog.import_plan AS p
                 LEFT JOIN perfect_catalog.import_plan_item AS i USING (import_plan_id)
+                LEFT JOIN perfect_catalog.brand_profile AS bp
+                  ON bp.brand_profile_id=p.brand_profile_id
                 WHERE p.import_plan_id = %s
                 GROUP BY p.import_plan_id
                 """,
@@ -843,6 +845,8 @@ def inspect_plan(plan_id: uuid.UUID, config: DatabaseConfig, password: str) -> d
                 "contract_version": row[5],
                 "rules_version": row[6],
                 "item_count": row[7],
+                "brand_profile_code": row[8],
+                "brand_profile_name": row[9],
             }
 
 
