@@ -1,5 +1,6 @@
 from pathlib import Path
 import unittest
+import xml.etree.ElementTree as ET
 
 from perfect_catalog.brand_profiles import normalize_profile_input
 
@@ -48,6 +49,12 @@ class BrandProfileTests(unittest.TestCase):
         self.assertIn('name="confirm" value="yes"', template)
         self.assertIn('_same_origin(request)', api)
         self.assertNotIn('style="--profile', template)
+
+    def test_natsuki_master_logo_is_valid_packaged_svg(self) -> None:
+        logo = ROOT / "src/perfect_catalog/assets/brands/natsuki/logo.svg"
+        self.assertEqual(ET.parse(logo).getroot().tag, "{http://www.w3.org/2000/svg}svg")
+        packaging = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn('"assets/brands/*/*.svg"', packaging)
 
 
 if __name__ == "__main__":

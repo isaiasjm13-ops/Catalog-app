@@ -8,7 +8,8 @@
 - Nuevo launcher `MIGRAR-PERFILES-MARCA.cmd`; tambien se incorporo 0013 a la reconstruccion del limpiador de importaciones.
 - Pendiente del mismo bloque: seleccionar el perfil antes del apply, eliminar la constante NATSUKI, incorporar logos mediante ingreso seguro y propagar los colores guardados a preview, HTML, PDF, PPTX e InDesign.
 - Verificacion: 233 pruebas pasan; 6 integraciones PostgreSQL se omiten sin credenciales.
-- Identidad NATSUKI confirmada para la siguiente iteracion: Barlow Condensed en titulares, DM Sans en cuerpo, ficha T1 a 12 pt con interlineado 1.8; logo de esquina y marca de agua opcional al 4-7%. No hay fuentes ni logo en el repositorio, por lo que no deben simularse ni descargarse sin validar los activos autorizados.
+- Identidad NATSUKI confirmada para la siguiente iteracion: Barlow Condensed en titulares, DM Sans en cuerpo, ficha T1 a 12 pt con interlineado 1.8; logo de esquina y marca de agua opcional al 4-7%. Las fuentes no estan en el repositorio y no deben simularse ni descargarse sin validar los activos autorizados.
+- Logo SVG maestro de NATSUKI incorporado desde `Z:\DOC MURILLO\logo nat.svg` sin modificar el original. Regla actualizada: 12 pt es minimo absoluto para todos los textos; faltan unicamente los archivos autorizados de Barlow Condensed y DM Sans.
 
 ## Bloque 2026-08-27: PDF editorial v2
 

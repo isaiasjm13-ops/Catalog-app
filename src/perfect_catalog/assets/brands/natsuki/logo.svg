@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Capa_1" data-name="Capa 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 289.48 54.76">
+  <defs>
+    <style>
+      .cls-1,.cls-2,.cls-3{fill-rule:evenodd}.cls-1,.cls-4{fill:#173862}.cls-2{fill:#e30613}.cls-5{fill:#005c8f}.cls-6{fill:#0084c7}.cls-7{fill:#0078b8}.cls-8{fill:#7dbeea}.cls-9{fill:#fff}.cls-10{fill:#00497c}.cls-11{fill:#0067a4}.cls-12{fill:none}.cls-13{fill:#00a0dd}.cls-3{fill:#dadada}.cls-14{fill:#0088ce}.cls-15{fill:#005990}.cls-16{clip-path:url(#clippath)}.cls-17{fill:#c6e0f6}.cls-18{fill:#004070}
+    </style>
+    <clipPath id="clippath"><path class="cls-12" d="M166.88,22.5l11.86,18.66h-31.41v-8.7h10.82l-11.86-18.66h31.41v8.7h-10.82ZM204.85,13.8h15.06v27.36h-39.29V13.8h15.06v18.73h9.17V13.8ZM93.8,13.8h-24.23v27.36h18.69l5.53-8.7v8.7h15.06V13.8h-15.06,0ZM84.63,22.5h9.17v9.95h-9.17v-9.95ZM120.04,3.48h15.06v10.32h9.17v8.7h-9.17v9.95h9.17v8.7h-24.23v-18.66h-9.17v-8.7h9.17V3.47h0Z"/></clipPath>
+  </defs>
+  <g id="Objeto_generativo_0_0_" data-name="Objeto generativo (0, 0)">
+    <path class="cls-3" d="M268.37,0h21.11v54.76h-35.61l-.63-2.52c-.79-3.16-1.95-6.18-3.36-9.03l-7.34,11.54h-19.62v-10.12h-105.9v-18.66h-5.14v18.66h-21.11v-1.54l-.98,1.54h-23.23v10.12h-19.62l-7.33-11.52c-1.42,2.84-2.57,5.85-3.36,9.01l-.63,2.52H0V0h34.68l10.78,16.95V0h21.11v10.32h50.45V0h21.11v10.32h60.58v18.73h3.12V10.32h21.09V0h21.11v16.95L254.81,0h13.57,0ZM268.37,14.12l-7.28,11.45c2.75,3.51,5.23,7.31,7.28,11.38V14.13h0ZM21.11,14.12v22.86c1.94-3.86,4.27-7.48,6.85-10.84l.44-.57-7.29-11.46h0ZM144.31,28.97h7.88l-4.9-7.7v4.71h-9.17v2.99h6.19ZM177.6,33.47v-7.49h-4.76l4.76,7.49h0ZM87.65,25.98v2.99h3.12v-2.99h-3.12Z"/>
+    <g><path class="cls-1" d="M37.68,40.18c-1.91,3.58-3.37,7.29-4.32,11.1h-14.15c1.79-8.07,5.56-15.74,11.01-22.83l7.46,11.73h0ZM257.17,25.84c6.59,7.8,11.11,16.37,13.12,25.44h-14.15c-1.23-4.92-3.3-9.68-6.11-14.2l7.14-11.24h0Z"/>
+      <g class="cls-16"><g>
+        <rect class="cls-4" x="69.57" y="40.26" width="150.34" height=".9"/><rect class="cls-5" x="69.57" y="38.47" width="150.34" height="2.69"/><rect class="cls-6" x="69.57" y="36.67" width="150.34" height="2.69"/><rect class="cls-13" x="69.57" y="34.88" width="150.34" height="2.69"/><rect class="cls-8" x="69.57" y="33.08" width="150.34" height="2.69"/><rect class="cls-17" x="69.57" y="31.29" width="150.34" height="2.69"/><rect class="cls-9" x="69.57" y="29.49" width="150.34" height="2.69"/><rect class="cls-17" x="69.57" y="27.7" width="150.34" height="2.69"/><rect class="cls-8" x="69.57" y="25.91" width="150.34" height="2.69"/><rect class="cls-13" x="69.57" y="24.11" width="150.34" height="2.69"/><rect class="cls-14" x="69.57" y="22.32" width="150.34" height="2.69"/><rect class="cls-7" x="69.57" y="20.52" width="150.34" height="2.69"/><rect class="cls-11" x="69.57" y="18.73" width="150.34" height="2.69"/><rect class="cls-15" x="69.57" y="16.93" width="150.34" height="2.69"/><rect class="cls-10" x="69.57" y="15.14" width="150.34" height="2.69"/><rect class="cls-18" x="69.57" y="13.34" width="150.34" height="2.69"/><rect class="cls-18" x="69.57" y="11.55" width="150.34" height="2.69"/><rect class="cls-18" x="69.57" y="9.76" width="150.34" height="2.69"/><rect class="cls-18" x="69.57" y="7.96" width="150.34" height="2.69"/><rect class="cls-18" x="69.57" y="6.17" width="150.34" height="2.69"/><rect class="cls-18" x="69.57" y="3.48" width="150.34" height="3.59"/>
+      </g></g>
+      <path class="cls-2" d="M18.09,3.48H3.03v47.8h15.06V3.48ZM18.09,3.48h15.06l15.33,24.12V3.48h15.06v47.8h-15.06L18.09,3.48h0ZM271.39,3.48h15.06v47.8h-15.06V3.48ZM271.39,3.48h-15.06l-15.33,24.12V3.48h-15.06v47.8h15.06l30.39-47.8h0Z"/>
+    </g>
+  </g>
+</svg>

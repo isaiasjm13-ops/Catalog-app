@@ -37,11 +37,13 @@ El color identifica la marca del producto. La marca vehicular (Toyota, Nissan, C
 - Titulares: **Barlow Condensed**.
 - Texto y datos técnicos: **DM Sans**.
 - Ficha amplia T1: cuerpo de **12 pt** e interlineado **1.8** (21.6 pt de leading).
+- **12 pt es el tamaño mínimo global** en todas las plantillas y formatos, incluidos pies, OEM, aplicaciones, índices y tablas. Si el contenido no cabe, debe paginarse o cambiar de densidad; nunca reducirse por debajo del mínimo.
 - El interlineado no se comprime silenciosamente en plantillas densas; T4 y TABLE tendrán escalas propias declaradas y visibles en el perfil de plantilla.
 - Logotipo pequeño y nítido en una esquina de cada página para identificación continua.
 - Marca de agua opcional, monocroma, entre 4% y 7% de opacidad, siempre detrás de áreas vacías y nunca debajo de referencias, OEM, aplicaciones o códigos QR.
 - En páginas densas se usa solamente el logotipo de esquina; la marca de agua se reserva para portada, separadores y fichas T1 con espacio suficiente.
-- Activos pendientes de recibir: logo vectorial o PNG transparente y archivos de fuente TTF/OTF autorizados para incrustación y empaquetado.
+- Logo vectorial maestro incorporado desde el SVG autorizado en `src/perfect_catalog/assets/brands/natsuki/logo.svg`; el archivo AI externo permanece intacto.
+- Activos pendientes de recibir: archivos de fuente TTF/OTF autorizados para incrustación y empaquetado.
 
 ## Familias de página
 
