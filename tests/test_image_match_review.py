@@ -49,6 +49,15 @@ class ImageMatchReviewTests(unittest.TestCase):
         insert_calls = [call for call in cursor.execute.call_args_list if "INSERT INTO" in call.args[0]]
         self.assertEqual(len(insert_calls), 2)
         self.assertEqual([call.args[1][3] for call in insert_calls], ["a" * 64, "b" * 64])
+        connection.execute.assert_any_call(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 3))",
+            ("perfect_catalog.image_product_candidate.bulk_decision",),
+        )
+        selection_sql = next(
+            call.args[0] for call in cursor.execute.call_args_list
+            if "FROM perfect_catalog.image_product_candidate AS c" in call.args[0]
+        )
+        self.assertNotIn("FOR UPDATE", selection_sql)
 
     def test_bulk_decision_rejects_if_pending_count_changed(self) -> None:
         cursor = Mock(); cursor.fetchall.return_value = []

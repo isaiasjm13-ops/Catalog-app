@@ -189,6 +189,10 @@ def decide_image_candidates_bulk(
         raise ValueError(f"expected_count debe estar entre 1 y {max_items}.")
     with psycopg.connect(**config.connection_kwargs(password)) as connection:
         connection.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+        connection.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 3))",
+            ("perfect_catalog.image_product_candidate.bulk_decision",),
+        )
         with connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
                 """
@@ -199,7 +203,6 @@ def decide_image_candidates_bulk(
                 WHERE d.image_product_decision_id IS NULL
                 ORDER BY c.generated_at, c.image_product_candidate_id
                 LIMIT %s
-                FOR UPDATE OF c
                 """,
                 (max_items + 1,),
             )
