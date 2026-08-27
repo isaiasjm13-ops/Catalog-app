@@ -57,6 +57,10 @@ fuentes ausentes queda `passed`; en otro caso queda `issues`, sin ocultar sus co
 El último recibo se descarga desde la propia tarjeta de exportación. La ruta requiere sesión y enlaza tres
 UUID exactos (release, exportación y recibo); no acepta nombres de archivo ni rutas proporcionadas por el usuario.
 
+El JSX configura siempre el documento antes de componer: A4 vertical (210 × 297 mm), unidades internas en
+puntos, origen de regla por página, páginas no enfrentadas y sangrado uniforme de 3 mm. Estas decisiones no
+dependen de las preferencias que hubiera usado el operador en InDesign y quedan como Script Labels del INDD.
+
 La vista previa vuelve a verificar el release completo, calcula el total de todos los grupos y
 renderiza como máximo 24 fichas para mantener una respuesta ágil con catálogos grandes. No crea
 archivos ni altera datos.

@@ -71,6 +71,18 @@
         if (profile === "TABLE") return {perPage: 16, columns: 1, rows: 16, imageHeight: 0};
         return {perPage: 4, columns: 2, rows: 2, imageHeight: 125};
     }
+    function configureDocument(document) {
+        document.viewPreferences.horizontalMeasurementUnits = MeasurementUnits.POINTS;
+        document.viewPreferences.verticalMeasurementUnits = MeasurementUnits.POINTS;
+        document.viewPreferences.rulerOrigin = RulerOrigin.PAGE_ORIGIN;
+        document.documentPreferences.facingPages = false;
+        document.documentPreferences.pageWidth = "210mm";
+        document.documentPreferences.pageHeight = "297mm";
+        document.documentPreferences.documentBleedUniformSize = true;
+        document.documentPreferences.documentBleedTopOffset = "3mm";
+        document.insertLabel("perfect_catalog_page_format", "A4-portrait");
+        document.insertLabel("perfect_catalog_bleed_mm", "3");
+    }
     function productBounds(definition, slot) {
         if (definition.perPage === 16) {
             var rowTop = 50 + slot * 43; return [rowTop, 35, rowTop + 37, 560];
@@ -116,6 +128,7 @@
         var themeName = (snapshot.layout && snapshot.layout.theme) || "forest";
         if (!/^(forest|industrial|midnight|classic)$/.test(themeName)) fail("El tema editorial no es compatible.");
         var document = app.documents.add();
+        configureDocument(document);
         var theme = themeDefinition(document, themeName);
         document.insertLabel("perfect_catalog_schema", snapshot.schema);
         document.insertLabel("perfect_catalog_release_id", snapshot.release.release_id);

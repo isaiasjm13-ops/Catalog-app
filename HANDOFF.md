@@ -134,6 +134,8 @@
   exacta con `group_count`/`page_count`; no acepta sólo conteos plausibles. Clasifica `passed` o `issues`.
 - La biblioteca distingue `Sin incidencias`/`Con incidencias` y permite descargar el recibo JSON mediante
   una ruta autenticada limitada a UUID de release, exportación y recibo. UUID ajeno devuelve 404.
+- El JSX deja de heredar preferencias del puesto: fija A4 vertical, puntos, origen por página, páginas no
+  enfrentadas y sangrado uniforme de 3 mm antes de crear marcos. El INDD conserva formato/sangrado en labels.
 - Suite local actual: 206 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
 
 ## Sesión actual: Login estable y primer flujo de catálogo/InDesign (2026-08-26)

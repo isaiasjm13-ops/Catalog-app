@@ -33,6 +33,13 @@ class InDesignBridgeTests(unittest.TestCase):
         self.assertIn("page_count", script)
         self.assertIn('value(product, "brand", "Sin marca")', script)
         self.assertIn('value(product, "oem_references", "No indicadas")', script)
+        self.assertIn("configureDocument(document)", script)
+        self.assertIn('pageWidth = "210mm"', script)
+        self.assertIn('pageHeight = "297mm"', script)
+        self.assertIn("documentBleedUniformSize = true", script)
+        self.assertIn('documentBleedTopOffset = "3mm"', script)
+        self.assertIn("MeasurementUnits.POINTS", script)
+        self.assertIn('insertLabel("perfect_catalog_page_format", "A4-portrait")', script)
 
 
 if __name__ == "__main__":

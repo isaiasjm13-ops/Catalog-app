@@ -301,6 +301,7 @@ def _indesign_zip(
         "3. Ejecuta ImportPerfectCatalog.jsx desde Ventana > Utilidades > Scripts.\r\n"
         "4. El script detecta catalog.indesign.json y solicita dónde guardar el INDD.\r\n"
         "5. Revisa el archivo .preflight.json generado junto al INDD.\r\n"
+        "6. El documento se compone en A4 vertical, paginas no enfrentadas y sangrado uniforme de 3 mm.\r\n"
         "Alternativa: usa catalog.datamerge.csv desde Ventana > Utilidades > Combinación de datos.\r\n"
     ).encode("utf-8")
     entries = [
