@@ -1403,7 +1403,12 @@ def create_operator_app(
         except (ValueError, RuntimeError, PermissionError) as exc:
             return _error(environment, 409, "Decisión no aplicada", str(exc), session=session)
         except Exception:
-            return _error(environment, 503, "Decisión no disponible", "No se guardó la decisión. Revisa la consola.", session=session)
+            diagnostic_id = uuid.uuid4().hex[:12]
+            LOGGER.exception("Fallo al decidir candidato de imagen; diagnostico=%s", diagnostic_id)
+            return _error(
+                environment, 503, "Decisión no disponible",
+                f"No se guardó la decisión. Diagnóstico: {diagnostic_id}.", session=session,
+            )
         return RedirectResponse(
             f"/operator/images?{urlencode({'result': str(result['status'])})}", status_code=303
         )
@@ -1434,7 +1439,12 @@ def create_operator_app(
         except (ValueError, RuntimeError, PermissionError) as exc:
             return _error(environment, 409, "Lote no aplicado", str(exc), session=session)
         except Exception:
-            return _error(environment, 503, "Decisión no disponible", "No se guardó el lote. Revisa la consola.", session=session)
+            diagnostic_id = uuid.uuid4().hex[:12]
+            LOGGER.exception("Fallo al decidir lote de imágenes; diagnostico=%s", diagnostic_id)
+            return _error(
+                environment, 503, "Decisión no disponible",
+                f"No se guardó el lote. Diagnóstico: {diagnostic_id}.", session=session,
+            )
         return RedirectResponse(
             f"/operator/images?{urlencode({'result': str(result['status'])})}", status_code=303
         )
