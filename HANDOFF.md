@@ -670,3 +670,4 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 - Suite completa: 237 pruebas aprobadas y 6 omitidas de PostgreSQL opt-in.
 - Corrección operativa: el lanzador 0014 detecta si falta `brand_profile`, aplica primero 0013 con la misma sesión de `psql` y omite de forma segura cualquiera de las dos migraciones que ya esté instalada.
 - Corrección PostgreSQL: la restricción de `logo_asset_key` usa `[.]svg`, evitando el doble escape que rechazaba la ruta válida `brands/natsuki/logo.svg`; el intento fallido quedó revertido por la transacción.
+- Corrección de inspección: la consulta del plan agrupa explícitamente el perfil de marca unido. El error anterior se mostraba incorrectamente como “PostgreSQL no disponible”; ahora se registra y presenta un identificador diagnóstico seguro.

@@ -1552,7 +1552,13 @@ def create_operator_app(
         except ValueError as exc:
             return _error(environment, 404, "Plan no encontrado", str(exc), session=session_or_redirect)
         except Exception:
-            return _error(environment, 503, "PostgreSQL no disponible", "No se pudo inspeccionar el plan. Revisa la consola.", session=session_or_redirect)
+            diagnostic_id = uuid.uuid4().hex[:12]
+            LOGGER.exception("Fallo al inspeccionar plan; diagnostico=%s", diagnostic_id)
+            return _error(
+                environment, 503, "No se pudo consultar el plan",
+                f"La consulta falló; PostgreSQL puede seguir activo. Diagnóstico: {diagnostic_id}.",
+                session=session_or_redirect,
+            )
         result = request.query_params.get("result")
         message = {
             "approved": "Plan aprobado. Aún no se han creado productos.",

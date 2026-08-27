@@ -829,7 +829,7 @@ def inspect_plan(plan_id: uuid.UUID, config: DatabaseConfig, password: str) -> d
                 LEFT JOIN perfect_catalog.brand_profile AS bp
                   ON bp.brand_profile_id=p.brand_profile_id
                 WHERE p.import_plan_id = %s
-                GROUP BY p.import_plan_id
+                GROUP BY p.import_plan_id, bp.brand_profile_id
                 """,
                 (plan_id,),
             )

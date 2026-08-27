@@ -95,6 +95,10 @@ class BrandProfileTests(unittest.TestCase):
         self.assertIn("information_schema.columns", bootstrap)
         self.assertIn("\\ir ../migrations/0014_brand_profile_workflow.sql", bootstrap)
 
+    def test_plan_inspection_groups_joined_brand_profile(self) -> None:
+        importer = (ROOT / "src/perfect_catalog/importer.py").read_text(encoding="utf-8")
+        self.assertIn("GROUP BY p.import_plan_id, bp.brand_profile_id", importer)
+
 
 if __name__ == "__main__":
     unittest.main()
