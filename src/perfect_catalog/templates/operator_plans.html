@@ -10,6 +10,24 @@
   <div class="safety-chip"><span>●</span> PostgreSQL · modo operador</div>
 </section>
 
+<section class="workflow-dashboard" aria-labelledby="workflow-title">
+  <div class="section-heading"><div><span class="kicker">Estado del trabajo</span><h2 id="workflow-title">Del archivo a la entrega</h2></div><span>Los conteos se actualizan al abrir esta pantalla</span></div>
+  <div class="workflow-dashboard-grid">
+    <a href="/operator/intake" class="workflow-status-card">
+      <span class="workflow-number">01</span><div><strong>Ingresos</strong><b>{{ workflow.intake_count }}</b><small>archivos registrados</small></div><i aria-hidden="true">→</i>
+    </a>
+    <a href="/operator" class="workflow-status-card {% if workflow.pending_review_count %}needs-action{% endif %}">
+      <span class="workflow-number">02</span><div><strong>Revisión</strong><b>{{ workflow.pending_review_count }}</b><small>identidades pendientes</small></div><i aria-hidden="true">→</i>
+    </a>
+    <a href="/operator/images" class="workflow-status-card {% if workflow.pending_image_count or workflow.materialize_image_count %}needs-action{% endif %}">
+      <span class="workflow-number">03</span><div><strong>Imágenes</strong><b>{{ workflow.pending_image_count + workflow.materialize_image_count }}</b><small>{{ workflow.pending_image_count }} por decidir · {{ workflow.materialize_image_count }} por materializar</small></div><i aria-hidden="true">→</i>
+    </a>
+    <a href="/operator/catalogs" class="workflow-status-card {% if workflow.draft_release_count %}needs-action{% endif %}">
+      <span class="workflow-number">04</span><div><strong>Catálogos</strong><b>{{ workflow.published_release_count }}</b><small>publicados · {{ workflow.draft_release_count }} borradores</small></div><i aria-hidden="true">→</i>
+    </a>
+  </div>
+</section>
+
 {% if plans %}
 {% set pending_plans = plans | selectattr('pending_count') | list %}
 <section class="resume-card" aria-labelledby="resume-title">

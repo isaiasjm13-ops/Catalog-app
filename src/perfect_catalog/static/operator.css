@@ -95,6 +95,19 @@ button:active, .primary-button:active, .secondary-button:active { transform: tra
 .page-heading p { max-width: 650px; margin-bottom: 0; }
 .safety-chip { flex: 0 0 auto; padding: 11px 14px; border-radius: 999px; color: var(--forest); background: rgba(255,255,255,.66); border: 1px solid rgba(12, 91, 72, .16); font-size: 12px; }
 .safety-chip span { color: #42a66d; margin-right: 6px; }
+.workflow-dashboard { margin-bottom: 24px; }
+.workflow-dashboard .section-heading { align-items: end; }
+.workflow-dashboard-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; }
+.workflow-status-card { position: relative; display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; min-width: 0; padding: 17px; border: 1px solid rgba(12,91,72,.13); border-radius: 16px; color: var(--ink); background: rgba(255,255,252,.78); text-decoration: none; box-shadow: 0 8px 25px rgba(24,45,37,.04); }
+.workflow-status-card:hover,.workflow-status-card:focus-visible { border-color: var(--forest); transform: translateY(-1px); }
+.workflow-status-card.needs-action { border-color: rgba(193,132,30,.42); background: #fffaf0; }
+.workflow-status-card div { min-width: 0; }
+.workflow-status-card strong,.workflow-status-card b,.workflow-status-card small { display: block; }
+.workflow-status-card strong { font-size: 12px; }
+.workflow-status-card b { margin: 3px 0; color: var(--forest); font: 600 28px Georgia,serif; }
+.workflow-status-card small { overflow: hidden; color: var(--muted); font-size: 9px; line-height: 1.35; text-overflow: ellipsis; }
+.workflow-status-card i { color: var(--forest); font-style: normal; }
+.workflow-number { color: var(--forest); font: 800 9px "Cascadia Code",Consolas,monospace; }
 .plan-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 .resume-card { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 18px; align-items: center; margin-bottom: 20px; padding: 22px 24px; border: 1px solid rgba(12,91,72,.18); border-radius: 20px; background: linear-gradient(120deg,#f0f6ed,#fff); box-shadow: var(--shadow); }
 .resume-card h2 { margin: 3px 0 5px; font-size: clamp(24px,3vw,34px); }
@@ -433,6 +446,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .brand-profile-card .brand-color-row { grid-template-columns: repeat(2,1fr); }
 
 @media (max-width: 980px) {
+  .workflow-dashboard-grid { grid-template-columns: repeat(2,1fr); }
   .studio-overview { grid-template-columns: 1fr; }
   .plan-inspection { grid-template-columns: 1fr; }
   .review-card { grid-template-columns: 1fr 1fr; }
@@ -450,6 +464,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 
 @media (max-width: 760px) {
+  .workflow-dashboard-grid { grid-template-columns: 1fr; }
   .studio-overview article { padding: 15px; }
   .app-shell { width: min(100% - 24px, 1240px); }
   .login-layout { grid-template-columns: 1fr; padding: 45px 0 20px; }

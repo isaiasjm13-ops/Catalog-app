@@ -53,7 +53,7 @@ from .importer import DEFAULT_MAX_PILOT_ROWS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.19.0"
+OPERATOR_VERSION = "1.20.0"
 LOGGER = logging.getLogger(__name__)
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
@@ -646,6 +646,13 @@ def create_operator_app(
             return session_or_redirect
         try:
             plans = await run_in_threadpool(gateway.plans, limit=100)
+            intakes = await run_in_threadpool(
+                gateway.intake_submissions, kind="all", status="all", limit=1, offset=0,
+            )
+            image_summary = await run_in_threadpool(
+                gateway.image_candidates, limit=1, offset=0,
+            )
+            releases = await run_in_threadpool(gateway.catalog_releases, limit=100)
         except Exception as exc:
             return _unexpected_error(
                 environment, "PostgreSQL no disponible",
@@ -656,6 +663,14 @@ def create_operator_app(
             environment,
             "operator_plans.html",
             plans=plans,
+            workflow={
+                "intake_count": int(intakes["filtered_count"]),
+                "pending_review_count": sum(int(plan["pending_count"]) for plan in plans),
+                "pending_image_count": int(image_summary["pending_count"]),
+                "materialize_image_count": int(image_summary["approved_unmaterialized_count"]),
+                "draft_release_count": sum(release["status"] == "draft" for release in releases),
+                "published_release_count": sum(release["status"] == "published" for release in releases),
+            },
             session=session_or_redirect,
             version=OPERATOR_VERSION,
         )
@@ -886,8 +901,8 @@ def create_operator_app(
             )
         except (ValueError, RuntimeError, PermissionError) as exc:
             return _error(environment, 409, "Marca no creada", str(exc), session=session)
-        except Exception:
-            return _error(environment, 503, "Marca no creada", "PostgreSQL no guardo el perfil. Revisa la consola.", session=session)
+        except Exception as exc:
+            return _unexpected_error(environment, "Marca no creada", "PostgreSQL no guardó el perfil. Revisa la consola.", "brand_create_failed", exc, session=session)
         return RedirectResponse("/operator/brands?result=created", status_code=303)
 
     @app.post("/operator/catalogs/releases")
@@ -973,8 +988,8 @@ def create_operator_app(
             layout_estimate = estimate_indesign_layout(preview["groups"], template_profile)
         except (ValueError, RuntimeError, PermissionError) as exc:
             return _error(environment, 400, "Vista previa no disponible", str(exc), session=session_or_redirect)
-        except Exception:
-            return _error(environment, 503, "Vista previa no disponible", "No se pudo leer el release publicado.", session=session_or_redirect)
+        except Exception as exc:
+            return _unexpected_error(environment, "Vista previa no disponible", "No se pudo leer el release publicado.", "catalog_preview_failed", exc, session=session_or_redirect)
         return _render(
             environment, "operator_catalog_preview.html",
             preview=preview, columns=columns, theme=theme, themes=CATALOG_THEMES,
@@ -1028,8 +1043,8 @@ def create_operator_app(
             )
         except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
             return _error(environment, 409, "Release no publicado", str(exc), session=session)
-        except Exception:
-            return _error(environment, 503, "Publicación no disponible", "No se publicó el release. Revisa la consola del servidor.", session=session)
+        except Exception as exc:
+            return _unexpected_error(environment, "Publicación no disponible", "No se publicó el release. Revisa la consola del servidor.", "catalog_publish_failed", exc, session=session)
         return RedirectResponse(
             f"/operator/catalogs?{urlencode({'result': str(result['status'])})}", status_code=303
         )
@@ -1118,11 +1133,8 @@ def create_operator_app(
             )
         except (ValueError, RuntimeError, PermissionError, FileExistsError) as exc:
             return _error(environment, 409, "Exportación no creada", str(exc), session=session)
-        except Exception:
-            return _error(
-                environment, 503, "Exportación no disponible",
-                "No se generaron entregables. Revisa la consola del servidor operador.", session=session,
-            )
+        except Exception as exc:
+            return _unexpected_error(environment, "Exportación no disponible", "No se generaron entregables. Revisa la consola del servidor operador.", "catalog_export_failed", exc, session=session)
         return RedirectResponse("/operator/catalogs?result=created", status_code=303)
 
     @app.post("/operator/catalogs/{release_id}/exports/{export_id}/preflight")
@@ -1169,8 +1181,8 @@ def create_operator_app(
             return _error(environment, 400, "Formulario inválido", "La estructura multipart no es válida.", session=session)
         except (ValueError, RuntimeError, PermissionError, FileNotFoundError) as exc:
             return _error(environment, 422, "Preflight rechazado", str(exc), session=session)
-        except Exception:
-            return _error(environment, 503, "Preflight no disponible", "El reporte no quedó registrado.", session=session)
+        except Exception as exc:
+            return _unexpected_error(environment, "Preflight no disponible", "El reporte no quedó registrado.", "indesign_preflight_record_failed", exc, session=session)
         return RedirectResponse("/operator/catalogs?result=preflight_recorded", status_code=303)
 
     @app.get("/operator/catalogs/{release_id}/exports/{export_id}/{filename}")
@@ -1303,15 +1315,8 @@ def create_operator_app(
                 str(exc),
                 session=session,
             )
-        except Exception:
-            return _error(
-                environment,
-                503,
-                "Ingreso no disponible",
-                "El archivo no quedó registrado. "
-                "Revisa la consola del servidor operador.",
-                session=session,
-            )
+        except Exception as exc:
+            return _unexpected_error(environment, "Ingreso no disponible", "El archivo no quedó registrado. Revisa la consola del servidor operador.", "intake_submit_failed", exc, session=session)
         result = str(submitted["validation_status"])
         if submitted.get("duplicate_content"):
             result = "duplicate"
@@ -1389,8 +1394,8 @@ def create_operator_app(
             )
         except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
             return _error(environment, 409, "Índice no creado", str(exc), session=session)
-        except Exception:
-            return _error(environment, 503, "Indexación no disponible", "No se creó el índice. Revisa la consola del servidor.", session=session)
+        except Exception as exc:
+            return _unexpected_error(environment, "Indexación no disponible", "No se creó el índice. Revisa la consola del servidor.", "image_index_failed", exc, session=session)
         return RedirectResponse(
             f"/operator/intake?{urlencode({'result': str(result['status'])})}", status_code=303
         )
@@ -1409,12 +1414,8 @@ def create_operator_app(
             )
         except ValueError as exc:
             return _error(environment, 400, "Página inválida", str(exc), session=session_or_redirect)
-        except Exception:
-            return _error(
-                environment, 503, "Revisión de imágenes no disponible",
-                "Verifica que la migración 0010 esté aplicada y revisa la consola del servidor.",
-                session=session_or_redirect,
-            )
+        except Exception as exc:
+            return _unexpected_error(environment, "Revisión de imágenes no disponible", "Verifica que la actualización del sistema esté aplicada y revisa la consola del servidor.", "image_review_read_failed", exc, session=session_or_redirect)
         result_message = {
             "generated": "Candidatos exactos generados. Ninguno fue aprobado automáticamente.",
             "approved": "Candidato de imagen aprobado con su evidencia exacta.",
@@ -1459,8 +1460,8 @@ def create_operator_app(
             )
         except (ValueError, RuntimeError, PermissionError) as exc:
             return _error(environment, 409, "Candidatos no generados", str(exc), session=session)
-        except Exception:
-            return _error(environment, 503, "Generación no disponible", "No se generaron candidatos. Revisa la consola.", session=session)
+        except Exception as exc:
+            return _unexpected_error(environment, "Generación no disponible", "No se generaron candidatos. Revisa la consola.", "image_candidates_generate_failed", exc, session=session)
         return RedirectResponse("/operator/images?result=generated", status_code=303)
 
     @app.post("/operator/images/candidates/{candidate_id}/decision")
@@ -1598,8 +1599,8 @@ def create_operator_app(
             )
         except (ValueError, RuntimeError, PermissionError, FileExistsError) as exc:
             return _error(environment, 409, "Imagen no materializada", str(exc), session=session)
-        except Exception:
-            return _error(environment, 503, "Materialización no disponible", "No se publicó la copia verificada. Revisa la consola.", session=session)
+        except Exception as exc:
+            return _unexpected_error(environment, "Materialización no disponible", "No se publicó la copia verificada. Revisa la consola.", "image_materialize_failed", exc, session=session)
         return RedirectResponse(
             f"/operator/images?{urlencode({'result': str(result['status'])})}", status_code=303
         )
@@ -1667,8 +1668,8 @@ def create_operator_app(
             )
         except (ValueError, RuntimeError, PermissionError) as exc:
             return _error(environment, 400, "No se pudo abrir la cola", str(exc), session=session_or_redirect)
-        except Exception:
-            return _error(environment, 503, "PostgreSQL no disponible", "No se pudo leer la cola. Revisa la consola del servidor operador.", session=session_or_redirect)
+        except Exception as exc:
+            return _unexpected_error(environment, "PostgreSQL no disponible", "No se pudo leer la cola. Revisa la consola del servidor operador.", "review_queue_read_failed", exc, session=session_or_redirect)
         query_args = {"q": q, "state": state}
         previous_url = (
             f"/operator/plans/{plan_id}?{urlencode({**query_args, 'page': page - 1})}"
@@ -1768,8 +1769,8 @@ def create_operator_app(
             result = await run_in_threadpool(action, *args)
         except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
             return _error(environment, 409, "Operación no aplicada", str(exc), session=session)
-        except Exception:
-            return _error(environment, 503, "Operación no disponible", "No se modificó el plan. Revisa la consola.", session=session)
+        except Exception as exc:
+            return _unexpected_error(environment, "Operación no disponible", "No se modificó el plan. Revisa la consola.", "import_plan_transition_failed", exc, session=session)
         return RedirectResponse(
             f"/operator/import-plans/{plan_id}?{urlencode({'result': str(result['status'])})}",
             status_code=303,
@@ -1820,8 +1821,8 @@ def create_operator_app(
             )
         except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
             return _error(environment, 409, "Decisión no aplicada", str(exc), session=session)
-        except Exception:
-            return _error(environment, 503, "PostgreSQL no disponible", "La decisión no se escribió. Revisa la consola del servidor operador.", session=session)
+        except Exception as exc:
+            return _unexpected_error(environment, "PostgreSQL no disponible", "La decisión no se escribió. Revisa la consola del servidor operador.", "product_decision_failed", exc, session=session)
         result_code = str(result["status"])
         return RedirectResponse(
             f"/operator/plans/{plan_id}?{urlencode({'state': 'pending', 'result': result_code})}",
@@ -1856,8 +1857,8 @@ def create_operator_app(
             )
         except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
             return _error(environment, 409, "Lote no aplicado", str(exc), session=session)
-        except Exception:
-            return _error(environment, 503, "PostgreSQL no disponible", "Ninguna decisión del lote fue escrita. Revisa la consola.", session=session)
+        except Exception as exc:
+            return _unexpected_error(environment, "PostgreSQL no disponible", "Ninguna decisión del lote fue escrita. Revisa la consola.", "product_bulk_decision_failed", exc, session=session)
         return RedirectResponse(
             f"/operator/plans/{plan_id}?{urlencode({'state': 'pending', 'result': str(result['status'])})}",
             status_code=303,

@@ -1,5 +1,18 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: tablero global responsive v1.20
+
+- La portada del operador muestra un resumen actualizado de las cuatro etapas: archivos ingresados,
+  identidades pendientes, imágenes por decidir/materializar y releases publicados o en borrador.
+  Cada tarjeta es un acceso táctil directo y marca visualmente las etapas que requieren acción.
+- El tablero se adapta de cuatro a dos y una columna; en móvil evita tablas y conserva objetivos
+  interactivos amplios. Reutiliza consultas de solo lectura existentes y no requiere migración.
+- Se uniformaron todos los fallos inesperados restantes de ingreso, revisión, imágenes, marcas,
+  publicación, exportación y preflight: cada respuesta presenta un diagnóstico correlacionado sin
+  exponer la excepción, mientras la consola registra operación, tipo y SQLSTATE.
+- Verificación: 31 pruebas focalizadas y 254 pruebas completas pasan; 6 integraciones PostgreSQL se
+  omiten sin credenciales.
+
 ## Bloque 2026-08-27: continuidad operativa e InDesign tipográfico v1.19
 
 - La portada de Revisión ofrece ahora **Continuar donde quedaste**. Prioriza el primer plan con

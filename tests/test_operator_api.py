@@ -594,6 +594,9 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Continuar donde quedaste", dashboard.text)
         self.assertIn("Continuar revisión", dashboard.text)
         self.assertIn('<progress class="plan-progress"', dashboard.text)
+        self.assertIn("Del archivo a la entrega", dashboard.text)
+        self.assertIn("1</b><small>identidades pendientes", dashboard.text)
+        self.assertIn("publicados · 0 borradores", dashboard.text)
         self.assertNotIn("<script>alert(1)</script>", dashboard.text)
         self.assertEqual(dashboard.headers["cache-control"], "no-store")
         self.assertEqual(dashboard.headers["referrer-policy"], "same-origin")
@@ -979,7 +982,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.19.0")
+        self.assertEqual(OPERATOR_VERSION, "1.20.0")
 
     async def test_company_identity_upload_requires_csrf_and_records_logo_without_exposing_it(self) -> None:
         await self.login()
