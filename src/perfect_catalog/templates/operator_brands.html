@@ -1,0 +1,38 @@
+{% extends "operator_base.html" %}
+{% block title %}Marcas{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><span class="kicker">Identidad visual</span><h1>Marcas del catálogo</h1><p>Crea perfiles reutilizables para mantener los mismos colores en web, PDF e InDesign.</p></div>
+  <span class="safety-chip"><span>●</span> Perfiles auditados</span>
+</section>
+{% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+<section class="brand-profile-grid">
+{% for profile in profiles %}
+  <article class="brand-profile-card">
+    <div class="brand-profile-swatch"><input type="color" value="{{ profile.primary_color }}" disabled aria-label="Color principal"><input type="color" value="{{ profile.secondary_color }}" disabled aria-label="Color secundario"><input type="color" value="{{ profile.ink_color }}" disabled aria-label="Color de texto"><input type="color" value="{{ profile.paper_color }}" disabled aria-label="Color de fondo"></div>
+    <small>{{ profile.code }}</small><h2>{{ profile.display_name }}</h2>
+    <p>{{ profile.tagline or 'Sin eslogan' }}</p>
+    <code>{{ profile.primary_color }} · {{ profile.secondary_color }}</code>
+  </article>
+{% else %}<p>No hay perfiles de marca. Aplica la migración 0013.</p>{% endfor %}
+</section>
+<section class="transition-panel brand-profile-builder">
+  <h2>Añadir una marca</h2>
+  <p>El código queda fijo para conservar trazabilidad. Los logos se incorporarán después mediante el ingreso seguro de archivos.</p>
+  <form method="post" action="/operator/brands">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+    <div class="brand-form-row"><label><span>Código</span><input name="code" minlength="2" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9_-]+" placeholder="PDM" required></label><label><span>Nombre público</span><input name="display_name" maxlength="120" placeholder="PDM" required></label></div>
+    <label><span>Eslogan opcional</span><input name="tagline" maxlength="180" placeholder="Calidad para cada camino"></label>
+    <div class="brand-color-row">
+      <label><span>Principal</span><input type="color" name="primary_color" value="#C60012"></label>
+      <label><span>Secundario</span><input type="color" name="secondary_color" value="#202327"></label>
+      <label><span>Texto</span><input type="color" name="ink_color" value="#16191D"></label>
+      <label><span>Fondo</span><input type="color" name="paper_color" value="#FFFFFF"></label>
+    </div>
+    <label><span>URL pública para QR (opcional)</span><input type="url" name="public_base_url" maxlength="500" placeholder="https://catalogo.ejemplo.com"></label>
+    <label><span>Motivo auditable</span><textarea name="reason" minlength="4" maxlength="500" required placeholder="Alta de identidad visual aprobada"></textarea></label>
+    <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo el código, nombre y colores de esta marca.</span></label>
+    <button class="primary-button" type="submit">Crear perfil de marca</button>
+  </form>
+</section>
+{% endblock %}

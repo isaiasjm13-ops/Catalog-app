@@ -1,5 +1,14 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-27: perfiles de marca v1
+
+- Migracion forward-only `0013` crea perfiles de marca inmutables con codigo, nombre, eslogan, URL publica y paleta de cuatro colores; cada alta conserva operador y motivo. La aplicacion solo recibe `SELECT, INSERT`, sin UPDATE/DELETE.
+- NATSUKI queda sembrada con perfil rojo/negro compatible con la direccion visual investigada.
+- Nueva pantalla `Marcas` en la consola v1.12 permite crear perfiles con selector visual, sesion local, mismo origen, CSRF y confirmacion explicita. La URL opcional exige HTTPS y no admite credenciales.
+- Nuevo launcher `MIGRAR-PERFILES-MARCA.cmd`; tambien se incorporo 0013 a la reconstruccion del limpiador de importaciones.
+- Pendiente del mismo bloque: seleccionar el perfil antes del apply, eliminar la constante NATSUKI, incorporar logos mediante ingreso seguro y propagar los colores guardados a preview, HTML, PDF, PPTX e InDesign.
+- Verificacion: 233 pruebas pasan; 6 integraciones PostgreSQL se omiten sin credenciales.
+
 ## Bloque 2026-08-27: PDF editorial v2
 
 - Rediseñada la salida PDF con portada temática, edición, conteo e identidad del release; secciones

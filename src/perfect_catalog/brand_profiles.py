@@ -1,0 +1,84 @@
+from __future__ import annotations
+
+import re
+import uuid
+from typing import Any
+from urllib.parse import urlsplit
+
+import psycopg
+from psycopg.rows import dict_row
+
+from .config import DatabaseConfig
+
+
+PROFILE_NAMESPACE = uuid.UUID("4c5ddbcf-f5c3-49e8-aee1-a78a47d6d293")
+CODE_PATTERN = re.compile(r"[A-Z0-9][A-Z0-9_-]{1,31}")
+COLOR_PATTERN = re.compile(r"#[0-9A-F]{6}")
+
+
+def normalize_profile_input(values: dict[str, str]) -> dict[str, str | None]:
+    code = str(values.get("code") or "").strip().upper()
+    if not CODE_PATTERN.fullmatch(code):
+        raise ValueError("El codigo debe usar 2-32 letras, numeros, guion o guion bajo.")
+    name = str(values.get("display_name") or "").strip()
+    if not 1 <= len(name) <= 120:
+        raise ValueError("El nombre debe contener entre 1 y 120 caracteres.")
+    tagline = str(values.get("tagline") or "").strip() or None
+    if tagline and len(tagline) > 180:
+        raise ValueError("El eslogan no puede superar 180 caracteres.")
+    colors: dict[str, str] = {}
+    for field in ("primary_color", "secondary_color", "ink_color", "paper_color"):
+        color = str(values.get(field) or "").strip().upper()
+        if not COLOR_PATTERN.fullmatch(color):
+            raise ValueError(f"{field} debe tener formato hexadecimal #RRGGBB.")
+        colors[field] = color
+    public_url = str(values.get("public_base_url") or "").strip() or None
+    if public_url:
+        parsed = urlsplit(public_url)
+        if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+            raise ValueError("La URL publica debe ser HTTPS y no incluir credenciales.")
+        if len(public_url) > 500:
+            raise ValueError("La URL publica no puede superar 500 caracteres.")
+    return {"code": code, "display_name": name, "tagline": tagline, **colors, "public_base_url": public_url}
+
+
+def list_brand_profiles(config: DatabaseConfig, password: str) -> list[dict[str, Any]]:
+    with psycopg.connect(**config.connection_kwargs(password), row_factory=dict_row) as connection:
+        rows = connection.execute(
+            "SELECT * FROM perfect_catalog.brand_profile ORDER BY display_name, code"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def create_brand_profile(
+    values: dict[str, str], actor: str, reason: str,
+    config: DatabaseConfig, password: str,
+) -> dict[str, Any]:
+    profile = normalize_profile_input(values)
+    actor = str(actor or "").strip()
+    reason = str(reason or "").strip()
+    if not actor or len(actor) > 120:
+        raise ValueError("El operador de la marca no es valido.")
+    if not 4 <= len(reason) <= 500:
+        raise ValueError("El motivo debe contener entre 4 y 500 caracteres.")
+    profile_id = uuid.uuid5(PROFILE_NAMESPACE, str(profile["code"]))
+    with psycopg.connect(**config.connection_kwargs(password), row_factory=dict_row) as connection:
+        existing = connection.execute(
+            "SELECT * FROM perfect_catalog.brand_profile WHERE code=%s", (profile["code"],)
+        ).fetchone()
+        if existing is not None:
+            raise ValueError("Ya existe un perfil con ese codigo.")
+        row = connection.execute(
+            """
+            INSERT INTO perfect_catalog.brand_profile (
+                brand_profile_id, code, display_name, tagline, primary_color,
+                secondary_color, ink_color, paper_color, public_base_url,
+                created_by, creation_reason
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING *
+            """,
+            (profile_id, profile["code"], profile["display_name"], profile["tagline"],
+             profile["primary_color"], profile["secondary_color"], profile["ink_color"],
+             profile["paper_color"], profile["public_base_url"], actor, reason),
+        ).fetchone()
+    return dict(row)

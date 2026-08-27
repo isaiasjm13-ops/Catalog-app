@@ -18,5 +18,6 @@ RESET ROLE;
 \ir apply_image_match_review_migration.sql
 \ir apply_approved_image_materialization_migration.sql
 \ir apply_vehicle_application_workflow_migration.sql
+\ir apply_brand_profiles_migration.sql
 
 \echo 'Esquema limpio y actualizado.'

@@ -981,6 +981,18 @@ class DatabaseReviewGateway:
     def close(self) -> None:
         self._password = ""
 
+    def brand_profiles(self) -> list[dict[str, Any]]:
+        from .brand_profiles import list_brand_profiles
+
+        return list_brand_profiles(self._config, self._password)
+
+    def create_brand_profile(
+        self, values: dict[str, str], actor: str, reason: str,
+    ) -> dict[str, Any]:
+        from .brand_profiles import create_brand_profile
+
+        return create_brand_profile(values, actor, reason, self._config, self._password)
+
     def catalog_releases(self, *, limit: int = 100) -> list[dict[str, Any]]:
         from .publication import list_catalog_releases
 
