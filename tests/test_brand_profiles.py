@@ -82,6 +82,8 @@ class BrandProfileTests(unittest.TestCase):
         self.assertIn("brand_profile_id", sql)
         self.assertIn("minimum_font_size_pt", sql)
         self.assertIn("watermark_opacity", sql)
+        self.assertIn("[.]svg$", sql)
+        self.assertNotIn("\\\\.svg$", sql)
         self.assertNotIn("DROP ", sql.upper())
         template = (ROOT / "src/perfect_catalog/templates/operator_import_plan.html").read_text(encoding="utf-8")
         self.assertIn('name="brand_code"', template)

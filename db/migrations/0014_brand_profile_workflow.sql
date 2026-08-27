@@ -13,7 +13,7 @@ ALTER TABLE perfect_catalog.brand_profile
     ADD CONSTRAINT ck_brand_profile_body_font CHECK (btrim(body_font_family) <> ''),
     ADD CONSTRAINT ck_brand_profile_minimum_font CHECK (minimum_font_size_pt >= 12),
     ADD CONSTRAINT ck_brand_profile_line_height CHECK (body_line_height >= 1 AND body_line_height <= 3),
-    ADD CONSTRAINT ck_brand_profile_logo_key CHECK (logo_asset_key IS NULL OR logo_asset_key ~ '^[a-z0-9][a-z0-9/_-]*\\.svg$'),
+    ADD CONSTRAINT ck_brand_profile_logo_key CHECK (logo_asset_key IS NULL OR logo_asset_key ~ '^[a-z0-9][a-z0-9/_-]*[.]svg$'),
     ADD CONSTRAINT ck_brand_profile_watermark CHECK (watermark_opacity BETWEEN 0.04 AND 0.07);
 
 UPDATE perfect_catalog.brand_profile
