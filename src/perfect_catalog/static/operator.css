@@ -564,6 +564,12 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   button:active, .primary-button:active, .secondary-button:active { transform: none; }
 }
 .company-context { color: var(--accent, #086650); font-weight: 700; text-decoration: none; }
+.release-brand-context { display:flex; justify-content:space-between; gap:16px; align-items:center; margin:-2px -2px 16px; padding:11px 14px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+.release-brand-context div:first-child { display:grid; gap:2px; }
+.release-brand-context small { color:var(--muted); font-size:10px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+.release-brand-context strong { font-size:16px; }
+.release-brand-swatches { display:flex; gap:5px; }
+.release-brand-swatches input { width:40px; height:32px; padding:2px; border:1px solid var(--line); border-radius:8px; background:#fff; }
 .company-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
 .company-card { background: rgba(255,255,255,.92); border: 1px solid #d7e1dc; border-radius: 18px; padding: 1.4rem; box-shadow: 0 16px 40px rgba(23,33,29,.08); }
 .company-card small { letter-spacing: .12em; color: #587068; }

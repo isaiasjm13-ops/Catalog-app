@@ -23,6 +23,11 @@ cuando pertenece al snapshot publicado; no se completan datos comerciales por in
 Sólo se congelan referencias A1 aprobadas. La construcción del release falla si encuentra una A1
 pendiente, para impedir que una exportación omita silenciosamente información aún no revisada.
 
+La jerarquía visual separa responsabilidades: el perfil de marca gobierna el catálogo; la identidad
+de Company aporta una firma discreta en pies, líneas editoriales y portada corporativa. Los colores
+de Company no recolorean fichas ni separadores de marca. Los logos vehiculares sólo acompañan el
+nombre del vehículo cuando ese nivel de agrupación está activo.
+
 El HTML exportado contiene un índice de búsqueda local por ficha. La consulta se normaliza sin
 acentos, se divide en palabras que pueden escribirse en cualquier orden y compara además una versión
 compacta de los códigos, de modo que `NK001` encuentra `NK-001`. El índice incluye referencia,

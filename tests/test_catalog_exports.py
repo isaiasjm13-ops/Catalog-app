@@ -303,10 +303,14 @@ class CatalogExportTests(unittest.TestCase):
         release, items = fixture_release()
         rows = export_rows_from_release(release, items)
         rows[0].update({"applications": ["Toyota Corolla 2014"], "engine_types": ["1.8L"], "oem_references": ["OEM-123"]})
-        visual = {"primary_color": "#E30613", "secondary_color": "#12355B", "ink_color": "#111111", "paper_color": "#FFFFFF", "logo_asset_key": "brands/natsuki/logo.svg", "corner_logo_enabled": True, "watermark_enabled": True, "watermark_opacity": .05}
+        visual = {"primary_color": "#E30613", "secondary_color": "#12355B", "ink_color": "#111111", "paper_color": "#FFFFFF", "logo_asset_key": "brands/natsuki/logo.svg", "corner_logo_enabled": True, "watermark_enabled": True, "watermark_opacity": .05, "company": {"display_name": "Perfect Demo", "primary_color": "#086650", "secondary_color": "#C7DF54", "ink_color": "#17211D", "paper_color": "#FFFFFF"}}
         html = generate_catalog_html(rows, {"template_profile": "T4", "visual_profile": visual}).decode("utf-8")
         self.assertIn("--forest:#E30613", html)
         self.assertIn("--secondary:#12355B", html)
+        self.assertIn("--company-primary:#086650", html)
+        self.assertIn("--company-secondary:#C7DF54", html)
+        self.assertIn("corporate-signature", html)
+        self.assertIn("Perfect Demo", html)
         self.assertIn("font-size:16px", html)
         self.assertIn("class=\"brand-logo\"", html)
         self.assertIn("data:image/png;base64,", html)
@@ -324,6 +328,8 @@ class CatalogExportTests(unittest.TestCase):
         with zipfile.ZipFile(io.BytesIO(pptx)) as presentation:
             slide_xml = b"".join(presentation.read(name) for name in presentation.namelist() if name.startswith("ppt/slides/slide"))
         self.assertIn(b"12355B", slide_xml)
+        self.assertIn(b"086650", slide_xml)
+        self.assertIn(b"Perfect Demo", slide_xml)
 
     def test_bundle_writes_digital_exports_indesign_snapshot_and_manifest(self) -> None:
         release, items = fixture_release()

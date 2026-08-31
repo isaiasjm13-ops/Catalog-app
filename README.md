@@ -121,6 +121,9 @@ el principal define jerarquía, el secundario aporta acentos, y texto/fondo cont
 El tema editorial elegido solo actúa como respaldo si no existe un perfil de marca.
 En el catálogo HTML, tocar una fotografía abre una ficha completa responsive con referencia,
 categoría, aplicaciones, motor y OEM; la imagen se muestra entera y el visor continúa offline.
+La marca seleccionada controla la dirección visual. La Company aporta su logo de portada y una
+firma cromática discreta en los pies de HTML, PDF, PowerPoint e InDesign, sin reemplazar los colores
+de Natsuki, Exact Cars u otra marca de producto.
 Su buscador offline acepta varias palabras en cualquier orden, ignora acentos y encuentra códigos
 con o sin espacios/guiones. También indexa aplicaciones, motores, OEM y referencias adicionales
 aunque esos campos se hayan ocultado visualmente en la edición.

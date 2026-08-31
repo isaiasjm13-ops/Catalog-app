@@ -2,7 +2,7 @@
 
 (function () {
     var SCHEMA = "perfect-catalog.indesign-snapshot.v1";
-    var SCRIPT_VERSION = "1.35.0";
+    var SCRIPT_VERSION = "1.36.0";
     var ACTIVE_TITLE_FONT = null, ACTIVE_BODY_FONT = null;
     function fail(message) { alert("Perfect Catalog\n\n" + message); throw new Error(message); }
     function parseJson(text) {
@@ -172,9 +172,18 @@
             frame(page, [top, 505, top + 40, 550], String(entries[index].page), 12, true, {text: theme.primary, leading: 1.15});
         }
     }
-    function addPageNumbers(document, firstContentPage, theme) {
+    function companyAccent(document, visual) {
+        var company = (visual && visual.company) || {};
+        return documentColor(document, "Perfect Catalog Company Primary",
+            hexRgb(company.primary_color, [8, 102, 80]));
+    }
+    function addPageNumbers(document, firstContentPage, theme, visual) {
+        var corporate = companyAccent(document, visual);
+        var companyName = (visual && visual.company && visual.company.display_name) || "Perfect Trading International";
         for (var index = firstContentPage; index < document.pages.length; index++) {
             frame(document.pages[index], [790, 270, 825, 325], String(index + 1), 12, true, {text: theme.primary, leading: 1.1});
+            document.pages[index].rectangles.add({geometricBounds: [782, 45, 784, 550], fillColor: corporate, strokeWeight: 0});
+            frame(document.pages[index], [790, 45, 825, 260], companyName, 12, false, {text: corporate, leading: 1.1});
         }
     }
     function vehicleMakeMark(page, baseFolder, visual, makeName) {
@@ -319,7 +328,7 @@
             productFrame(page, productBounds(effectiveDefinition, slot), product, index, effectiveDefinition, baseFolder, report, theme); slot++;
         }
         fillContentsPages(contentsPages, contentsEntries, theme);
-        addPageNumbers(document, contentsPages.length + 1, theme);
+        addPageNumbers(document, contentsPages.length + 1, theme, visual);
         report.page_count = document.pages.length;
         var destination = File.saveDialog("Guardar cat\u00e1logo InDesign", "InDesign document:*.indd");
         if (!destination) { document.close(SaveOptions.NO); return; }

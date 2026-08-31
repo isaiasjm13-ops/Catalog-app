@@ -1,5 +1,19 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-31: jerarquía cromática empresa/marca (v1.39)
+
+- La marca de producto sigue controlando fondo, texto, color principal/secundario, tipografía,
+  portada y marca de agua. La empresa no sustituye esa dirección visual.
+- Los colores corporativos congelados ahora firman discretamente el pie del HTML autónomo, las
+  páginas interiores del PDF, las diapositivas y las páginas de InDesign. El nombre empresarial se
+  conserva junto a la firma; el logo corporativo continúa en portada.
+- Catálogos muestra en cada release la marca activa y sus dos muestras de color, evitando confundir
+  ediciones de Natsuki, Exact Cars u otra marca de la Company seleccionada.
+- Los logos vehiculares permanecen exclusivamente contextuales junto a su marca vehicular.
+- No requiere migración. Hay que generar entregables nuevos para incorporar los detalles visuales.
+- Verificación: firma PDF separada de checksum/número de página, compilación correcta,
+  `git diff --check` limpio y 277 pruebas correctas; 6 omitidas.
+
 ## Bloque 2026-08-31: referencias A1 dentro de la revisión y publicación (v1.38)
 
 - Al aplicar un plan nuevo, los candidatos OEM, FMSI, adicionales y alternos se materializan como

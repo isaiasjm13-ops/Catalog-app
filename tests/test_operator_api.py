@@ -56,6 +56,8 @@ class SyntheticReviewGateway:
             "snapshot_sha256": "c" * 64, "created_at": "2026-08-26T00:00:00Z",
             "created_by": "builder", "published_at": "2026-08-26T01:00:00Z",
             "published_by": "publisher", "item_count": 12,
+            "brand_code": "NATSUKI", "brand_name": "Natsuki",
+            "visual_profile": {"primary_color": "#C60012", "secondary_color": "#202327"},
         }]
         self.plan_data = {
             "import_plan_id": str(PLAN_ID),
@@ -800,6 +802,9 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(page.status_code, 200)
         self.assertIn("2026.08", page.text)
         self.assertIn("12 productos", page.text)
+        self.assertIn("Marca activa en esta edición", page.text)
+        self.assertIn("Natsuki", page.text)
+        self.assertIn('value="#C60012"', page.text)
         self.assertIn('name="selected_references"', page.text)
         response = await self.client.post(
             f"/operator/catalogs/{RELEASE_ID}/exports",
@@ -1124,7 +1129,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.38.0")
+        self.assertEqual(OPERATOR_VERSION, "1.39.0")
 
     async def test_company_identity_upload_requires_csrf_and_records_logo_without_exposing_it(self) -> None:
         await self.login()

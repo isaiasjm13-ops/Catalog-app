@@ -62,7 +62,15 @@
     <div class="release-list">
       {% for release in releases %}
       {% set image_item_count = release.get('image_item_count', release.item_count) %}
+      {% set release_visual = release.get('visual_profile') or {} %}
       <article class="release-card status-{{ release.status }}">
+        <div class="release-brand-context">
+          <div><small>Marca activa en esta edición</small><strong>{{ release.get('brand_name') or release.get('brand_code') or 'Marca del catálogo' }}</strong></div>
+          <div class="release-brand-swatches" aria-label="Colores de la marca">
+            <input type="color" value="{{ release_visual.get('primary_color', '#086650') }}" disabled aria-label="Principal">
+            <input type="color" value="{{ release_visual.get('secondary_color', '#C7DF54') }}" disabled aria-label="Secundario">
+          </div>
+        </div>
         <div class="release-card-label">Edición maestra</div>
         <div class="release-summary">
           <div>

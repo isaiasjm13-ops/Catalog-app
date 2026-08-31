@@ -832,6 +832,8 @@ def list_catalog_releases(
             cursor.execute(
                 """
                 SELECT r.catalog_release_id, r.brand_id, r.version, r.status,
+                       b.code AS brand_code, b.name AS brand_name,
+                       r.definition->'visual_profile' AS visual_profile,
                        r.snapshot_sha256, r.created_at, r.created_by,
                        r.published_at, r.published_by,
                        count(i.catalog_release_item_id) AS item_count,
@@ -843,7 +845,7 @@ def list_catalog_releases(
                 LEFT JOIN perfect_catalog.catalog_release_item AS i
                   ON i.catalog_release_id = r.catalog_release_id
                 WHERE (%s::uuid IS NULL OR b.company_id=%s)
-                GROUP BY r.catalog_release_id
+                GROUP BY r.catalog_release_id, b.brand_id
                 ORDER BY r.created_at DESC, r.catalog_release_id DESC
                 LIMIT %s
                 """,

@@ -62,6 +62,21 @@ def _visual(config: dict[str, Any]) -> dict[str, Any]:
     return dict(config.get("visual_profile") or {})
 
 
+def _company_theme(config: dict[str, Any]) -> dict[str, str]:
+    company = _visual(config).get("company") or {}
+    return {
+        "primary": str(company.get("primary_color") or "#086650"),
+        "secondary": str(company.get("secondary_color") or "#C7DF54"),
+        "ink": str(company.get("ink_color") or "#17211D"),
+        "paper": str(company.get("paper_color") or "#FFFFFF"),
+    }
+
+
+def _company_name(config: dict[str, Any]) -> str:
+    company = _visual(config).get("company") or {}
+    return str(company.get("display_name") or "Perfect Trading International")
+
+
 def _logo_path(
     config: dict[str, Any], bundle_dir: Path | None = None, *,
     company: bool = False, raster_only: bool = False,
@@ -246,6 +261,8 @@ def generate_catalog_pdf(
     columns, page_capacity = _layout(config)
     title = str(config.get("title") or "Catálogo de productos")
     palette = _theme(config)
+    company_palette = _company_theme(config)
+    company_name = _company_name(config)
     _register_natsuki_fonts()
     styles = getSampleStyleSheet()
     cover_title_style = ParagraphStyle(
@@ -379,8 +396,14 @@ def generate_catalog_pdf(
         canvas.setFont(NATSUKI_BODY_FONT, MINIMUM_CATALOG_FONT_SIZE)
         canvas.drawString(1.35 * cm, A4[1] - 1.15 * cm, title[:70])
         proof = " · ".join(value for value in (version, checksum[:16]) if value)
-        canvas.drawString(1.2 * cm, .65 * cm, proof)
-        canvas.drawRightString(A4[0] - 1.2 * cm, .65 * cm, f"Página {document.page}")
+        canvas.drawString(1.2 * cm, .3 * cm, proof)
+        canvas.drawRightString(A4[0] - 1.2 * cm, .3 * cm, f"Página {document.page}")
+        canvas.setStrokeColor(colors.HexColor(company_palette["primary"]))
+        canvas.setLineWidth(1.2)
+        canvas.line(1.2 * cm, .75 * cm, A4[0] - 1.2 * cm, .75 * cm)
+        canvas.setFillColor(colors.HexColor(company_palette["primary"]))
+        canvas.setFont(NATSUKI_BODY_BOLD_FONT, MINIMUM_CATALOG_FONT_SIZE)
+        canvas.drawString(1.2 * cm, .84 * cm, company_name[:70])
         logo = _logo_path(config, bundle_dir, raster_only=True)
         if logo and _visual(config).get("corner_logo_enabled", True):
             canvas.drawImage(str(logo), A4[0]-5.4*cm, A4[1]-1.45*cm, width=4.1*cm, height=.78*cm, preserveAspectRatio=True, mask="auto")
@@ -399,6 +422,8 @@ def generate_catalog_pptx(
     columns, per_slide = _layout(config)
     title = str(config.get("title") or "Catálogo de productos")
     palette = _theme(config)
+    company_palette = _company_theme(config)
+    company_name = _company_name(config)
     primary_rgb = RGBColor.from_string(palette["primary"].lstrip("#"))
     secondary_rgb = RGBColor.from_string(palette["secondary"].lstrip("#"))
     prs = Presentation()
@@ -480,6 +505,22 @@ def generate_catalog_pptx(
                     paragraph.font.name = "DM Sans"
             if logo and _visual(config).get("corner_logo_enabled", True):
                 slide.shapes.add_picture(str(logo), Inches(10.7), Inches(.15), width=Inches(2.0))
+            footer = slide.shapes.add_shape(
+                MSO_SHAPE.RECTANGLE, Inches(.4), Inches(7.08), Inches(12.4), Inches(.035)
+            )
+            footer.fill.solid()
+            footer.fill.fore_color.rgb = RGBColor.from_string(
+                company_palette["primary"].lstrip("#")
+            )
+            footer.line.fill.background()
+            signature = slide.shapes.add_textbox(
+                Inches(.4), Inches(7.12), Inches(7), Inches(.3)
+            )
+            signature.text_frame.paragraphs[0].text = company_name
+            signature.text_frame.paragraphs[0].font.size = Pt(MINIMUM_CATALOG_FONT_SIZE)
+            signature.text_frame.paragraphs[0].font.color.rgb = RGBColor.from_string(
+                company_palette["primary"].lstrip("#")
+            )
     output = io.BytesIO(); prs.save(output)
     return output.getvalue()
 
@@ -494,6 +535,8 @@ def generate_catalog_html(
     release = release or {}
     columns, _ = _layout(config)
     palette = _theme(config)
+    company_palette = _company_theme(config)
+    company_name = escape(_company_name(config))
     title = escape(str(config.get("title") or "Catálogo de productos"))
     subtitle = escape(str(config.get("subtitle") or ""))
     sections: list[str] = []
@@ -613,13 +656,19 @@ def generate_catalog_html(
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="generator" content="Perfect Catalog"><meta name="release-sha256" content="{checksum}">
 <title>{title}</title><style>
-:root{{--secondary:{palette['secondary']}}}.hero:before{{border-color:var(--secondary)!important;opacity:.45!important}}
+:root{{--secondary:{palette['secondary']};--company-primary:{company_palette['primary']};--company-secondary:{company_palette['secondary']}}}.hero:before{{border-color:var(--secondary)!important;opacity:.45!important}}
 :root{{--ink:{palette['ink']};--forest:{palette['primary']};--paper:{palette['paper']};--card:{palette['card']};--line:#d9d5c9;--muted:#65716b}}*{{box-sizing:border-box}}html{{scroll-behavior:smooth}}body{{margin:0;color:var(--ink);background:var(--paper);font:15px/1.55 Arial,sans-serif}}main{{max-width:1280px;margin:auto;padding:clamp(24px,5vw,72px)}}.hero{{position:relative;min-height:48vh;display:grid;align-content:end;padding:8vw clamp(0px,2vw,28px) 4vw;border-bottom:4px solid var(--ink)}}.hero:before{{content:"";position:absolute;top:12%;right:2%;width:clamp(90px,14vw,190px);aspect-ratio:1;border:1px solid var(--forest);border-radius:50%;opacity:.22}}.hero small{{color:var(--forest);font-weight:800;letter-spacing:.16em;text-transform:uppercase}}h1{{position:relative;max-width:900px;margin:.2em 0;font:500 clamp(44px,8vw,104px)/.9 Georgia,serif;letter-spacing:-.035em}}.hero p{{max-width:700px;font-size:18px}}.contents{{display:flex;gap:8px;padding:20px 0;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:thin}}.contents a{{min-height:44px;display:inline-flex;gap:9px;align-items:center;flex:0 0 auto;padding:8px 13px;border:1px solid var(--line);border-radius:999px;color:var(--ink);background:var(--card);text-decoration:none}}.contents a:hover,.contents a:focus-visible{{border-color:var(--forest)}}.contents span{{color:var(--forest);font-weight:800}}section{{scroll-margin-top:18px;padding:clamp(38px,6vw,72px) 0}}section>header{{display:flex;justify-content:space-between;gap:20px;align-items:end;border-bottom:1px solid var(--line)}}h2{{margin:.25em 0;font:500 clamp(27px,4vw,48px) Georgia,serif;letter-spacing:-.02em}}section>header span{{padding-bottom:1.2em;color:var(--muted)}}.products{{display:grid;grid-template-columns:repeat({columns},minmax(0,1fr));gap:20px;padding-top:24px}}.product{{min-width:0;padding:20px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(20,42,34,.06);overflow:hidden}}.photo{{height:210px;margin:-20px -20px 20px;padding:10px;background:#f8f8f5;display:grid;place-items:center;overflow:hidden;border-bottom:1px solid var(--line)}}.photo img{{display:block;width:100%;height:100%;object-fit:contain;object-position:center center}}code{{color:var(--forest);font-weight:800;letter-spacing:.035em}}h3{{margin:.5em 0;font:500 22px/1.15 Georgia,serif}}.meta{{color:var(--muted);font-size:13px}}.specifications{{display:grid;gap:8px;margin:15px 0 0}}.specifications div{{display:grid;grid-template-columns:minmax(92px,.34fr) 1fr;gap:10px;padding-top:8px;border-top:1px solid var(--line)}}.specifications dt{{color:var(--forest);font-weight:800}}.specifications dd{{margin:0;overflow-wrap:anywhere}}.proof{{padding:28px 0;border-top:1px solid var(--line);overflow-wrap:anywhere;color:var(--muted);font-size:12px}}@media(max-width:760px){{html{{scroll-behavior:auto}}.products{{grid-template-columns:1fr}}.hero{{min-height:38vh}}section>header{{align-items:start;flex-direction:column;gap:0}}section>header span{{padding-bottom:1em}}}}@media(prefers-reduced-motion:reduce){{html{{scroll-behavior:auto}}}}@media print{{@page{{size:A4;margin:12mm}}body{{background:#fff}}main{{max-width:none;padding:0}}.hero{{min-height:245mm;break-after:page}}.contents{{display:none}}section{{break-before:page;padding:0}}.product{{break-inside:avoid;box-shadow:none}}.products{{gap:6mm}}}}
 /* Visor ampliado sin JavaScript: mantiene el catálogo autónomo y portable. */
 .photo{{position:relative;width:calc(100% + 40px);border:0;color:var(--ink);font:inherit;text-decoration:none;cursor:zoom-in}}.zoom-hint{{position:absolute;right:12px;bottom:12px;padding:6px 10px;border-radius:999px;color:#fff;background:rgba(17,30,25,.78);font-size:12px;font-weight:800;opacity:0;transform:translateY(4px);transition:.18s ease}}.photo:hover .zoom-hint,.photo:focus-visible .zoom-hint{{opacity:1;transform:none}}.photo-viewer{{width:min(94vw,1400px);height:min(92vh,1000px);padding:16px;border:0;border-radius:16px;background:var(--card);box-shadow:0 24px 80px rgba(0,0,0,.45)}}.photo-viewer::backdrop{{background:rgba(8,15,12,.9)}}.photo-viewer[open]{{display:grid;grid-template-columns:1fr auto;grid-template-rows:minmax(0,1fr) auto;gap:12px}}.photo-viewer img{{grid-column:1/-1;width:100%;height:100%;min-height:0;object-fit:contain;object-position:center;background:#f8f8f5}}.photo-viewer p{{align-self:center;margin:0;overflow-wrap:anywhere}}.photo-viewer form{{align-self:center}}.photo-viewer-close{{min-height:44px;padding:10px 16px;border:1px solid var(--line);border-radius:999px;color:var(--ink);background:var(--card);font:inherit;font-weight:800}}@media(max-width:760px){{.zoom-hint{{opacity:1;transform:none}}}}@media(prefers-reduced-motion:reduce){{.zoom-hint{{transition:none}}}}@media print{{.photo-viewer{{display:none!important}}}}
 .catalog-search{{position:sticky;top:0;z-index:20;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;padding:14px 0;background:color-mix(in srgb,var(--paper) 94%,transparent);backdrop-filter:blur(12px)}}.catalog-search label{{grid-column:1/-1;color:var(--forest);font-weight:800}}.catalog-search input{{width:100%;min-height:48px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit}}.catalog-search input:focus{{outline:3px solid color-mix(in srgb,var(--forest) 24%,transparent);border-color:var(--forest)}}.catalog-search button{{min-height:48px;padding:10px 16px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit;font-weight:800}}.search-status{{grid-column:1/-1;margin:0;color:var(--muted)}}[hidden]{{display:none!important}}@media(max-width:760px){{.catalog-search{{margin-inline:-10px;padding:12px 10px}}}}@media print{{.catalog-search{{display:none}}}}
-.vehicle-make-logo{{display:inline-block;width:auto;height:1.05em;max-width:3.2em;margin-left:.3em;object-fit:contain;vertical-align:-.08em}}
+.vehicle-make-logo{{display:inline-block;width:auto;height:1.05em;max-width:3.2em;margin-left:.3em;object-fit:contain;vertical-align:-.08em}}.corporate-signature{{display:flex;justify-content:space-between;gap:20px;align-items:center;padding:18px 0;border-top:3px solid var(--company-primary);box-shadow:inset 0 1px 0 var(--company-secondary);color:var(--company-primary);font-weight:800}}.corporate-signature small{{color:var(--muted);font-weight:400}}
 </style></head><body><main><header class="hero"><small>Perfect Trading · edición {version}</small><h1>{title}</h1><p>{subtitle}</p></header><form class="catalog-search" role="search" onsubmit="return false"><label for="catalog-query">Buscar en este catálogo</label><input id="catalog-query" type="search" inputmode="search" autocomplete="off" placeholder="Referencia, pieza, vehículo, motor u OEM"><button id="catalog-clear" type="button" hidden>Limpiar</button><p id="catalog-status" class="search-status" role="status" aria-live="polite">{len(rows)} productos disponibles</p></form><nav class="contents" aria-label="Secciones del catálogo">{''.join(navigation)}</nav>{''.join(sections)}<footer class="proof">Release SHA-256: {checksum}</footer></main><dialog class="photo-viewer" id="photo-viewer"><img alt=""><p></p><form method="dialog"><button class="photo-viewer-close" value="close">Cerrar</button></form></dialog><script>(()=>{{const q=document.querySelector('#catalog-query'),clear=document.querySelector('#catalog-clear'),status=document.querySelector('#catalog-status'),cards=[...document.querySelectorAll('.product')],sections=[...document.querySelectorAll('main>section')],viewer=document.querySelector('#photo-viewer'),viewerImage=viewer.querySelector('img'),viewerCaption=viewer.querySelector('p'),fold=value=>value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es');for(const card of cards)card.dataset.search=fold(card.textContent);function filter(){{const term=fold(q.value.trim());let visible=0;for(const card of cards){{const match=!term||card.dataset.search.includes(term);card.hidden=!match;if(match)visible++}}for(const section of sections)section.hidden=![...section.querySelectorAll('.product')].some(card=>!card.hidden);clear.hidden=!term;status.textContent=term?`${{visible}} de ${{cards.length}} productos encontrados`:`${{cards.length}} productos disponibles`}}q.addEventListener('input',filter);clear.addEventListener('click',()=>{{q.value='';filter();q.focus()}});for(const trigger of document.querySelectorAll('.photo'))trigger.addEventListener('click',()=>{{const source=trigger.querySelector('img');viewerImage.src=source.currentSrc||source.src;viewerImage.alt=source.alt;viewerCaption.textContent=source.alt;viewer.showModal()}});viewer.addEventListener('click',event=>{{if(event.target===viewer)viewer.close()}})}})();</script></body></html>"""
+    html = html.replace(
+        f'<footer class="proof">Release SHA-256: {checksum}</footer>',
+        f'<footer class="proof corporate-signature"><span>{company_name}</span>'
+        f'<small>Release SHA-256: {checksum}</small></footer>',
+        1,
+    )
     legacy_index = "fold=value=>value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es');for(const card of cards)card.dataset.search=fold(card.textContent);"
     token_index = "fold=value=>value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es'),compact=value=>fold(value).replace(/[^a-z0-9]+/g,'');for(const card of cards){const source=card.dataset.search||card.textContent;card.dataset.search=fold(source);card.dataset.searchCompact=compact(source)}"
     legacy_filter = "function filter(){const term=fold(q.value.trim());let visible=0;for(const card of cards){const match=!term||card.dataset.search.includes(term);card.hidden=!match;if(match)visible++}"
