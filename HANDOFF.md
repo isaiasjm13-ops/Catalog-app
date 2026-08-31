@@ -2,6 +2,9 @@
 
 ## Bloque 2026-08-31: ingresos e imágenes aislados por Company (v1.37)
 
+- `ACTUALIZAR-SISTEMA.cmd` conserva ahora la salida del último intento en
+  `logs/actualizar-sistema-ultimo.log`; no registra la contraseña. Se añadió después de que un fallo
+  local `psql: 3` quedara fuera de la captura y sin diagnóstico persistente.
 - La migración `0020_company_intake_context.sql` persiste `company_id` en cada ingreso y plan nuevo.
   El historial sólo se rellena cuando existe evidencia relacional; los registros ambiguos permanecen
   sin asignar y ocultos, sin atribuirlos silenciosamente a una empresa.

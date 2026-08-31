@@ -36,6 +36,8 @@ class CompanyMigrationTests(unittest.TestCase):
         self.assertIn('"checksum_0019=$checksum0019"', script)
         self.assertIn("Get-FileHash -LiteralPath $migration0020 -Algorithm SHA256", script)
         self.assertIn('"checksum_0020=$checksum0020"', script)
+        self.assertIn("actualizar-sistema-ultimo.log", script)
+        self.assertIn("Tee-Object -FilePath $logPath", script)
 
     def test_updater_enforces_post_migration_company_invariants(self) -> None:
         sql = (ROOT / "db/bootstrap/apply_pending_migrations.sql").read_text(encoding="utf-8")
