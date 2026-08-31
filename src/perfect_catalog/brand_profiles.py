@@ -68,16 +68,19 @@ def normalize_profile_input(values: dict[str, str]) -> dict[str, str | None]:
     return {"code": code, "display_name": name, "tagline": tagline, **colors, "public_base_url": public_url}
 
 
-def list_brand_profiles(config: DatabaseConfig, password: str) -> list[dict[str, Any]]:
+def list_brand_profiles(
+    config: DatabaseConfig, password: str, *, company_id: uuid.UUID,
+) -> list[dict[str, Any]]:
     with psycopg.connect(**config.connection_kwargs(password), row_factory=dict_row) as connection:
         rows = connection.execute(
-            "SELECT * FROM perfect_catalog.brand_profile ORDER BY display_name, code"
+            "SELECT * FROM perfect_catalog.brand_profile WHERE company_id=%s ORDER BY display_name, code",
+            (company_id,),
         ).fetchall()
     return [dict(row) for row in rows]
 
 
 def create_brand_profile(
-    values: dict[str, str], actor: str, reason: str,
+    values: dict[str, str], actor: str, reason: str, company_id: uuid.UUID,
     config: DatabaseConfig, password: str,
 ) -> dict[str, Any]:
     profile = normalize_profile_input(values)
@@ -97,13 +100,13 @@ def create_brand_profile(
         row = connection.execute(
             """
             INSERT INTO perfect_catalog.brand_profile (
-                brand_profile_id, code, display_name, tagline, primary_color,
+                brand_profile_id, company_id, code, display_name, tagline, primary_color,
                 secondary_color, ink_color, paper_color, public_base_url,
                 created_by, creation_reason
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING *
             """,
-            (profile_id, profile["code"], profile["display_name"], profile["tagline"],
+            (profile_id, company_id, profile["code"], profile["display_name"], profile["tagline"],
              profile["primary_color"], profile["secondary_color"], profile["ink_color"],
              profile["paper_color"], profile["public_base_url"], actor, reason),
         ).fetchone()

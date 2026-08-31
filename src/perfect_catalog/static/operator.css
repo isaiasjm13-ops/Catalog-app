@@ -563,3 +563,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
   button:active, .primary-button:active, .secondary-button:active { transform: none; }
 }
+.company-context { color: var(--accent, #086650); font-weight: 700; text-decoration: none; }
+.company-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+.company-card { background: rgba(255,255,255,.92); border: 1px solid #d7e1dc; border-radius: 18px; padding: 1.4rem; box-shadow: 0 16px 40px rgba(23,33,29,.08); }
+.company-card small { letter-spacing: .12em; color: #587068; }
+.company-card h2 { margin: .45rem 0; }

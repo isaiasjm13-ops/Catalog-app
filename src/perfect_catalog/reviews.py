@@ -458,11 +458,13 @@ def _list_review_plans_in_connection(
     *,
     limit: int = 100,
     plan_id: uuid.UUID | None = None,
+    company_id: uuid.UUID | None = None,
 ) -> list[dict[str, Any]]:
     if not 1 <= limit <= 500:
         raise ValueError("limit debe estar entre 1 y 500.")
     target_filter = "" if plan_id is None else "AND i.import_plan_id=%s"
     plan_filter = "" if plan_id is None else "AND p.import_plan_id=%s"
+    company_filter = "" if company_id is None else "AND bp.company_id=%s"
     sql = f"""
         WITH targets AS (
             SELECT DISTINCT i.import_plan_id,
@@ -515,8 +517,9 @@ def _list_review_plans_in_connection(
                count(c.public_id) FILTER (WHERE c.review_state='inconsistent') AS inconsistent_count
         FROM perfect_catalog.import_plan AS p
         JOIN perfect_catalog.import_file AS f ON f.import_file_id=p.import_file_id
+        JOIN perfect_catalog.brand_profile AS bp ON bp.brand_profile_id=p.brand_profile_id
         JOIN classified AS c ON c.import_plan_id=p.import_plan_id
-        WHERE p.plan_status='applied' {plan_filter}
+        WHERE p.plan_status='applied' {plan_filter} {company_filter}
         GROUP BY p.import_plan_id, p.approval_fingerprint_sha256,
                  p.contract_version, p.rules_version, p.applied_at, p.applied_by,
                  f.original_name
@@ -526,6 +529,8 @@ def _list_review_plans_in_connection(
     params: list[Any] = []
     if plan_id is not None:
         params.extend((plan_id, plan_id))
+    if company_id is not None:
+        params.append(company_id)
     params.append(limit)
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(sql, params)
@@ -548,10 +553,11 @@ def _list_review_plans_in_connection(
 
 
 def list_review_plans(
-    config: DatabaseConfig, password: str, *, limit: int = 100
+    config: DatabaseConfig, password: str, *, limit: int = 100,
+    company_id: uuid.UUID | None = None,
 ) -> list[dict[str, Any]]:
     with psycopg.connect(**config.connection_kwargs(password)) as connection:
-        return _list_review_plans_in_connection(connection, limit=limit)
+        return _list_review_plans_in_connection(connection, limit=limit, company_id=company_id)
 
 
 def get_review_plan(
@@ -981,21 +987,61 @@ class DatabaseReviewGateway:
     def close(self) -> None:
         self._password = ""
 
-    def brand_profiles(self) -> list[dict[str, Any]]:
+    def companies(self) -> list[dict[str, Any]]:
+        with psycopg.connect(
+            **self._config.connection_kwargs(self._password), row_factory=dict_row
+        ) as connection:
+            rows = connection.execute(
+                """SELECT c.company_id, c.code, c.display_name, c.is_active,
+                          count(b.brand_id) AS brand_count
+                   FROM perfect_catalog.company AS c
+                   LEFT JOIN perfect_catalog.brand AS b ON b.company_id=c.company_id
+                   GROUP BY c.company_id, c.code, c.display_name, c.is_active
+                   ORDER BY c.display_name, c.company_id"""
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def authorize_company_resource(
+        self, company_id: uuid.UUID, resource_type: str, resource_id: uuid.UUID,
+    ) -> bool:
+        queries = {
+            "plan": """SELECT EXISTS (
+                SELECT 1 FROM perfect_catalog.import_plan AS p
+                JOIN perfect_catalog.brand_profile AS bp ON bp.brand_profile_id=p.brand_profile_id
+                WHERE p.import_plan_id=%s AND bp.company_id=%s)""",
+            "release": """SELECT EXISTS (
+                SELECT 1 FROM perfect_catalog.catalog_release AS r
+                JOIN perfect_catalog.brand AS b ON b.brand_id=r.brand_id
+                WHERE r.catalog_release_id=%s AND b.company_id=%s)""",
+            "identity": """SELECT EXISTS (
+                SELECT 1 FROM perfect_catalog.visual_identity_revision AS vi
+                LEFT JOIN perfect_catalog.brand_profile AS bp
+                  ON bp.brand_profile_id=vi.brand_profile_id
+                WHERE vi.visual_identity_revision_id=%s
+                  AND (vi.scope='vehicle_make' OR vi.company_id=%s OR bp.company_id=%s))""",
+        }
+        query = queries.get(resource_type)
+        if query is None:
+            raise ValueError("Tipo de recurso Company no válido.")
+        params = (resource_id, company_id, company_id) if resource_type == "identity" else (resource_id, company_id)
+        with psycopg.connect(**self._config.connection_kwargs(self._password)) as connection:
+            return bool(connection.execute(query, params).fetchone()[0])
+
+    def brand_profiles(self, *, company_id: uuid.UUID) -> list[dict[str, Any]]:
         from .brand_profiles import list_brand_profiles
 
-        return list_brand_profiles(self._config, self._password)
+        return list_brand_profiles(self._config, self._password, company_id=company_id)
 
     def create_brand_profile(
-        self, values: dict[str, str], actor: str, reason: str,
+        self, values: dict[str, str], actor: str, reason: str, company_id: uuid.UUID,
     ) -> dict[str, Any]:
         from .brand_profiles import create_brand_profile
 
-        return create_brand_profile(values, actor, reason, self._config, self._password)
+        return create_brand_profile(values, actor, reason, company_id, self._config, self._password)
 
-    def visual_identities(self) -> dict[str, Any]:
+    def visual_identities(self, *, company_id: uuid.UUID) -> dict[str, Any]:
         from .visual_identities import list_visual_identities
-        return list_visual_identities(self._config, self._password)
+        return list_visual_identities(self._config, self._password, company_id=company_id)
 
     def create_visual_identity(self, **kwargs: Any) -> dict[str, Any]:
         from .visual_identities import create_visual_identity
@@ -1005,10 +1051,14 @@ class DatabaseReviewGateway:
         from .visual_identities import resolve_visual_identity_asset
         return resolve_visual_identity_asset(revision_id, asset_root, self._config, self._password)
 
-    def catalog_releases(self, *, limit: int = 100) -> list[dict[str, Any]]:
+    def catalog_releases(
+        self, *, limit: int = 100, company_id: uuid.UUID | None = None,
+    ) -> list[dict[str, Any]]:
         from .publication import list_catalog_releases
 
-        return list_catalog_releases(self._config, self._password, limit=limit)
+        return list_catalog_releases(
+            self._config, self._password, limit=limit, company_id=company_id,
+        )
 
     def export_catalog(
         self, release_id: uuid.UUID, output_root: Path,
@@ -1076,8 +1126,12 @@ class DatabaseReviewGateway:
             release_id, self._config, self._password, query=query, limit=limit, offset=offset,
         )
 
-    def plans(self, *, limit: int = 100) -> list[dict[str, Any]]:
-        return list_review_plans(self._config, self._password, limit=limit)
+    def plans(
+        self, *, limit: int = 100, company_id: uuid.UUID | None = None,
+    ) -> list[dict[str, Any]]:
+        return list_review_plans(
+            self._config, self._password, limit=limit, company_id=company_id,
+        )
 
     def plan(self, plan_id: uuid.UUID) -> dict[str, Any] | None:
         return get_review_plan(plan_id, self._config, self._password)

@@ -101,7 +101,24 @@ FROM perfect_catalog.schema_migration WHERE migration_id='0018_companies'), true
 \endif
 \endif
 
-\echo 'Validando ledger, Companies y aislamiento de marcas'
+SELECT (NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='perfect_catalog' AND table_name='visual_identity_revision'
+      AND column_name='company_id'
+)) AS need_0019 \gset
+\if :need_0019
+\echo 'Aplicando 0019 - identidad corporativa por Company'
+\ir ../migrations/0019_company_visual_identity.sql
+\else
+SELECT COALESCE((SELECT checksum_sha256 <> :'checksum_0019'
+FROM perfect_catalog.schema_migration WHERE migration_id='0019_company_visual_identity'), true) AS mismatch_0019 \gset
+\if :mismatch_0019
+\echo 'ERROR: checksum distinto para 0019_company_visual_identity.'
+\quit 3
+\endif
+\endif
+
+\echo 'Validando ledger 0017-0019, Companies, marcas e identidades'
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -110,8 +127,18 @@ BEGIN
     ) OR NOT EXISTS (
         SELECT 1 FROM perfect_catalog.schema_migration
         WHERE migration_id = '0018_companies'
+    ) OR NOT EXISTS (
+        SELECT 1 FROM perfect_catalog.schema_migration
+        WHERE migration_id = '0019_company_visual_identity'
     ) THEN
-        RAISE EXCEPTION 'Validacion multiempresa: faltan entradas 0017-0018 en el ledger';
+        RAISE EXCEPTION 'Validacion multiempresa: faltan entradas 0017-0019 en el ledger';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM perfect_catalog.visual_identity_revision
+        WHERE (scope = 'company') <> (company_id IS NOT NULL)
+    ) THEN
+        RAISE EXCEPTION 'Validacion multiempresa: identidad corporativa sin Company exacta';
     END IF;
 
     IF (SELECT count(*) FROM perfect_catalog.company) < 5 THEN

@@ -56,6 +56,8 @@ Abrir:
 El código y PostgreSQL evolucionan juntos. Los archivos numerados de `db/migrations` conservan el
 historial técnico de esos cambios y no son accesos de uso diario. No debes escogerlos manualmente:
 `ACTUALIZAR-SISTEMA.cmd` consulta la base, detecta lo que falta y aplica solamente esos cambios.
+Desde la versión 1.36 también habilita Company activa: al entrar se elige la empresa de trabajo y
+planes, marcas, catálogos e identidad corporativa se muestran dentro de ese contexto.
 Úsalo después de recibir una actualización que incluya cambios de base de datos o cuando la consola
 lo indique. Para el trabajo normal abre únicamente `INICIAR-REVISOR.cmd`.
 

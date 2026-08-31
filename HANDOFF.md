@@ -1,5 +1,23 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-31: Company activa e identidad corporativa 0019
+
+- La consola v1.36 incorpora selector de Company después del login. Con una sola Company activa la
+  selección es automática; con varias exige POST de mismo origen y CSRF. La Company elegida queda
+  ligada a la sesión firmada y aparece en el encabezado.
+- Planes aplicados, releases, perfiles de marca e identidad corporativa se consultan por
+  `company_id`. Los ingresos siguen compartidos deliberadamente hasta persistir su Company en el
+  siguiente bloque; la interfaz lo indica y no promete un aislamiento inexistente.
+- Un guard de servidor comprueba los UUID directos de planes, releases, exportaciones y logos antes
+  de ejecutar cada ruta; un recurso perteneciente a otra Company responde como no encontrado.
+- 0019 añade Company obligatoria a `brand_profile`, liga cada identidad scope `company` a una
+  Company exacta y migra las revisiones corporativas históricas a PERFECT. Las identidades Brand y
+  vehicle_make conservan un único destino mediante CHECK.
+- La creación/materialización de una marca hereda Company desde su perfil; corrige además el INSERT
+  que habría fallado después de que 0018 hiciera `brand.company_id` obligatorio.
+- `ACTUALIZAR-SISTEMA.cmd` y `LIMPIAR-IMPORTACIONES.cmd` incorporan checksum y validación de 0019.
+- Verificación: 272 pruebas correctas; 6 integraciones PostgreSQL omitidas sin credenciales.
+
 ## Bloque 2026-08-31: validación automática posterior a Company
 
 - `ACTUALIZAR-SISTEMA.cmd` no se limita a detectar/aplicar 0017-0018: ahora falla de forma visible

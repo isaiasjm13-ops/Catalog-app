@@ -26,6 +26,7 @@
       </nav>
       <div class="operator-meta">
         <span class="status-dot"></span>
+        {% if session.company_id %}<a class="company-context" href="/operator/company" title="Cambiar empresa">{{ session.company_name }}</a>{% endif %}
         <span>{{ session.actor }}</span>
         <form method="post" action="/operator/logout">
           <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">

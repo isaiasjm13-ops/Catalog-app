@@ -52,13 +52,23 @@ def _validate_logo(filename: str, content: bytes) -> tuple[str, str]:
     return MEDIA[suffix], extension
 
 
-def list_visual_identities(config: DatabaseConfig, password: str) -> dict[str, Any]:
+def list_visual_identities(
+    config: DatabaseConfig, password: str, *, company_id: uuid.UUID,
+) -> dict[str, Any]:
     with psycopg.connect(**config.connection_kwargs(password), row_factory=dict_row) as connection:
         rows = connection.execute(
-            """SELECT DISTINCT ON (scope, brand_profile_id, vehicle_make_id) *
+            """SELECT DISTINCT ON (scope, company_id, brand_profile_id, vehicle_make_id) *
                FROM perfect_catalog.visual_identity_revision
-               ORDER BY scope, brand_profile_id, vehicle_make_id, created_at DESC,
-                        visual_identity_revision_id DESC"""
+               WHERE (scope='company' AND company_id=%s)
+                  OR (scope='brand' AND EXISTS (
+                        SELECT 1 FROM perfect_catalog.brand AS b
+                        WHERE b.brand_profile_id=visual_identity_revision.brand_profile_id
+                          AND b.company_id=%s
+                     ))
+                  OR scope='vehicle_make'
+               ORDER BY scope, company_id, brand_profile_id, vehicle_make_id,
+                        created_at DESC, visual_identity_revision_id DESC""",
+            (company_id, company_id),
         ).fetchall()
         vehicle_makes = connection.execute(
             """SELECT vehicle_make_id, name, normalized_name
@@ -79,15 +89,15 @@ def list_visual_identities(config: DatabaseConfig, password: str) -> dict[str, A
 
 
 def create_visual_identity(
-    *, scope: str, brand_profile_id: uuid.UUID | None,
+    *, scope: str, company_id: uuid.UUID | None, brand_profile_id: uuid.UUID | None,
     vehicle_make_id: uuid.UUID | None = None, display_name: str,
     colors: dict[str, str], filename: str, content: bytes, actor: str, reason: str,
     asset_root: Path, config: DatabaseConfig, password: str,
 ) -> dict[str, Any]:
     targets = {
-        "company": brand_profile_id is None and vehicle_make_id is None,
-        "brand": brand_profile_id is not None and vehicle_make_id is None,
-        "vehicle_make": brand_profile_id is None and vehicle_make_id is not None,
+        "company": company_id is not None and brand_profile_id is None and vehicle_make_id is None,
+        "brand": company_id is None and brand_profile_id is not None and vehicle_make_id is None,
+        "vehicle_make": company_id is None and brand_profile_id is None and vehicle_make_id is not None,
     }
     if scope not in targets or not targets[scope]:
         raise ValueError("El alcance de identidad visual no es válido.")
@@ -112,11 +122,11 @@ def create_visual_identity(
     with psycopg.connect(**config.connection_kwargs(password), row_factory=dict_row) as connection:
         row = connection.execute(
             """INSERT INTO perfect_catalog.visual_identity_revision (
-                 visual_identity_revision_id, scope, brand_profile_id, vehicle_make_id, display_name,
+                 visual_identity_revision_id, scope, company_id, brand_profile_id, vehicle_make_id, display_name,
                  primary_color, secondary_color, ink_color, paper_color, logo_sha256,
                  logo_media_type, logo_storage_relpath, original_filename, created_by, creation_reason
-               ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
-            (uuid.uuid4(), scope, brand_profile_id, vehicle_make_id, display_name, normalized["primary_color"],
+               ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+            (uuid.uuid4(), scope, company_id, brand_profile_id, vehicle_make_id, display_name, normalized["primary_color"],
              normalized["secondary_color"], normalized["ink_color"], normalized["paper_color"],
              digest, media_type, relative.as_posix(), Path(filename).name, actor, reason),
         ).fetchone()

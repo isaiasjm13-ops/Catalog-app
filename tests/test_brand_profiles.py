@@ -99,6 +99,11 @@ class BrandProfileTests(unittest.TestCase):
         self.assertIn("information_schema.columns", bootstrap)
         self.assertIn("\\ir ../migrations/0014_brand_profile_workflow.sql", bootstrap)
 
+    def test_brand_profiles_are_company_scoped(self) -> None:
+        source = (ROOT / "src/perfect_catalog/brand_profiles.py").read_text(encoding="utf-8")
+        self.assertIn("WHERE company_id=%s", source)
+        self.assertIn("brand_profile_id, company_id, code", source)
+
     def test_plan_inspection_groups_joined_brand_profile(self) -> None:
         importer = (ROOT / "src/perfect_catalog/importer.py").read_text(encoding="utf-8")
         self.assertIn("GROUP BY p.import_plan_id, bp.brand_profile_id", importer)

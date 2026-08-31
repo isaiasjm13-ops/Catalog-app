@@ -6,6 +6,7 @@ import getpass
 import hashlib
 import hmac
 import logging
+import re
 import secrets
 import sys
 import threading
@@ -53,7 +54,7 @@ from .importer import DEFAULT_MAX_PILOT_ROWS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.35.0"
+OPERATOR_VERSION = "1.36.0"
 LOGGER = logging.getLogger(__name__)
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
@@ -68,7 +69,13 @@ PBKDF2_ITERATIONS = 310_000
 class ReviewGateway(Protocol):
     def close(self) -> None: ...
 
-    def plans(self, *, limit: int = 100) -> list[dict[str, Any]]: ...
+    def companies(self) -> list[dict[str, Any]]: ...
+
+    def authorize_company_resource(
+        self, company_id: uuid.UUID, resource_type: str, resource_id: uuid.UUID,
+    ) -> bool: ...
+
+    def plans(self, *, limit: int = 100, company_id: uuid.UUID | None = None) -> list[dict[str, Any]]: ...
 
     def plan(self, plan_id: uuid.UUID) -> dict[str, Any] | None: ...
 
@@ -159,15 +166,15 @@ class ReviewGateway(Protocol):
         actor: str, reason: str,
     ) -> dict[str, Any]: ...
 
-    def catalog_releases(self, *, limit: int = 100) -> list[dict[str, Any]]: ...
+    def catalog_releases(self, *, limit: int = 100, company_id: uuid.UUID | None = None) -> list[dict[str, Any]]: ...
 
-    def brand_profiles(self) -> list[dict[str, Any]]: ...
+    def brand_profiles(self, *, company_id: uuid.UUID) -> list[dict[str, Any]]: ...
 
     def create_brand_profile(
-        self, values: dict[str, str], actor: str, reason: str,
+        self, values: dict[str, str], actor: str, reason: str, company_id: uuid.UUID,
     ) -> dict[str, Any]: ...
 
-    def visual_identities(self) -> dict[str, Any]: ...
+    def visual_identities(self, *, company_id: uuid.UUID) -> dict[str, Any]: ...
 
     def create_visual_identity(self, **kwargs: Any) -> dict[str, Any]: ...
     def visual_identity_asset(self, revision_id: uuid.UUID, asset_root: Path) -> tuple[Path, str]: ...
@@ -209,6 +216,9 @@ class OperatorSession:
     actor: str
     csrf_token: str
     expires_at: int
+    company_id: uuid.UUID | None = None
+    company_code: str | None = None
+    company_name: str | None = None
 
 
 class OperatorAuthenticator:
@@ -331,6 +341,27 @@ class OperatorAuthenticator:
                 self._sessions.pop(session_id, None)
                 return None
             return session
+
+    def select_company(
+        self, signed_cookie: str | None, company_id: uuid.UUID,
+        company_code: str, company_name: str,
+    ) -> OperatorSession | None:
+        session_id = self._unsign("session", signed_cookie)
+        if session_id is None:
+            return None
+        with self._lock:
+            current = self._sessions.get(session_id)
+            if current is None or current.expires_at <= int(self._now()):
+                self._sessions.pop(session_id, None)
+                return None
+            selected = OperatorSession(
+                session_id=current.session_id, actor=current.actor,
+                csrf_token=current.csrf_token, expires_at=current.expires_at,
+                company_id=company_id, company_code=_require_text(company_code, "company_code"),
+                company_name=_require_text(company_name, "company_name"),
+            )
+            self._sessions[session_id] = selected
+            return selected
 
     def revoke(self, signed_cookie: str | None) -> None:
         session_id = self._unsign("session", signed_cookie)
@@ -518,7 +549,33 @@ def create_operator_app(
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next: Callable[..., Any]) -> Response:
-        response = await call_next(request)
+        response: Response
+        match = re.match(
+            r"^/operator/(?:(plans)/([0-9a-fA-F-]{36})(?:/.*)?|(catalogs)/([0-9a-fA-F-]{36})(?:/.*)?|brands/identity/([0-9a-fA-F-]{36})/logo)$",
+            request.url.path,
+        )
+        session = authenticator.get_session(request.cookies.get(SESSION_COOKIE))
+        authorize = getattr(gateway, "authorize_company_resource", None)
+        if match and session is not None and session.company_id is not None and authorize is not None:
+            resource_type = "plan" if match.group(1) else "release" if match.group(3) else "identity"
+            resource_text = match.group(2) or match.group(4) or match.group(5)
+            try:
+                allowed = await run_in_threadpool(
+                    authorize, session.company_id, resource_type, uuid.UUID(resource_text),
+                )
+            except Exception as exc:
+                response = _unexpected_error(
+                    environment, "Contexto no disponible",
+                    "No se pudo verificar que el recurso pertenezca a la empresa activa.",
+                    "company_resource_guard_failed", exc, session=session,
+                )
+            else:
+                response = await call_next(request) if allowed else _error(
+                    environment, 404, "Recurso no encontrado",
+                    "El recurso no existe dentro de la empresa activa.", session=session,
+                )
+        else:
+            response = await call_next(request)
         _set_security_headers(response)
         return response
 
@@ -529,7 +586,15 @@ def create_operator_app(
         session = current_session(request)
         if session is None:
             return RedirectResponse("/operator/login", status_code=303)
+        if session.company_id is None and hasattr(gateway, "companies"):
+            return RedirectResponse("/operator/company", status_code=303)
         return session
+
+    async def available_companies() -> list[dict[str, Any]]:
+        method = getattr(gateway, "companies", None)
+        if method is None:
+            return []
+        return await run_in_threadpool(method)
 
     @app.get("/", include_in_schema=False)
     def root() -> RedirectResponse:
@@ -611,7 +676,22 @@ def create_operator_app(
             response.delete_cookie(LOGIN_COOKIE, path="/operator/login")
             return response
         _, signed_session = authenticator.create_session()
-        response = RedirectResponse("/operator", status_code=303)
+        destination = "/operator"
+        try:
+            companies = await available_companies()
+            usable = [company for company in companies if company.get("is_active", True)]
+            if len(usable) == 1:
+                company = usable[0]
+                authenticator.select_company(
+                    signed_session, _uuid(str(company["company_id"]), "company_id"),
+                    str(company["code"]), str(company["display_name"]),
+                )
+            elif usable:
+                destination = "/operator/company"
+        except Exception as exc:
+            LOGGER.exception("No se pudo cargar Company durante login: %s", exc)
+            destination = "/operator/company"
+        response = RedirectResponse(destination, status_code=303)
         response.delete_cookie(LOGIN_COOKIE, path=LOGIN_COOKIE_PATH)
         response.delete_cookie(LOGIN_COOKIE, path="/operator/login")
         response.set_cookie(
@@ -624,6 +704,55 @@ def create_operator_app(
             path="/operator",
         )
         return response
+
+    @app.get("/operator/company", response_class=HTMLResponse)
+    async def company_page(request: Request) -> Response:
+        session = current_session(request)
+        if session is None:
+            return RedirectResponse("/operator/login", status_code=303)
+        try:
+            companies = await available_companies()
+        except Exception as exc:
+            return _unexpected_error(
+                environment, "Empresas no disponibles",
+                "No se pudo cargar el contexto de trabajo. Revisa PostgreSQL.",
+                "company_context_read_failed", exc, session=session,
+            )
+        return _render(
+            environment, "operator_company.html", companies=companies,
+            session=session, version=OPERATOR_VERSION,
+        )
+
+    @app.post("/operator/company")
+    async def select_company_route(request: Request) -> Response:
+        session = current_session(request)
+        if session is None:
+            return RedirectResponse("/operator/login", status_code=303)
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "company_id"}:
+                raise ValueError("El selector contiene campos ausentes o desconocidos.")
+            if not _same_origin(request) or not hmac.compare_digest(
+                form["csrf_token"], session.csrf_token
+            ):
+                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            requested_id = _uuid(form["company_id"], "company_id")
+            companies = await available_companies()
+            selected = next(
+                (company for company in companies
+                 if str(company["company_id"]) == str(requested_id) and company.get("is_active", True)),
+                None,
+            )
+            if selected is None:
+                raise PermissionError("La empresa no existe o no está activa.")
+            if authenticator.select_company(
+                request.cookies.get(SESSION_COOKIE), requested_id,
+                str(selected["code"]), str(selected["display_name"]),
+            ) is None:
+                return RedirectResponse("/operator/login", status_code=303)
+        except (ValueError, PermissionError) as exc:
+            return _error(environment, 409, "Empresa no seleccionada", str(exc), session=session)
+        return RedirectResponse("/operator", status_code=303)
 
     @app.post("/operator/logout")
     async def logout(request: Request) -> Response:
@@ -649,14 +778,18 @@ def create_operator_app(
         if isinstance(session_or_redirect, RedirectResponse):
             return session_or_redirect
         try:
-            plans = await run_in_threadpool(gateway.plans, limit=100)
+            plans = await run_in_threadpool(
+                gateway.plans, limit=100, company_id=session_or_redirect.company_id,
+            )
             intakes = await run_in_threadpool(
                 gateway.intake_submissions, kind="all", status="all", limit=1, offset=0,
             )
             image_summary = await run_in_threadpool(
                 gateway.image_candidates, limit=1, offset=0,
             )
-            releases = await run_in_threadpool(gateway.catalog_releases, limit=100)
+            releases = await run_in_threadpool(
+                gateway.catalog_releases, limit=100, company_id=session_or_redirect.company_id,
+            )
         except Exception as exc:
             return _unexpected_error(
                 environment, "PostgreSQL no disponible",
@@ -774,8 +907,12 @@ def create_operator_app(
         if isinstance(session_or_redirect, RedirectResponse):
             return session_or_redirect
         try:
-            releases = await run_in_threadpool(gateway.catalog_releases, limit=100)
-            plans = await run_in_threadpool(gateway.plans, limit=100)
+            releases = await run_in_threadpool(
+                gateway.catalog_releases, limit=100, company_id=session_or_redirect.company_id,
+            )
+            plans = await run_in_threadpool(
+                gateway.plans, limit=100, company_id=session_or_redirect.company_id,
+            )
             exports = await run_in_threadpool(
                 list_operator_catalog_exports, resolved_catalog_output, limit=100
             )
@@ -822,8 +959,12 @@ def create_operator_app(
         if isinstance(session_or_redirect, RedirectResponse):
             return session_or_redirect
         try:
-            profiles = await run_in_threadpool(gateway.brand_profiles)
-            identities = await run_in_threadpool(gateway.visual_identities)
+            profiles = await run_in_threadpool(
+                gateway.brand_profiles, company_id=session_or_redirect.company_id,
+            )
+            identities = await run_in_threadpool(
+                gateway.visual_identities, company_id=session_or_redirect.company_id,
+            )
         except Exception as exc:
             return _unexpected_error(
                 environment, "Marcas no disponibles",
@@ -857,7 +998,10 @@ def create_operator_app(
                 profile_id = _uuid(str(form["brand_profile_id"]), "brand_profile_id") if scope == "brand" else None
                 vehicle_make_id = _uuid(str(form["vehicle_make_id"]), "vehicle_make_id") if scope == "vehicle_make" else None
                 await run_in_threadpool(
-                    gateway.create_visual_identity, scope=scope, brand_profile_id=profile_id,
+                    gateway.create_visual_identity,
+                    scope=scope,
+                    company_id=session.company_id if scope == "company" else None,
+                    brand_profile_id=profile_id,
                     vehicle_make_id=vehicle_make_id,
                     display_name=str(form["display_name"]), colors={key: str(form[key]) for key in ("primary_color","secondary_color","ink_color","paper_color")},
                     filename=str(upload.filename or "logo"), content=content, actor=session.actor,
@@ -904,6 +1048,7 @@ def create_operator_app(
             await run_in_threadpool(
                 gateway.create_brand_profile,
                 {key: form[key] for key in profile_fields}, session.actor, reason,
+                session.company_id,
             )
         except (ValueError, RuntimeError, PermissionError) as exc:
             return _error(environment, 409, "Marca no creada", str(exc), session=session)
@@ -1756,7 +1901,9 @@ def create_operator_app(
             return session_or_redirect
         try:
             plan = await run_in_threadpool(gateway.import_plan, _uuid(plan_id, "plan_id"))
-            profiles = await run_in_threadpool(gateway.brand_profiles)
+            profiles = await run_in_threadpool(
+                gateway.brand_profiles, company_id=session_or_redirect.company_id,
+            )
         except ValueError as exc:
             return _error(environment, 404, "Plan no encontrado", str(exc), session=session_or_redirect)
         except Exception:

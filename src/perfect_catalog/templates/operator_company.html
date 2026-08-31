@@ -1,0 +1,23 @@
+{% extends "operator_base.html" %}
+{% block title %}Seleccionar empresa{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><span class="kicker">Contexto de trabajo</span><h1>¿Con qué empresa trabajarás?</h1><p>La selección limita planes aplicados, marcas, catálogos e identidad corporativa durante esta sesión.</p></div>
+  <span class="safety-chip"><span>●</span> Aislamiento activo</span>
+</section>
+<section class="company-grid" aria-label="Empresas disponibles">
+{% for company in companies if company.is_active %}
+  <form method="post" action="/operator/company" class="company-card">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+    <input type="hidden" name="company_id" value="{{ company.company_id }}">
+    <small>{{ company.code }}</small>
+    <h2>{{ company.display_name }}</h2>
+    <p>{{ company.brand_count }} {{ 'marca vinculada' if company.brand_count == 1 else 'marcas vinculadas' }}</p>
+    {% if session.company_id and session.company_id|string == company.company_id|string %}<span class="safety-chip"><span>●</span> Empresa activa</span>{% else %}<button class="primary-button" type="submit">Trabajar aquí</button>{% endif %}
+  </form>
+{% else %}
+  <div class="empty-state"><h2>No hay empresas activas</h2><p>Ejecuta ACTUALIZAR-SISTEMA.cmd y vuelve a intentarlo.</p></div>
+{% endfor %}
+</section>
+<p class="safety-note">Los ingresos todavía son compartidos hasta asignarlos de forma auditable a una empresa en el siguiente paso del flujo.</p>
+{% endblock %}

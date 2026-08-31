@@ -302,14 +302,21 @@ def _ensure_brand(
     normalized = normalize_name(brand_name)
     code = brand_code
     brand_id = uuid.uuid5(NAMESPACE, f"brand:{normalized}")
+    company_row = connection.execute(
+        "SELECT company_id FROM perfect_catalog.brand_profile WHERE brand_profile_id=%s",
+        (brand_profile_id,),
+    ).fetchone()
+    if company_row is None:
+        raise RuntimeError("El perfil de marca no pertenece a una Company válida.")
+    company_id = company_row[0]
     connection.execute(
         """
         INSERT INTO perfect_catalog.brand (
-            brand_id, source_system_id, brand_profile_id, code, name, normalized_name
-        ) VALUES (%s,%s,%s,%s,%s,%s)
+            brand_id, source_system_id, brand_profile_id, company_id, code, name, normalized_name
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s)
         ON CONFLICT DO NOTHING
         """,
-        (brand_id, source_system_id, brand_profile_id, code, brand_name, normalized),
+        (brand_id, source_system_id, brand_profile_id, company_id, code, brand_name, normalized),
     )
     row = connection.execute(
         "SELECT brand_id, source_system_id, normalized_name, brand_profile_id FROM perfect_catalog.brand WHERE code=%s",

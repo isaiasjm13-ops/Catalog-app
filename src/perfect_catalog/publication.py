@@ -207,7 +207,8 @@ def _resolve_plan_brand(connection: Connection[Any], plan: dict[str, Any]) -> tu
                  WHERE scope='brand' AND brand_profile_id=bp.brand_profile_id
                  ORDER BY created_at DESC, visual_identity_revision_id DESC LIMIT 1) AS vi ON true
                LEFT JOIN LATERAL (SELECT * FROM perfect_catalog.visual_identity_revision
-                 WHERE scope='company' ORDER BY created_at DESC, visual_identity_revision_id DESC LIMIT 1) AS company ON true
+                 WHERE scope='company' AND company_id=b.company_id
+                 ORDER BY created_at DESC, visual_identity_revision_id DESC LIMIT 1) AS company ON true
                WHERE b.source_system_id=%s AND b.brand_profile_id=%s""",
             (plan["source_system_id"], profile_id),
         )
@@ -783,7 +784,8 @@ def load_published_release(
 
 
 def list_catalog_releases(
-    config: DatabaseConfig, password: str, *, limit: int = 100
+    config: DatabaseConfig, password: str, *, limit: int = 100,
+    company_id: uuid.UUID | None = None,
 ) -> list[dict[str, Any]]:
     if limit < 1 or limit > 500:
         raise ValueError("limit debe estar entre 1 y 500.")
@@ -799,13 +801,15 @@ def list_catalog_releases(
                          WHERE NULLIF(i.snapshot_data->>'image_storage_relpath', '') IS NOT NULL
                        ) AS image_item_count
                 FROM perfect_catalog.catalog_release AS r
+                JOIN perfect_catalog.brand AS b ON b.brand_id=r.brand_id
                 LEFT JOIN perfect_catalog.catalog_release_item AS i
                   ON i.catalog_release_id = r.catalog_release_id
+                WHERE (%s::uuid IS NULL OR b.company_id=%s)
                 GROUP BY r.catalog_release_id
                 ORDER BY r.created_at DESC, r.catalog_release_id DESC
                 LIMIT %s
                 """,
-                (limit,),
+                (company_id, company_id, limit),
             )
             return [dict(row) for row in cursor.fetchall()]
 

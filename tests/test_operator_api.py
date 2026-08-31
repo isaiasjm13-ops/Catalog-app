@@ -30,6 +30,7 @@ PRODUCT_ID = uuid.uuid4()
 FINGERPRINT = "a" * 64
 REVIEW_SHA256 = "b" * 64
 RELEASE_ID = uuid.uuid4()
+COMPANY_ID = uuid.uuid4()
 
 
 class SyntheticReviewGateway:
@@ -44,6 +45,10 @@ class SyntheticReviewGateway:
         self.catalog_exports: list[dict[str, Any]] = []
         self.release_changes: list[dict[str, Any]] = []
         self.visual_identity_records: list[dict[str, Any]] = []
+        self.company_data = [{
+            "company_id": str(COMPANY_ID), "code": "PERFECT",
+            "display_name": "Perfect Company", "is_active": True, "brand_count": 1,
+        }]
         self.import_plan_status = "awaiting_review"
         self.release_data = [{
             "catalog_release_id": str(RELEASE_ID),
@@ -70,7 +75,21 @@ class SyntheticReviewGateway:
     def close(self) -> None:
         self.closed = True
 
-    def plans(self, *, limit: int = 100) -> list[dict[str, Any]]:
+    def companies(self) -> list[dict[str, Any]]:
+        return self.company_data
+
+    def authorize_company_resource(
+        self, company_id: uuid.UUID, resource_type: str, resource_id: uuid.UUID,
+    ) -> bool:
+        if company_id != COMPANY_ID:
+            return False
+        if resource_type == "plan":
+            return resource_id == PLAN_ID
+        if resource_type == "release":
+            return True
+        return resource_type == "identity"
+
+    def plans(self, *, limit: int = 100, company_id: uuid.UUID | None = None) -> list[dict[str, Any]]:
         return [self.plan_data]
 
     def plan(self, plan_id: uuid.UUID) -> dict[str, Any] | None:
@@ -87,10 +106,14 @@ class SyntheticReviewGateway:
             "brand_profile_code": None, "brand_profile_name": None,
         }
 
-    def brand_profiles(self) -> list[dict[str, Any]]:
+    def brand_profiles(self, *, company_id: uuid.UUID) -> list[dict[str, Any]]:
+        if company_id != COMPANY_ID:
+            raise PermissionError("Company incorrecta")
         return [{"brand_profile_id": str(uuid.uuid4()), "code": "NATSUKI", "display_name": "Natsuki", "tagline": "Trust", "primary_color": "#C60012", "secondary_color": "#202327", "ink_color": "#16191D", "paper_color": "#FFFFFF"}]
 
-    def visual_identities(self) -> dict[str, Any]:
+    def visual_identities(self, *, company_id: uuid.UUID) -> dict[str, Any]:
+        if company_id != COMPANY_ID:
+            raise PermissionError("Company incorrecta")
         return {"company": None, "brands": {}, "vehicle_makes": [], "vehicle_make_identities": {}}
 
     def create_visual_identity(self, **kwargs: Any) -> dict[str, Any]:
@@ -351,7 +374,7 @@ class SyntheticReviewGateway:
             "count": expected_count,
         }
 
-    def catalog_releases(self, *, limit: int = 100) -> list[dict[str, Any]]:
+    def catalog_releases(self, *, limit: int = 100, company_id: uuid.UUID | None = None) -> list[dict[str, Any]]:
         return self.release_data[:limit]
 
     def build_catalog_release(
@@ -483,6 +506,15 @@ class OperatorAuthenticatorTests(unittest.TestCase):
         clock[0] += 60
         self.assertIsNone(auth.get_session(cookie))
 
+    def test_company_selection_is_bound_to_existing_signed_session(self) -> None:
+        auth = OperatorAuthenticator("qa-user", "temporary-123", pbkdf2_iterations=1)
+        _, cookie = auth.create_session()
+        selected = auth.select_company(cookie, COMPANY_ID, "PERFECT", "Perfect Company")
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected.company_id, COMPANY_ID)
+        self.assertEqual(auth.get_session(cookie).company_code, "PERFECT")
+        self.assertIsNone(auth.select_company(cookie + "tampered", COMPANY_ID, "PDM", "PDM"))
+
     def test_access_code_and_actor_require_safe_minimums(self) -> None:
         with self.assertRaisesRegex(ValueError, "12 caracteres"):
             OperatorAuthenticator("qa", "short", pbkdf2_iterations=1)
@@ -571,6 +603,45 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(malformed_origin.status_code, 401)
         self.assertIn("Origen local no verificado", malformed_origin.text)
+
+    async def test_multiple_companies_require_csrf_bound_active_selection(self) -> None:
+        second_id = uuid.uuid4()
+        self.gateway.company_data.append({
+            "company_id": str(second_id), "code": "NATSUKI",
+            "display_name": "Natsuki", "is_active": True, "brand_count": 1,
+        })
+        login_page = await self.client.get("/operator/login")
+        response = await self.client.post(
+            "/operator/login",
+            data={"csrf_token": hidden_value(login_page.text, "csrf_token"), "access_code": "temporary-123"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.headers["location"], "/operator/company")
+        selector = await self.client.get("/operator/company")
+        self.assertIn("Perfect Company", selector.text)
+        self.assertIn("Natsuki", selector.text)
+        csrf = hidden_value(selector.text, "csrf_token")
+        rejected = await self.client.post(
+            "/operator/company", data={"csrf_token": "wrong", "company_id": str(second_id)},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(rejected.status_code, 403)
+        selected = await self.client.post(
+            "/operator/company", data={"csrf_token": csrf, "company_id": str(second_id)},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(selected.headers["location"], "/operator")
+        dashboard = await self.client.get("/operator")
+        self.assertIn("Natsuki", dashboard.text)
+
+    async def test_direct_resource_id_is_hidden_outside_active_company(self) -> None:
+        await self.login()
+        self.gateway.authorize_company_resource = lambda *_: False
+        plan = await self.client.get(f"/operator/plans/{PLAN_ID}")
+        release = await self.client.get(f"/operator/catalogs/{RELEASE_ID}/products")
+        self.assertEqual(plan.status_code, 404)
+        self.assertEqual(release.status_code, 404)
+        self.assertIn("empresa activa", plan.text)
 
     async def test_login_challenge_cookie_scope_and_missing_cookie_diagnostic(self) -> None:
         login_page = await self.client.get("/operator/login")
@@ -1032,7 +1103,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.35.0")
+        self.assertEqual(OPERATOR_VERSION, "1.36.0")
 
     async def test_company_identity_upload_requires_csrf_and_records_logo_without_exposing_it(self) -> None:
         await self.login()
@@ -1076,7 +1147,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
     async def test_vehicle_make_logo_is_managed_separately_from_product_brand(self) -> None:
         await self.login()
         make_id = uuid.uuid4()
-        self.gateway.visual_identities = lambda: {
+        self.gateway.visual_identities = lambda **_: {
             "company": None, "brands": {},
             "vehicle_makes": [{"vehicle_make_id": str(make_id), "name": "Toyota", "normalized_name": "TOYOTA"}],
             "vehicle_make_identities": {},
