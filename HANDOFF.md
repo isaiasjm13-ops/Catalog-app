@@ -1,5 +1,20 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-31: migraciones Company 0017-0018 preparadas
+
+- El usuario confirmó `EXACTCARS -> Perfect Company`; `NATSUKI -> Natsuki Company` ya estaba
+  respaldado por la especificación. El mapping real cubre las dos marcas y los 472 productos.
+- 0017 crea `schema_migration`, registra checksum SHA-256, actor, versión PostgreSQL y execution ID.
+  El actualizador calcula hashes en tiempo de ejecución y se detiene si una migración aplicada cambia.
+- 0018 crea Perfect Company, KMC, Natsuki, Masaki y PDM con UUID deterministas; añade
+  `brand.company_id`, hace backfill explícito, aborta ante cualquier marca desconocida y sólo entonces
+  impone NOT NULL, FK RESTRICT e índice de aislamiento.
+- No se agrega Company redundante a productos/categorías: en esta etapa deriva autoritativamente de
+  Brand. Se conserva `brand.code` único global y la taxonomía compartida.
+- Migraciones preparadas pero aún no aplicadas. Siguiente paso: ejecutar `ACTUALIZAR-SISTEMA.cmd`,
+  validar ledger/Companies/mapping y sólo después preparar identidad/contexto 0019.
+- Verificación: sintaxis PowerShell y 266 pruebas pasan; 6 integraciones se omiten sin credenciales.
+
 ## Bloque 2026-08-31: evidencia real y diseño multiempresa
 
 - Fase 0 ejecutada correctamente: dump custom de 2.214.158 bytes, 427 entradas verificables y

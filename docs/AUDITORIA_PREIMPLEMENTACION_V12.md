@@ -229,6 +229,7 @@ Antes de editar estructura deben cumplirse estas condiciones:
   vinculados a más de un producto.
 - Roles de aplicación/readonly conservan SELECT; el owner mantiene administración total.
 
-La evidencia elimina el bloqueo técnico de inspección y confirma que el backfill puede ser pequeño,
-pero queda un bloqueo comercial: **EXACTCARS no tiene Company confirmada en la especificación**.
-NATSUKI sí puede mapearse a Natsuki Company. No se escribirá 0017B hasta resolver Exact Cars.
+La evidencia confirmó un backfill pequeño. El usuario resolvió el bloqueo comercial el 2026-08-31:
+**EXACTCARS pertenece a Perfect Company**; NATSUKI pertenece a Natsuki Company. Las migraciones
+0017-0018 quedaron preparadas con ledger/checksum y mapping explícito, pendientes de aplicación y
+validación antes de iniciar identidad y contexto multiempresa.

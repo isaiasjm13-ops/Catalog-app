@@ -1,6 +1,6 @@
 # Diseño de migración multiempresa - previo a SQL
 
-Estado: diseño aprobado técnicamente, backfill bloqueado por asignación de `EXACTCARS`.
+Estado: diseño y mapping inicial aprobados; migraciones 0017-0018 preparadas, pendientes de aplicar.
 
 ## Decisiones mínimas recomendadas
 
@@ -45,7 +45,7 @@ migraciones 0001-0016 se registrarán como baseline observado, sin volver a ejec
 
 - Archivo separado con mapping por `brand_id`, no por coincidencia débil de nombre.
 - NATSUKI puede asignarse a Natsuki Company.
-- EXACTCARS queda bloqueado hasta confirmar su Company.
+- EXACTCARS se asigna a Perfect Company por confirmación explícita del usuario.
 - Verificar que cero marcas activas queden sin Company.
 
 ### 0017C - integridad
@@ -70,9 +70,8 @@ migraciones 0001-0016 se registrarán como baseline observado, sin volver a ejec
 - Antes de 0017C, rollback lógico: desactivar feature flag y retirar columnas nullable en una
   migración inversa aprobada. Después de NOT NULL, rollback primario: restaurar el dump verificado.
 
-## Bloqueos abiertos
+## Decisiones abiertas posteriores
 
-- Company propietaria de `EXACTCARS`.
 - Lista de Brands OEM de PDM.
 - Company predeterminada para la transición.
 - Confirmación de que códigos de Brand seguirán siendo globalmente únicos.

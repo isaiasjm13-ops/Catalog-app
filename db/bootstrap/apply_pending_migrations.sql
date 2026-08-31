@@ -75,5 +75,31 @@ SELECT (NOT EXISTS (
 \ir ../migrations/0016_vehicle_make_visual_identity.sql
 \endif
 
+SELECT (to_regclass('perfect_catalog.schema_migration') IS NULL) AS need_0017 \gset
+\if :need_0017
+\echo 'Aplicando 0017 - ledger de migraciones con checksum'
+\ir ../migrations/0017_migration_ledger.sql
+\else
+SELECT COALESCE((SELECT checksum_sha256 <> :'checksum_0017'
+FROM perfect_catalog.schema_migration WHERE migration_id='0017_migration_ledger'), true) AS mismatch_0017 \gset
+\if :mismatch_0017
+\echo 'ERROR: checksum distinto para 0017_migration_ledger.'
+\quit 3
+\endif
+\endif
+
+SELECT (to_regclass('perfect_catalog.company') IS NULL) AS need_0018 \gset
+\if :need_0018
+\echo 'Aplicando 0018 - Companies y pertenencia de Brand'
+\ir ../migrations/0018_companies.sql
+\else
+SELECT COALESCE((SELECT checksum_sha256 <> :'checksum_0018'
+FROM perfect_catalog.schema_migration WHERE migration_id='0018_companies'), true) AS mismatch_0018 \gset
+\if :mismatch_0018
+\echo 'ERROR: checksum distinto para 0018_companies.'
+\quit 3
+\endif
+\endif
+
 RESET ROLE;
 \echo 'Base de datos actualizada. No hay migraciones pendientes.'

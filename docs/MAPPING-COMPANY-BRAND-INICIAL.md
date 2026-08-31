@@ -10,7 +10,7 @@ por `PREPARAR-MULTIEMPRESA.cmd` antes de escribir SQL estructural.
 | Natsuki | Natsuki | NATSUKI (193 productos) | Company y Brand distintas con mismo nombre | Verificado en BD |
 | Masaki | Masaki | PENDIENTE | Company y Brand distintas con mismo nombre | Por verificar |
 | PDM | Marcas OEM por definir | PENDIENTE | Sólo marcas originales/OEM aprobadas | Bloqueado por lista |
-| PENDIENTE | Exact Cars | EXACTCARS (279 productos) | No asignar sin confirmación comercial | Bloqueante |
+| Perfect Company | Exact Cars | EXACTCARS (279 productos) | Pertenece a Perfect Company | Confirmado por usuario |
 
 ## Decisiones que debe confirmar el informe y el usuario
 
