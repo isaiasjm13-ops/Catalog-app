@@ -101,5 +101,44 @@ FROM perfect_catalog.schema_migration WHERE migration_id='0018_companies'), true
 \endif
 \endif
 
+\echo 'Validando ledger, Companies y aislamiento de marcas'
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM perfect_catalog.schema_migration
+        WHERE migration_id = '0017_migration_ledger'
+    ) OR NOT EXISTS (
+        SELECT 1 FROM perfect_catalog.schema_migration
+        WHERE migration_id = '0018_companies'
+    ) THEN
+        RAISE EXCEPTION 'Validacion multiempresa: faltan entradas 0017-0018 en el ledger';
+    END IF;
+
+    IF (SELECT count(*) FROM perfect_catalog.company) < 5 THEN
+        RAISE EXCEPTION 'Validacion multiempresa: faltan Companies iniciales';
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM perfect_catalog.brand WHERE company_id IS NULL) THEN
+        RAISE EXCEPTION 'Validacion multiempresa: existen marcas sin Company';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM perfect_catalog.brand AS b
+        JOIN perfect_catalog.company AS c ON c.company_id = b.company_id
+        WHERE (b.code = 'EXACTCARS' AND c.code <> 'PERFECT')
+           OR (b.code = 'NATSUKI' AND c.code <> 'NATSUKI')
+    ) THEN
+        RAISE EXCEPTION 'Validacion multiempresa: mapping inicial incorrecto';
+    END IF;
+END
+$$;
+
+SELECT c.code AS company, count(b.brand_id) AS brands
+FROM perfect_catalog.company AS c
+LEFT JOIN perfect_catalog.brand AS b ON b.company_id = c.company_id
+GROUP BY c.code
+ORDER BY c.code;
+
 RESET ROLE;
-\echo 'Base de datos actualizada. No hay migraciones pendientes.'
+\echo 'Base de datos actualizada y validada. No hay migraciones pendientes.'

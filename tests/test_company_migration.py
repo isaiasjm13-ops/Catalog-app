@@ -33,6 +33,14 @@ class CompanyMigrationTests(unittest.TestCase):
         self.assertIn('"checksum_0017=$checksum0017"', script)
         self.assertIn('"checksum_0018=$checksum0018"', script)
 
+    def test_updater_enforces_post_migration_company_invariants(self) -> None:
+        sql = (ROOT / "db/bootstrap/apply_pending_migrations.sql").read_text(encoding="utf-8")
+        self.assertIn("faltan entradas 0017-0018 en el ledger", sql)
+        self.assertIn("SELECT 1 FROM perfect_catalog.brand WHERE company_id IS NULL", sql)
+        self.assertIn("b.code = 'EXACTCARS' AND c.code <> 'PERFECT'", sql)
+        self.assertIn("b.code = 'NATSUKI' AND c.code <> 'NATSUKI'", sql)
+        self.assertIn("Base de datos actualizada y validada", sql)
+
 
 if __name__ == "__main__":
     unittest.main()

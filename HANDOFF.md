@@ -1,5 +1,13 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-31: validación automática posterior a Company
+
+- `ACTUALIZAR-SISTEMA.cmd` no se limita a detectar/aplicar 0017-0018: ahora falla de forma visible
+  si el ledger no contiene ambas entradas, faltan Companies iniciales, existe una Brand sin Company
+  o EXACTCARS/NATSUKI quedaron asignadas a una empresa incorrecta.
+- Al completar muestra un resumen Company -> cantidad de Brands y confirma explícitamente que la
+  base quedó actualizada **y validada**. Reejecutar el actualizador es seguro e idempotente.
+
 ## Bloque 2026-08-31: limpieza de ejecutores de migración obsoletos
 
 - Se eliminaron 26 wrappers internos duplicados (`apply_*_migration.sql` y
