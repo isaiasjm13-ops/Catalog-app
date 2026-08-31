@@ -57,7 +57,7 @@ def materialize_approved_image(
     candidate_id: uuid.UUID, evidence_sha256: str,
     intake_root: Path, image_root: Path,
     config: DatabaseConfig, password: str,
-    *, actor: str, reason: str,
+    *, actor: str, reason: str, company_id: uuid.UUID,
 ) -> dict[str, Any]:
     actor, reason = _actor(actor), _reason(reason)
     if len(evidence_sha256) != 64:
@@ -91,9 +91,9 @@ def materialize_approved_image(
                   ON s.intake_submission_id=i.intake_submission_id
                 JOIN perfect_catalog.intake_asset AS a
                   ON a.intake_asset_id=s.intake_asset_id
-                WHERE c.image_product_candidate_id=%s
+                WHERE c.image_product_candidate_id=%s AND s.company_id=%s
                 """,
-                (candidate_id,),
+                (candidate_id, company_id),
             )
             record = cursor.fetchone()
             if record is None:
@@ -147,7 +147,7 @@ def materialize_approved_image(
 def materialize_approved_images_bulk(
     expected_count: int, intake_root: Path, image_root: Path,
     config: DatabaseConfig, password: str, *, actor: str, reason: str,
-    max_items: int = 500,
+    company_id: uuid.UUID, max_items: int = 500,
 ) -> dict[str, Any]:
     """Materializa el conjunto exacto de aprobadas pendientes, verificando cada archivo."""
     actor, reason = _actor(actor), _reason(reason)
@@ -162,16 +162,22 @@ def materialize_approved_images_bulk(
             """
             SELECT c.image_product_candidate_id, c.evidence_sha256
             FROM perfect_catalog.image_product_candidate AS c
+            JOIN perfect_catalog.image_archive_entry AS e
+              ON e.image_archive_entry_id=c.image_archive_entry_id
+            JOIN perfect_catalog.image_archive_index AS i
+              ON i.image_archive_index_id=e.image_archive_index_id
+            JOIN perfect_catalog.intake_submission AS s
+              ON s.intake_submission_id=i.intake_submission_id
             JOIN perfect_catalog.image_product_decision AS d
               ON d.image_product_candidate_id=c.image_product_candidate_id
              AND d.decision='approved'
             LEFT JOIN perfect_catalog.approved_image_materialization AS m
               ON m.image_product_candidate_id=c.image_product_candidate_id
-            WHERE m.approved_image_materialization_id IS NULL
+            WHERE m.approved_image_materialization_id IS NULL AND s.company_id=%s
             ORDER BY d.decided_at, c.image_product_candidate_id
             LIMIT %s
             """,
-            (max_items + 1,),
+            (company_id, max_items + 1),
         ).fetchall()
     if len(rows) != expected_count:
         raise PermissionError("La cantidad aprobada sin materializar cambió; recarga la página.")
@@ -180,7 +186,7 @@ def materialize_approved_images_bulk(
         result = materialize_approved_image(
             row["image_product_candidate_id"], str(row["evidence_sha256"]),
             intake_root, image_root, config, password,
-            actor=actor, reason=reason,
+            actor=actor, reason=reason, company_id=company_id,
         )
         if result["status"] in {"materialized", "already_materialized"}:
             completed += 1

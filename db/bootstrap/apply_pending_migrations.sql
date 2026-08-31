@@ -118,7 +118,24 @@ FROM perfect_catalog.schema_migration WHERE migration_id='0019_company_visual_id
 \endif
 \endif
 
-\echo 'Validando ledger 0017-0019, Companies, marcas e identidades'
+SELECT (NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='perfect_catalog' AND table_name='intake_submission'
+      AND column_name='company_id'
+)) AS need_0020 \gset
+\if :need_0020
+\echo 'Aplicando 0020 - Company desde ingreso hasta plan'
+\ir ../migrations/0020_company_intake_context.sql
+\else
+SELECT COALESCE((SELECT checksum_sha256 <> :'checksum_0020'
+FROM perfect_catalog.schema_migration WHERE migration_id='0020_company_intake_context'), true) AS mismatch_0020 \gset
+\if :mismatch_0020
+\echo 'ERROR: checksum distinto para 0020_company_intake_context.'
+\quit 3
+\endif
+\endif
+
+\echo 'Validando ledger 0017-0020 y contexto Company'
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -130,8 +147,18 @@ BEGIN
     ) OR NOT EXISTS (
         SELECT 1 FROM perfect_catalog.schema_migration
         WHERE migration_id = '0019_company_visual_identity'
+    ) OR NOT EXISTS (
+        SELECT 1 FROM perfect_catalog.schema_migration
+        WHERE migration_id = '0020_company_intake_context'
     ) THEN
-        RAISE EXCEPTION 'Validacion multiempresa: faltan entradas 0017-0019 en el ledger';
+        RAISE EXCEPTION 'Validacion multiempresa: faltan entradas 0017-0020 en el ledger';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM perfect_catalog.import_plan
+        WHERE brand_profile_id IS NOT NULL AND company_id IS NULL
+    ) THEN
+        RAISE EXCEPTION 'Validacion multiempresa: plan con marca pero sin Company';
     END IF;
 
     IF EXISTS (

@@ -98,6 +98,7 @@ class IntakePersistence(Protocol):
         status: str = "all",
         limit: int = 50,
         offset: int = 0,
+        company_id: uuid.UUID | None = None,
     ) -> dict[str, Any]: ...
 
 
@@ -372,10 +373,11 @@ class SecureIntakeService:
         status: str = "all",
         limit: int = 50,
         offset: int = 0,
+        company_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
         kind, status = _require_list_filters(kind, status, limit, offset)
         return self.persistence.intake_submissions(
-            kind=kind, status=status, limit=limit, offset=offset
+            kind=kind, status=status, limit=limit, offset=offset, company_id=company_id
         )
 
     def submit(
@@ -387,6 +389,7 @@ class SecureIntakeService:
         kind: str,
         actor: str,
         reason: str,
+        company_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
         config = _require_kind(kind)
         kind = str(kind).strip().lower()
@@ -433,6 +436,7 @@ class SecureIntakeService:
             validation = validate_intake(temporary_path, kind, extension)
             record = {
                 "intake_submission_id": uuid.uuid4(),
+                "company_id": company_id,
                 "intake_kind": kind,
                 "original_name": filename,
                 "extension": extension,
@@ -521,14 +525,15 @@ def _record_intake_in_connection(
     connection.execute(
         """
         INSERT INTO perfect_catalog.intake_submission (
-            intake_submission_id, intake_asset_id, intake_kind, original_name,
+            intake_submission_id, company_id, intake_asset_id, intake_kind, original_name,
             extension, claimed_media_type, detected_media_type, size_bytes,
             sha256, validation_status, duplicate_content, validation_report,
             submitted_by, reason, submitted_at
-        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """,
         (
             record["intake_submission_id"],
+            record["company_id"],
             asset_id,
             record["intake_kind"],
             record["original_name"],
@@ -568,6 +573,7 @@ def _list_intake_submissions_in_connection(
     status: str = "all",
     limit: int = 50,
     offset: int = 0,
+    company_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
     kind, status = _require_list_filters(kind, status, limit, offset)
     clauses: list[str] = []
@@ -578,9 +584,12 @@ def _list_intake_submissions_in_connection(
     if status != "all":
         clauses.append("s.validation_status=%s")
         params.append(status)
+    if company_id is not None:
+        clauses.append("s.company_id=%s")
+        params.append(company_id)
     where_sql = "WHERE " + " AND ".join(clauses) if clauses else ""
     query = f"""
-        SELECT s.intake_submission_id, s.intake_asset_id, s.intake_kind,
+        SELECT s.intake_submission_id, s.company_id, s.intake_asset_id, s.intake_kind,
                s.original_name, s.extension, s.claimed_media_type,
                s.detected_media_type, s.size_bytes, s.sha256,
                s.validation_status, s.duplicate_content,
@@ -631,6 +640,7 @@ def list_intake_submissions(
     status: str = "all",
     limit: int = 50,
     offset: int = 0,
+    company_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
     with psycopg.connect(**config.connection_kwargs(password)) as connection:
         return _list_intake_submissions_in_connection(
@@ -639,4 +649,5 @@ def list_intake_submissions(
             status=status,
             limit=limit,
             offset=offset,
+            company_id=company_id,
         )

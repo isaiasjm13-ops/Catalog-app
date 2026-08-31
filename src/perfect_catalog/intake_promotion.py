@@ -127,7 +127,7 @@ def _promote_intake_to_dry_run_locked(
             cursor.execute(
                 """
                 SELECT s.intake_submission_id, s.intake_asset_id, s.intake_kind,
-                       s.original_name, s.extension, s.size_bytes, s.sha256,
+                       s.company_id, s.original_name, s.extension, s.size_bytes, s.sha256,
                        s.validation_status, a.storage_relpath
                 FROM perfect_catalog.intake_submission AS s
                 LEFT JOIN perfect_catalog.intake_asset AS a ON a.intake_asset_id=s.intake_asset_id
@@ -140,6 +140,8 @@ def _promote_intake_to_dry_run_locked(
             raise ValueError("No existe el ingreso solicitado.")
         if submission["validation_status"] != "quarantined" or submission["intake_kind"] != "odoo_data":
             raise PermissionError("Sólo se promueven datos Odoo aceptados y en cuarentena.")
+        if submission["company_id"] is None:
+            raise PermissionError("El ingreso histórico no tiene Company verificable; debe reasignarse de forma auditada.")
         source = _confined(root, submission["storage_relpath"])
         if not source.is_file() or source.stat().st_size != submission["size_bytes"]:
             raise RuntimeError("El objeto en cuarentena falta o no coincide con su tamaño registrado.")
@@ -160,7 +162,10 @@ def _promote_intake_to_dry_run_locked(
         try:
             profile = profile_file(processing_path)
             suggestions = _profile_suggestions(profile)
-            dry_run = run_dry_run(processing_path, config, password, output_dir, max_rows)
+            dry_run = run_dry_run(
+                processing_path, config, password, output_dir, max_rows,
+                company_id=submission["company_id"],
+            )
             if dry_run["source_sha256_before"] != submission["sha256"] or not dry_run["source_unchanged"]:
                 raise RuntimeError("El dry-run no conserva la identidad del objeto promovido.")
             with connection.cursor() as cursor:

@@ -54,7 +54,7 @@ from .importer import DEFAULT_MAX_PILOT_ROWS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.36.0"
+OPERATOR_VERSION = "1.37.0"
 LOGGER = logging.getLogger(__name__)
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
@@ -128,6 +128,7 @@ class ReviewGateway(Protocol):
         status: str = "all",
         limit: int = 50,
         offset: int = 0,
+        company_id: uuid.UUID | None = None,
     ) -> dict[str, Any]: ...
 
     def record_intake(self, record: dict[str, Any]) -> dict[str, Any]: ...
@@ -143,27 +144,32 @@ class ReviewGateway(Protocol):
 
     def generate_image_candidates(
         self, image_archive_index_id: uuid.UUID, actor: str, reason: str,
+        company_id: uuid.UUID,
     ) -> dict[str, Any]: ...
 
-    def image_candidates(self, *, limit: int = 100, offset: int = 0) -> dict[str, Any]: ...
+    def image_candidates(
+        self, *, limit: int = 100, offset: int = 0, company_id: uuid.UUID,
+    ) -> dict[str, Any]: ...
 
     def decide_image_candidate(
         self, candidate_id: uuid.UUID, evidence_sha256: str, decision: str,
-        actor: str, reason: str,
+        actor: str, reason: str, company_id: uuid.UUID,
     ) -> dict[str, Any]: ...
 
     def decide_image_candidates_bulk(
         self, expected_count: int, decision: str, actor: str, reason: str,
+        company_id: uuid.UUID,
     ) -> dict[str, Any]: ...
 
     def materialize_approved_image(
         self, candidate_id: uuid.UUID, evidence_sha256: str,
         intake_root: Path, image_root: Path, actor: str, reason: str,
+        company_id: uuid.UUID,
     ) -> dict[str, Any]: ...
 
     def materialize_approved_images_bulk(
         self, expected_count: int, intake_root: Path, image_root: Path,
-        actor: str, reason: str,
+        actor: str, reason: str, company_id: uuid.UUID,
     ) -> dict[str, Any]: ...
 
     def catalog_releases(self, *, limit: int = 100, company_id: uuid.UUID | None = None) -> list[dict[str, Any]]: ...
@@ -551,14 +557,21 @@ def create_operator_app(
     async def security_headers(request: Request, call_next: Callable[..., Any]) -> Response:
         response: Response
         match = re.match(
-            r"^/operator/(?:(plans)/([0-9a-fA-F-]{36})(?:/.*)?|(catalogs)/([0-9a-fA-F-]{36})(?:/.*)?|brands/identity/([0-9a-fA-F-]{36})/logo)$",
+            r"^/operator/(?:(plans)/([0-9a-fA-F-]{36})(?:/.*)?|(catalogs)/([0-9a-fA-F-]{36})(?:/.*)?|brands/identity/([0-9a-fA-F-]{36})/logo|(intake)/([0-9a-fA-F-]{36})(?:/.*)?|images/(index|candidates)/([0-9a-fA-F-]{36})(?:/.*)?)$",
             request.url.path,
         )
         session = authenticator.get_session(request.cookies.get(SESSION_COOKIE))
         authorize = getattr(gateway, "authorize_company_resource", None)
         if match and session is not None and session.company_id is not None and authorize is not None:
-            resource_type = "plan" if match.group(1) else "release" if match.group(3) else "identity"
-            resource_text = match.group(2) or match.group(4) or match.group(5)
+            resource_type = (
+                "plan" if match.group(1) else "release" if match.group(3)
+                else "identity" if match.group(5) else "intake" if match.group(6)
+                else "image_index" if match.group(8) == "index" else "image_candidate"
+            )
+            resource_text = (
+                match.group(2) or match.group(4) or match.group(5)
+                or match.group(7) or match.group(9)
+            )
             try:
                 allowed = await run_in_threadpool(
                     authorize, session.company_id, resource_type, uuid.UUID(resource_text),
@@ -783,9 +796,11 @@ def create_operator_app(
             )
             intakes = await run_in_threadpool(
                 gateway.intake_submissions, kind="all", status="all", limit=1, offset=0,
+                company_id=session_or_redirect.company_id,
             )
             image_summary = await run_in_threadpool(
                 gateway.image_candidates, limit=1, offset=0,
+                company_id=session_or_redirect.company_id,
             )
             releases = await run_in_threadpool(
                 gateway.catalog_releases, limit=100, company_id=session_or_redirect.company_id,
@@ -832,6 +847,7 @@ def create_operator_app(
                 status=status,
                 limit=limit,
                 offset=(page - 1) * limit,
+                company_id=session_or_redirect.company_id,
             )
         except ValueError as exc:
             return _error(
@@ -1486,6 +1502,7 @@ def create_operator_app(
                     kind=str(form.get("kind") or ""),
                     actor=session.actor,
                     reason=str(form.get("reason") or ""),
+                    company_id=session.company_id,
                 )
         except StarletteHTTPException:
             return _error(
@@ -1598,7 +1615,8 @@ def create_operator_app(
                 raise ValueError("Página fuera del rango permitido.")
             limit = 50
             candidates = await run_in_threadpool(
-                gateway.image_candidates, limit=limit, offset=(page - 1) * limit
+                gateway.image_candidates, limit=limit, offset=(page - 1) * limit,
+                company_id=session_or_redirect.company_id,
             )
         except ValueError as exc:
             return _error(environment, 400, "Página inválida", str(exc), session=session_or_redirect)
@@ -1644,7 +1662,7 @@ def create_operator_app(
                 raise ValueError("Debes confirmar la generación exacta de candidatos.")
             await run_in_threadpool(
                 gateway.generate_image_candidates, _uuid(index_id, "image_archive_index_id"),
-                session.actor, reason,
+                session.actor, reason, session.company_id,
             )
         except (ValueError, RuntimeError, PermissionError) as exc:
             return _error(environment, 409, "Candidatos no generados", str(exc), session=session)
@@ -1672,6 +1690,7 @@ def create_operator_app(
             result = await run_in_threadpool(
                 gateway.decide_image_candidate, _uuid(candidate_id, "candidate_id"),
                 form["evidence_sha256"], form["decision"], session.actor, reason,
+                session.company_id,
             )
         except (ValueError, RuntimeError, PermissionError) as exc:
             return _error(environment, 409, "Decisión no aplicada", str(exc), session=session)
@@ -1707,7 +1726,7 @@ def create_operator_app(
             expected_count = int(form["expected_count"])
             result = await run_in_threadpool(
                 gateway.decide_image_candidates_bulk,
-                expected_count, decision, session.actor, reason,
+                expected_count, decision, session.actor, reason, session.company_id,
             )
         except (ValueError, RuntimeError, PermissionError) as exc:
             return _error(environment, 409, "Lote no aplicado", str(exc), session=session)
@@ -1749,11 +1768,12 @@ def create_operator_app(
             if pending_count:
                 await run_in_threadpool(
                     gateway.decide_image_candidates_bulk,
-                    pending_count, "approved", session.actor, reason,
+                    pending_count, "approved", session.actor, reason, session.company_id,
                 )
             await run_in_threadpool(
                 gateway.materialize_approved_images_bulk, total,
                 resolved_intake_root, resolved_image_output, session.actor, reason,
+                session.company_id,
             )
         except (ValueError, RuntimeError, PermissionError, FileExistsError) as exc:
             return _error(environment, 409, "Preparación no completada", str(exc), session=session)
@@ -1783,7 +1803,7 @@ def create_operator_app(
             result = await run_in_threadpool(
                 gateway.materialize_approved_image, _uuid(candidate_id, "candidate_id"),
                 form["evidence_sha256"], resolved_intake_root, resolved_image_output,
-                session.actor, reason,
+                session.actor, reason, session.company_id,
             )
         except (ValueError, RuntimeError, PermissionError, FileExistsError) as exc:
             return _error(environment, 409, "Imagen no materializada", str(exc), session=session)
@@ -1813,6 +1833,7 @@ def create_operator_app(
             result = await run_in_threadpool(
                 gateway.materialize_approved_images_bulk, int(form["expected_count"]),
                 resolved_intake_root, resolved_image_output, session.actor, reason,
+                session.company_id,
             )
         except (ValueError, RuntimeError, PermissionError, FileExistsError) as exc:
             return _error(environment, 409, "Lote no materializado", str(exc), session=session)

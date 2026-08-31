@@ -1019,6 +1019,23 @@ class DatabaseReviewGateway:
                   ON bp.brand_profile_id=vi.brand_profile_id
                 WHERE vi.visual_identity_revision_id=%s
                   AND (vi.scope='vehicle_make' OR vi.company_id=%s OR bp.company_id=%s))""",
+            "intake": """SELECT EXISTS (
+                SELECT 1 FROM perfect_catalog.intake_submission
+                WHERE intake_submission_id=%s AND company_id=%s)""",
+            "image_index": """SELECT EXISTS (
+                SELECT 1 FROM perfect_catalog.image_archive_index AS i
+                JOIN perfect_catalog.intake_submission AS s
+                  ON s.intake_submission_id=i.intake_submission_id
+                WHERE i.image_archive_index_id=%s AND s.company_id=%s)""",
+            "image_candidate": """SELECT EXISTS (
+                SELECT 1 FROM perfect_catalog.image_product_candidate AS c
+                JOIN perfect_catalog.image_archive_entry AS e
+                  ON e.image_archive_entry_id=c.image_archive_entry_id
+                JOIN perfect_catalog.image_archive_index AS i
+                  ON i.image_archive_index_id=e.image_archive_index_id
+                JOIN perfect_catalog.intake_submission AS s
+                  ON s.intake_submission_id=i.intake_submission_id
+                WHERE c.image_product_candidate_id=%s AND s.company_id=%s)""",
         }
         query = queries.get(resource_type)
         if query is None:
@@ -1184,6 +1201,7 @@ class DatabaseReviewGateway:
         state: str = "all",
         limit: int = 50,
         offset: int = 0,
+        company_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
         return inspect_review_queue_page(
             plan_id,
@@ -1194,6 +1212,7 @@ class DatabaseReviewGateway:
             state=state,
             limit=limit,
             offset=offset,
+            company_id=company_id,
         )
 
     def intake_submissions(
@@ -1203,6 +1222,7 @@ class DatabaseReviewGateway:
         status: str = "all",
         limit: int = 50,
         offset: int = 0,
+        company_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
         return list_intake_submissions(
             self._config,
@@ -1211,6 +1231,7 @@ class DatabaseReviewGateway:
             status=status,
             limit=limit,
             offset=offset,
+            company_id=company_id,
         )
 
     def record_intake(self, record: dict[str, Any]) -> dict[str, Any]:
@@ -1242,59 +1263,70 @@ class DatabaseReviewGateway:
 
     def generate_image_candidates(
         self, image_archive_index_id: uuid.UUID, actor: str, reason: str,
+        company_id: uuid.UUID,
     ) -> dict[str, Any]:
         from .image_match_review import generate_image_candidates
 
         return generate_image_candidates(
             image_archive_index_id, self._config, self._password,
-            actor=actor, reason=reason,
+            actor=actor, reason=reason, company_id=company_id,
         )
 
-    def image_candidates(self, *, limit: int = 100, offset: int = 0) -> dict[str, Any]:
+    def image_candidates(
+        self, *, limit: int = 100, offset: int = 0, company_id: uuid.UUID,
+    ) -> dict[str, Any]:
         from .image_match_review import list_image_candidates
 
-        return list_image_candidates(self._config, self._password, limit=limit, offset=offset)
+        return list_image_candidates(
+            self._config, self._password, limit=limit, offset=offset,
+            company_id=company_id,
+        )
 
     def decide_image_candidate(
         self, candidate_id: uuid.UUID, evidence_sha256: str, decision: str,
-        actor: str, reason: str,
+        actor: str, reason: str, company_id: uuid.UUID,
     ) -> dict[str, Any]:
         from .image_match_review import decide_image_candidate
 
         return decide_image_candidate(
             candidate_id, evidence_sha256, decision, actor, reason,
-            self._config, self._password,
+            self._config, self._password, company_id=company_id,
         )
 
     def decide_image_candidates_bulk(
         self, expected_count: int, decision: str, actor: str, reason: str,
+        company_id: uuid.UUID,
     ) -> dict[str, Any]:
         from .image_match_review import decide_image_candidates_bulk
 
         return decide_image_candidates_bulk(
-            expected_count, decision, actor, reason, self._config, self._password
+            expected_count, decision, actor, reason, self._config, self._password,
+            company_id=company_id,
         )
 
     def materialize_approved_image(
         self, candidate_id: uuid.UUID, evidence_sha256: str,
         intake_root: Path, image_root: Path, actor: str, reason: str,
+        company_id: uuid.UUID,
     ) -> dict[str, Any]:
         from .approved_image_materialization import materialize_approved_image
 
         return materialize_approved_image(
             candidate_id, evidence_sha256, intake_root, image_root,
             self._config, self._password, actor=actor, reason=reason,
+            company_id=company_id,
         )
 
     def materialize_approved_images_bulk(
         self, expected_count: int, intake_root: Path, image_root: Path,
         actor: str, reason: str,
+        company_id: uuid.UUID,
     ) -> dict[str, Any]:
         from .approved_image_materialization import materialize_approved_images_bulk
 
         return materialize_approved_images_bulk(
             expected_count, intake_root, image_root, self._config, self._password,
-            actor=actor, reason=reason,
+            actor=actor, reason=reason, company_id=company_id,
         )
 
     def decide(

@@ -9,7 +9,7 @@ class ClearImportedDataScriptTests(unittest.TestCase):
     def test_reset_rebuilds_all_migrations_in_order(self) -> None:
         sql = (ROOT / "db/bootstrap/reset_imported_data.sql").read_text(encoding="utf-8")
         expected = ["apply_initial_schema.sql"] + [
-            f"../migrations/{version:04d}_" for version in range(2, 20)
+            f"../migrations/{version:04d}_" for version in range(2, 21)
         ]
         positions = [sql.index(name) for name in expected]
         self.assertEqual(positions, sorted(positions))
@@ -22,6 +22,7 @@ class ClearImportedDataScriptTests(unittest.TestCase):
         self.assertIn('"checksum_0017=$checksum0017"', script)
         self.assertIn('"checksum_0018=$checksum0018"', script)
         self.assertIn('"checksum_0019=$checksum0019"', script)
+        self.assertIn('"checksum_0020=$checksum0020"', script)
         self.assertIn("$activeFolders = @('imports', 'intake', 'images', 'exports')", script)
         self.assertIn("Assert-ChildPath -Candidate $source -Parent $dataRoot", script)
         self.assertNotIn("'backups'", script.split("$activeFolders =", 1)[1].splitlines()[0])

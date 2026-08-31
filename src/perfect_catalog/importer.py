@@ -332,7 +332,10 @@ def _business_counts(connection: Connection[Any]) -> dict[str, int]:
     return counts
 
 
-def _existing_products(connection: Connection[Any], source_system_id: uuid.UUID, references: list[str]) -> dict[str, list[uuid.UUID]]:
+def _existing_products(
+    connection: Connection[Any], source_system_id: uuid.UUID,
+    references: list[str], company_id: uuid.UUID | None = None,
+) -> dict[str, list[uuid.UUID]]:
     matches: dict[str, list[uuid.UUID]] = defaultdict(list)
     if not references:
         return matches
@@ -344,11 +347,12 @@ def _existing_products(connection: Connection[Any], source_system_id: uuid.UUID,
             JOIN perfect_catalog.brand AS b ON b.brand_id = pr.brand_id
             WHERE pr.source_system_id = %s
               AND b.normalized_name = %s
+              AND (%s::uuid IS NULL OR b.company_id = %s)
               AND pr.reference_type = 'internal'
               AND pr.value_normalized = ANY(%s)
             ORDER BY pr.value_normalized, pr.product_template_id
             """,
-            (source_system_id, BRAND, references),
+            (source_system_id, BRAND, company_id, company_id, references),
         )
         for reference, product_id in cursor.fetchall():
             matches[str(reference)].append(product_id)
@@ -431,7 +435,11 @@ def run_dry_run(
     password: str,
     output_dir: Path,
     max_rows: int = DEFAULT_MAX_PILOT_ROWS,
+    *,
+    company_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
+    if company_id is None:
+        raise ValueError("company_id es obligatorio para generar un dry-run nuevo.")
     source_path = source_path.resolve(strict=True)
     source_sha_before = sha256_file(source_path)
     sheets = read_tabular_source(source_path)
@@ -609,7 +617,9 @@ def run_dry_run(
                     )
 
             references = [row.normalized["internal_reference_normalized"] for row in prepared]
-            existing = _existing_products(connection, source_system_id, references)
+            existing = _existing_products(
+                connection, source_system_id, references, company_id=company_id,
+            )
             items: list[dict[str, Any]] = []
             order = 0
             for row, staging_id in zip(prepared, staging_ids, strict=True):
@@ -693,13 +703,13 @@ def run_dry_run(
             cursor.execute(
                 """
                 INSERT INTO perfect_catalog.import_plan (
-                    import_plan_id, import_batch_id, import_file_id, file_sha256,
+                    import_plan_id, company_id, import_batch_id, import_file_id, file_sha256,
                     contract_version, rules_version, plan_status, plan_sha256,
                     approval_fingerprint_sha256, generated_at, generated_by
-                ) VALUES (%s, %s, %s, %s, %s, %s, 'awaiting_review', %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'awaiting_review', %s, %s, %s, %s)
                 """,
                 (
-                    plan_id, batch_id, file_id, source_sha_before, CONTRACT_VERSION,
+                    plan_id, company_id, batch_id, file_id, source_sha_before, CONTRACT_VERSION,
                     RULES_VERSION, computed_plan_hash, fingerprint, datetime.now(UTC),
                     "perfect-catalog-importer/0.1.0",
                 ),

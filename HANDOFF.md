@@ -1,5 +1,22 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-31: ingresos e imágenes aislados por Company (v1.37)
+
+- La migración `0020_company_intake_context.sql` persiste `company_id` en cada ingreso y plan nuevo.
+  El historial sólo se rellena cuando existe evidencia relacional; los registros ambiguos permanecen
+  sin asignar y ocultos, sin atribuirlos silenciosamente a una empresa.
+- Los triggers de base rechazan nuevos ingresos o planes sin Company incluso si se omite la API. El
+  actualizador único calcula y valida el checksum 0020 y comprueba el ledger 0017–0020.
+- La Company activa acompaña el flujo completo: recepción, promoción Odoo, dry-run, selección de
+  marca, candidatos de imagen, decisiones individuales/en lote y materialización de copias.
+- Las consultas y las rutas con UUID de ingreso, índice o candidato verifican pertenencia antes de
+  mostrar o modificar recursos. Las referencias existentes usadas por el parser también se limitan
+  a Brands de la empresa activa.
+- Consola actualizada a v1.37.0. Verificación: compilación correcta, scripts PowerShell válidos,
+  `git diff --check` limpio y 273 pruebas correctas; 6 omitidas.
+- Acción local pendiente: ejecutar `ACTUALIZAR-SISTEMA.cmd` una vez antes de volver a iniciar el
+  revisor. No ejecutar migraciones numeradas manualmente.
+
 ## Bloque 2026-08-31: Company activa e identidad corporativa 0019
 
 - La consola v1.36 incorpora selector de Company después del login. Con una sola Company activa la

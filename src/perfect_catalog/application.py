@@ -52,7 +52,7 @@ def _load_plan(connection: Connection[Any], plan_id: uuid.UUID, *, lock: bool) -
                    p.file_sha256, p.contract_version, p.rules_version,
                    p.plan_status, p.plan_sha256, p.approval_fingerprint_sha256,
                    p.generated_at, p.approved_at, p.approved_by, p.applied_at, p.applied_by,
-                   p.brand_profile_id, bp.code AS brand_profile_code,
+                   p.company_id, p.brand_profile_id, bp.code AS brand_profile_code,
                    bp.display_name AS brand_profile_name,
                    f.sha256 AS registered_file_sha256, f.storage_uri,
                    b.source_system_id
@@ -729,9 +729,13 @@ def approve_and_apply_plan(
         plan = _load_plan(connection, plan_id, lock=True)
         if plan["plan_status"] != "awaiting_review":
             raise PermissionError("La marca solo puede elegirse antes de aprobar el plan.")
+        if plan["company_id"] is None:
+            raise PermissionError("El plan histórico no tiene Company verificable.")
         profile = connection.execute(
-            "SELECT brand_profile_id, code, display_name FROM perfect_catalog.brand_profile WHERE code=%s",
-            (str(brand_code or "").strip().upper(),),
+            """SELECT brand_profile_id, code, display_name
+               FROM perfect_catalog.brand_profile
+               WHERE code=%s AND company_id=%s""",
+            (str(brand_code or "").strip().upper(), plan["company_id"]),
         ).fetchone()
         if profile is None:
             raise ValueError("El perfil de marca seleccionado no existe.")

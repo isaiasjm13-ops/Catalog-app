@@ -9,6 +9,8 @@ from perfect_catalog.image_match_review import (
 
 
 class ImageMatchReviewTests(unittest.TestCase):
+    COMPANY_ID = uuid.UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+
     def test_only_exact_normalized_approved_reference_inputs_become_candidates(self) -> None:
         entry_id, reference_id, product_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
         entries = [{"image_archive_entry_id": entry_id, "content_sha256": "a" * 64, "lookup_key": "NK-001"}]
@@ -39,7 +41,10 @@ class ImageMatchReviewTests(unittest.TestCase):
         connection = Mock(); connection.cursor.return_value = cursor_context
         connection_context = Mock(); connection_context.__enter__ = Mock(return_value=connection); connection_context.__exit__ = Mock(return_value=False)
         with patch("perfect_catalog.image_match_review.psycopg.connect", return_value=connection_context):
-            result = decide_image_candidate(candidate_id, "a" * 64, "approved", "isa", "Revisión exacta", DatabaseConfig(), "secret")
+            result = decide_image_candidate(
+                candidate_id, "a" * 64, "approved", "isa", "Revisión exacta",
+                DatabaseConfig(), "secret", company_id=self.COMPANY_ID,
+            )
         self.assertEqual(result, {"status": "approved"})
         connection.execute.assert_called_once_with(
             "SELECT pg_advisory_xact_lock(hashtextextended(%s, 4))", (str(candidate_id),)
@@ -57,7 +62,8 @@ class ImageMatchReviewTests(unittest.TestCase):
         connection_context = Mock(); connection_context.__enter__ = Mock(return_value=connection); connection_context.__exit__ = Mock(return_value=False)
         with patch("perfect_catalog.image_match_review.psycopg.connect", return_value=connection_context):
             result = decide_image_candidates_bulk(
-                2, "approved", "isa", "Lote exacto revisado", DatabaseConfig(), "secret"
+                2, "approved", "isa", "Lote exacto revisado", DatabaseConfig(), "secret",
+                company_id=self.COMPANY_ID,
             )
         self.assertEqual(result, {"status": "bulk_approved", "count": 2})
         insert_calls = [call for call in cursor.execute.call_args_list if "INSERT INTO" in call.args[0]]
@@ -81,7 +87,8 @@ class ImageMatchReviewTests(unittest.TestCase):
         with patch("perfect_catalog.image_match_review.psycopg.connect", return_value=connection_context):
             with self.assertRaisesRegex(PermissionError, "cantidad pendiente cambió"):
                 decide_image_candidates_bulk(
-                    1, "rejected", "isa", "Lote exacto revisado", DatabaseConfig(), "secret"
+                    1, "rejected", "isa", "Lote exacto revisado", DatabaseConfig(), "secret",
+                    company_id=self.COMPANY_ID,
                 )
 
 

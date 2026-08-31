@@ -87,6 +87,8 @@ class SyntheticReviewGateway:
             return resource_id == PLAN_ID
         if resource_type == "release":
             return True
+        if resource_type in {"intake", "image_index", "image_candidate"}:
+            return True
         return resource_type == "identity"
 
     def plans(self, *, limit: int = 100, company_id: uuid.UUID | None = None) -> list[dict[str, Any]]:
@@ -157,6 +159,7 @@ class SyntheticReviewGateway:
         state: str = "all",
         limit: int = 50,
         offset: int = 0,
+        company_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
         if plan_id != PLAN_ID or fingerprint != FINGERPRINT:
             raise PermissionError("evidencia incorrecta")
@@ -269,6 +272,7 @@ class SyntheticReviewGateway:
 
     def generate_image_candidates(
         self, image_archive_index_id: uuid.UUID, actor: str, reason: str,
+        company_id: uuid.UUID,
     ) -> dict[str, Any]:
         if not self.image_candidate_data:
             self.image_candidate_data.append({
@@ -281,7 +285,9 @@ class SyntheticReviewGateway:
             })
         return {"status": "generated", "candidate_count": 1, "inserted_count": 1}
 
-    def image_candidates(self, *, limit: int = 100, offset: int = 0) -> dict[str, Any]:
+    def image_candidates(
+        self, *, limit: int = 100, offset: int = 0, company_id: uuid.UUID,
+    ) -> dict[str, Any]:
         return {"items": self.image_candidate_data[offset:offset + limit],
                 "filtered_count": len(self.image_candidate_data),
                 "pending_count": sum(item["decision"] is None for item in self.image_candidate_data),
@@ -293,7 +299,7 @@ class SyntheticReviewGateway:
 
     def decide_image_candidate(
         self, candidate_id: uuid.UUID, evidence_sha256: str, decision: str,
-        actor: str, reason: str,
+        actor: str, reason: str, company_id: uuid.UUID,
     ) -> dict[str, Any]:
         candidate = next(item for item in self.image_candidate_data if item["image_product_candidate_id"] == str(candidate_id))
         if candidate["evidence_sha256"] != evidence_sha256:
@@ -303,6 +309,7 @@ class SyntheticReviewGateway:
 
     def decide_image_candidates_bulk(
         self, expected_count: int, decision: str, actor: str, reason: str,
+        company_id: uuid.UUID,
     ) -> dict[str, Any]:
         pending = [item for item in self.image_candidate_data if item["decision"] is None]
         if len(pending) != expected_count:
@@ -315,6 +322,7 @@ class SyntheticReviewGateway:
     def materialize_approved_image(
         self, candidate_id: uuid.UUID, evidence_sha256: str,
         intake_root: Path, image_root: Path, actor: str, reason: str,
+        company_id: uuid.UUID,
     ) -> dict[str, Any]:
         candidate = next(item for item in self.image_candidate_data if item["image_product_candidate_id"] == str(candidate_id))
         if candidate["decision"] != "approved" or candidate["evidence_sha256"] != evidence_sha256:
@@ -326,6 +334,7 @@ class SyntheticReviewGateway:
     def materialize_approved_images_bulk(
         self, expected_count: int, intake_root: Path, image_root: Path,
         actor: str, reason: str,
+        company_id: uuid.UUID,
     ) -> dict[str, Any]:
         pending = [item for item in self.image_candidate_data if item["decision"] == "approved" and not item["approved_image_materialization_id"]]
         if len(pending) != expected_count:
@@ -342,12 +351,15 @@ class SyntheticReviewGateway:
         status: str = "all",
         limit: int = 50,
         offset: int = 0,
+        company_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
         items = list(reversed(self.intake_records))
         if kind != "all":
             items = [item for item in items if item["intake_kind"] == kind]
         if status != "all":
             items = [item for item in items if item["validation_status"] == status]
+        if company_id is not None:
+            items = [item for item in items if item.get("company_id") == company_id]
         return {
             "items": items[offset : offset + limit],
             "filtered_count": len(items),
@@ -639,8 +651,17 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.gateway.authorize_company_resource = lambda *_: False
         plan = await self.client.get(f"/operator/plans/{PLAN_ID}")
         release = await self.client.get(f"/operator/catalogs/{RELEASE_ID}/products")
+        foreign_id = uuid.uuid4()
+        intake = await self.client.post(f"/operator/intake/{foreign_id}/index-images")
+        image_index = await self.client.post(f"/operator/images/index/{foreign_id}/candidates")
+        image_candidate = await self.client.post(
+            f"/operator/images/candidates/{foreign_id}/decision"
+        )
         self.assertEqual(plan.status_code, 404)
         self.assertEqual(release.status_code, 404)
+        self.assertEqual(intake.status_code, 404)
+        self.assertEqual(image_index.status_code, 404)
+        self.assertEqual(image_candidate.status_code, 404)
         self.assertIn("empresa activa", plan.text)
 
     async def test_login_challenge_cookie_scope_and_missing_cookie_diagnostic(self) -> None:
@@ -1103,7 +1124,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.36.0")
+        self.assertEqual(OPERATOR_VERSION, "1.37.0")
 
     async def test_company_identity_upload_requires_csrf_and_records_logo_without_exposing_it(self) -> None:
         await self.login()
@@ -1240,7 +1261,8 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         csrf = hidden_value(page.text, "csrf_token")
         submission_id = str(uuid.uuid4())
         self.gateway.intake_records.append({
-            "intake_submission_id": submission_id, "intake_asset_id": "asset", "intake_kind": "image_archive",
+            "intake_submission_id": submission_id, "company_id": COMPANY_ID,
+            "intake_asset_id": "asset", "intake_kind": "image_archive",
             "original_name": "imagenes.zip", "extension": ".zip", "claimed_media_type": "application/zip",
             "detected_media_type": "application/zip", "size_bytes": 100, "sha256": "a" * 64,
             "validation_status": "quarantined", "duplicate_content": False, "validation_report": {"image_files": 2},
@@ -1296,7 +1318,9 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_image_candidates_can_be_approved_as_exact_pending_batch(self) -> None:
         await self.login()
-        self.gateway.generate_image_candidates(uuid.uuid4(), "web-reviewer", "Cruce exacto")
+        self.gateway.generate_image_candidates(
+            uuid.uuid4(), "web-reviewer", "Cruce exacto", COMPANY_ID,
+        )
         page = await self.client.get("/operator/images")
         self.assertIn("Validar en lote · 1 asociaciones pendientes", page.text)
         response = await self.client.post(
@@ -1323,7 +1347,9 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_exact_image_preparation_combines_approval_and_materialization(self) -> None:
         await self.login()
-        self.gateway.generate_image_candidates(uuid.uuid4(), "web-reviewer", "Cruce exacto")
+        self.gateway.generate_image_candidates(
+            uuid.uuid4(), "web-reviewer", "Cruce exacto", COMPANY_ID,
+        )
         page = await self.client.get("/operator/images")
         self.assertIn("Preparar coincidencias exactas · 1", page.text)
         response = await self.client.post(
@@ -1415,6 +1441,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(accepted.status_code, 303)
         self.assertIn("result=quarantined", accepted.headers["location"])
         self.assertEqual(self.gateway.intake_records[0]["submitted_by"], "web-reviewer")
+        self.assertEqual(self.gateway.intake_records[0]["company_id"], COMPANY_ID)
 
         rejected = await self.client.post(
             "/operator/intake",

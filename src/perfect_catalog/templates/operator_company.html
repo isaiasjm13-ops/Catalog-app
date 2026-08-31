@@ -2,7 +2,7 @@
 {% block title %}Seleccionar empresa{% endblock %}
 {% block content %}
 <section class="page-heading">
-  <div><span class="kicker">Contexto de trabajo</span><h1>¿Con qué empresa trabajarás?</h1><p>La selección limita planes aplicados, marcas, catálogos e identidad corporativa durante esta sesión.</p></div>
+  <div><span class="kicker">Contexto de trabajo</span><h1>¿Con qué empresa trabajarás?</h1><p>La selección limita ingresos, imágenes, planes, marcas, catálogos e identidad corporativa durante esta sesión.</p></div>
   <span class="safety-chip"><span>●</span> Aislamiento activo</span>
 </section>
 <section class="company-grid" aria-label="Empresas disponibles">
@@ -19,5 +19,5 @@
   <div class="empty-state"><h2>No hay empresas activas</h2><p>Ejecuta ACTUALIZAR-SISTEMA.cmd y vuelve a intentarlo.</p></div>
 {% endfor %}
 </section>
-<p class="safety-note">Los ingresos todavía son compartidos hasta asignarlos de forma auditable a una empresa en el siguiente paso del flujo.</p>
+<p class="safety-note">Los ingresos nuevos quedan vinculados a la empresa activa. Los registros históricos sin una empresa verificable permanecen ocultos hasta una reasignación auditada.</p>
 {% endblock %}

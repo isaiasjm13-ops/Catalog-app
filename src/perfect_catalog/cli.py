@@ -55,6 +55,10 @@ def build_parser() -> argparse.ArgumentParser:
     import_parser.add_argument("source", type=Path)
     import_parser.add_argument("--output-dir", type=Path, default=Path("data/exports/imports"))
     import_parser.add_argument(
+        "--company-id", type=uuid.UUID, required=True,
+        help="Company exacta que será propietaria del plan; la consola web la completa automáticamente.",
+    )
+    import_parser.add_argument(
         "--max-rows",
         type=int,
         default=DEFAULT_MAX_PILOT_ROWS,
@@ -199,7 +203,10 @@ def main(argv: list[str] | None = None) -> int:
         config = DatabaseConfig.from_args(args)
         password = prompt_password(args.prompt_password)
         if args.command == "import-odoo":
-            result = run_dry_run(args.source, config, password, args.output_dir, args.max_rows)
+            result = run_dry_run(
+                args.source, config, password, args.output_dir, args.max_rows,
+                company_id=args.company_id,
+            )
         elif args.command == "promote-intake":
             result = promote_intake_to_dry_run(
                 args.submission_id, args.intake_root, config, password, args.output_dir,

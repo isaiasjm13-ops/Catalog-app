@@ -34,10 +34,12 @@ class CompanyMigrationTests(unittest.TestCase):
         self.assertIn('"checksum_0018=$checksum0018"', script)
         self.assertIn("Get-FileHash -LiteralPath $migration0019 -Algorithm SHA256", script)
         self.assertIn('"checksum_0019=$checksum0019"', script)
+        self.assertIn("Get-FileHash -LiteralPath $migration0020 -Algorithm SHA256", script)
+        self.assertIn('"checksum_0020=$checksum0020"', script)
 
     def test_updater_enforces_post_migration_company_invariants(self) -> None:
         sql = (ROOT / "db/bootstrap/apply_pending_migrations.sql").read_text(encoding="utf-8")
-        self.assertIn("faltan entradas 0017-0019 en el ledger", sql)
+        self.assertIn("faltan entradas 0017-0020 en el ledger", sql)
         self.assertIn("SELECT 1 FROM perfect_catalog.brand WHERE company_id IS NULL", sql)
         self.assertIn("b.code = 'EXACTCARS' AND c.code <> 'PERFECT'", sql)
         self.assertIn("b.code = 'NATSUKI' AND c.code <> 'NATSUKI'", sql)
@@ -50,6 +52,19 @@ class CompanyMigrationTests(unittest.TestCase):
         self.assertIn("scope='company' AND company_id IS NOT NULL", sql)
         self.assertIn("fk_visual_identity_revision_company", sql)
         self.assertIn("'0019_company_visual_identity', :'checksum_0019'", sql)
+        self.assertNotIn("DELETE FROM", sql.upper())
+
+    def test_intake_company_migration_preserves_unknown_history(self) -> None:
+        sql = (ROOT / "db/migrations/0020_company_intake_context.sql").read_text(encoding="utf-8")
+        self.assertIn("ALTER TABLE perfect_catalog.intake_submission", sql)
+        self.assertIn("ALTER TABLE perfect_catalog.import_plan", sql)
+        self.assertIn("ip.intake_submission_id=s.intake_submission_id", sql)
+        self.assertNotIn("ALTER COLUMN company_id SET NOT NULL", sql)
+        self.assertIn("trg_intake_submission_company_required", sql)
+        self.assertIn("trg_import_plan_company_required", sql)
+        self.assertIn("company_id es obligatorio para nuevos registros", sql)
+        self.assertIn("REVOKE ALL ON FUNCTION perfect_catalog.require_company_context() FROM PUBLIC", sql)
+        self.assertIn("TO perfect_catalog_app", sql)
         self.assertNotIn("DELETE FROM", sql.upper())
 
 
