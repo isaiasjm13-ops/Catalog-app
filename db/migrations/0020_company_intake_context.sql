@@ -21,12 +21,9 @@ SET company_id = bp.company_id
 FROM perfect_catalog.brand_profile AS bp
 WHERE bp.brand_profile_id=p.brand_profile_id;
 
-UPDATE perfect_catalog.intake_submission AS s
-SET company_id = p.company_id
-FROM perfect_catalog.intake_promotion AS ip
-JOIN perfect_catalog.import_plan AS p ON p.import_plan_id=ip.import_plan_id
-WHERE ip.intake_submission_id=s.intake_submission_id
-  AND p.company_id IS NOT NULL;
+-- intake_submission es append-only: el historial no se reescribe ni siquiera cuando
+-- existe una promoción relacionada. Los ingresos anteriores quedan con company_id
+-- nulo, fuera de las vistas por Company, hasta una reasignación auditada separada.
 
 CREATE INDEX ix_intake_submission_company_submitted
 ON perfect_catalog.intake_submission (company_id, submitted_at DESC, intake_submission_id DESC);

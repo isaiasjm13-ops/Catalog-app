@@ -6,8 +6,8 @@
   `logs/actualizar-sistema-ultimo.log`; no registra la contraseña. Se añadió después de que un fallo
   local `psql: 3` quedara fuera de la captura y sin diagnóstico persistente.
 - La migración `0020_company_intake_context.sql` persiste `company_id` en cada ingreso y plan nuevo.
-  El historial sólo se rellena cuando existe evidencia relacional; los registros ambiguos permanecen
-  sin asignar y ocultos, sin atribuirlos silenciosamente a una empresa.
+  Los planes históricos se rellenan mediante su perfil de marca; los ingresos históricos permanecen
+  sin asignar y ocultos porque son append-only y no deben reescribirse durante una migración.
 - Los triggers de base rechazan nuevos ingresos o planes sin Company incluso si se omite la API. El
   actualizador único calcula y valida el checksum 0020 y comprueba el ledger 0017–0020.
 - La Company activa acompaña el flujo completo: recepción, promoción Odoo, dry-run, selección de
