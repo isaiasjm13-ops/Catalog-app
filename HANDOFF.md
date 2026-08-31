@@ -1,5 +1,15 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-31: inventario de marcas desde recurso de red
+
+- Lectura sin modificaciones de `PERFECT/HIGH RES` y `PDM/HIGH RES`: 29 y 89 carpetas.
+- Se documentaron listas exactas, dos colisiones (`ASIA INC`, `KDT`), agrupadores probables y tres
+  conflictos de jerarquía (`KMC`, `MASAKI`, `NATSUKI` bajo el árbol físico de Perfect).
+- La carpeta de imágenes se trata como evidencia secundaria, nunca como fuente maestra. No se
+  crearon Brands, no se copiaron imágenes y no se amplió el backfill 0018.
+- EXACT CARS permanece confirmada en Perfect Company. Los demás candidatos se conciliarán con
+  Odoo antes de nuevas migraciones o importaciones.
+
 ## Bloque 2026-08-31: migraciones Company 0017-0018 preparadas
 
 - El usuario confirmó `EXACTCARS -> Perfect Company`; `NATSUKI -> Natsuki Company` ya estaba

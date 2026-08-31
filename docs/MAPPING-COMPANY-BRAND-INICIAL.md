@@ -32,3 +32,11 @@ No se permite asignar automáticamente una marca desconocida ni ejecutar el back
 - Dos perfiles y dos revisiones visuales, ambos de scope `brand`; no existe identidad `company`.
 - 472 referencias internas aprobadas; no hay referencias cruzadas ni duplicados normalizados.
 - Perfect, A1 y Masaki no existen todavía como Brand en la base auditada.
+
+## Evidencia complementaria del archivo de imágenes
+
+El inventario de red se documenta en
+[`INVENTARIO-CARPETAS-MARCAS-2026-08-31.md`](INVENTARIO-CARPETAS-MARCAS-2026-08-31.md).
+Las carpetas aportan candidatos, no autoridad comercial. `ASIA INC` y `KDT` aparecen tanto bajo
+Perfect como bajo PDM; `KMC`, `MASAKI` y `NATSUKI` aparecen bajo Perfect pese a que la
+especificación los trata como Companies. Todos quedan pendientes de conciliación con Odoo.
