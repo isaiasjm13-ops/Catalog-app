@@ -16,11 +16,11 @@ class VehicleApplicationWorkflowMigrationTests(unittest.TestCase):
         self.assertIn("GRANT UPDATE (review_status, reviewed_by, reviewed_at, review_note)", self.sql)
         self.assertNotRegex(self.sql, r"(?i)DELETE|TRUNCATE|DROP\s+(?:TABLE|SCHEMA)")
 
-    def test_bootstrap_uses_owner_and_resets_role(self) -> None:
-        bootstrap = (ROOT / "db/bootstrap/apply_vehicle_application_workflow_migration.sql").read_text(encoding="utf-8")
-        self.assertIn("SET ROLE perfect_catalog_owner", bootstrap)
-        self.assertIn("\\ir ../migrations/0012_vehicle_application_workflow.sql", bootstrap)
-        self.assertTrue(bootstrap.rstrip().endswith("RESET ROLE;"))
+    def test_central_rebuild_uses_owner_and_applies_migration(self) -> None:
+        reset = (ROOT / "db/bootstrap/reset_imported_data.sql").read_text(encoding="utf-8")
+        self.assertIn("SET ROLE perfect_catalog_owner", reset)
+        self.assertIn("\\ir ../migrations/0012_vehicle_application_workflow.sql", reset)
+        self.assertIn("RESET ROLE;", reset)
 
 
 if __name__ == "__main__":

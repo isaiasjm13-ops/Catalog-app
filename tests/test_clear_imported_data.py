@@ -9,19 +9,7 @@ class ClearImportedDataScriptTests(unittest.TestCase):
     def test_reset_rebuilds_all_migrations_in_order(self) -> None:
         sql = (ROOT / "db/bootstrap/reset_imported_data.sql").read_text(encoding="utf-8")
         expected = ["apply_initial_schema.sql"] + [
-            "apply_followup_migration.sql",
-            "apply_apply_workflow_migration.sql",
-            "apply_application_reads_migration.sql",
-            "apply_release_publication_migration.sql",
-            "apply_product_review_migration.sql",
-            "apply_intake_migration.sql",
-            "apply_intake_promotion_migration.sql",
-            "apply_image_archive_index_migration.sql",
-            "apply_image_match_review_migration.sql",
-            "apply_approved_image_materialization_migration.sql",
-            "apply_vehicle_application_workflow_migration.sql",
-            "apply_brand_profiles_migration.sql",
-            "apply_pending_migrations.sql",
+            f"../migrations/{version:04d}_" for version in range(2, 19)
         ]
         positions = [sql.index(name) for name in expected]
         self.assertEqual(positions, sorted(positions))
@@ -31,6 +19,8 @@ class ClearImportedDataScriptTests(unittest.TestCase):
         script = (ROOT / "db/bootstrap/clear_imported_data.ps1").read_text(encoding="utf-8")
         self.assertIn("LIMPIAR IMPORTACIONES", script)
         self.assertLess(script.index("& $pgDumpPath"), script.index("& $psqlPath"))
+        self.assertIn('"checksum_0017=$checksum0017"', script)
+        self.assertIn('"checksum_0018=$checksum0018"', script)
         self.assertIn("$activeFolders = @('imports', 'intake', 'images', 'exports')", script)
         self.assertIn("Assert-ChildPath -Candidate $source -Parent $dataRoot", script)
         self.assertNotIn("'backups'", script.split("$activeFolders =", 1)[1].splitlines()[0])

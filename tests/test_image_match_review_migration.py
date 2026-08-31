@@ -24,8 +24,8 @@ class ImageMatchReviewMigrationTests(unittest.TestCase):
     def test_application_permissions_are_minimal(self) -> None:
         self.assertRegex(self.sql, r"(?is)GRANT SELECT, INSERT ON.*TO perfect_catalog_app")
         self.assertNotRegex(self.sql, r"(?is)GRANT (?:UPDATE|DELETE).*perfect_catalog_app")
-        bootstrap = Path("db/bootstrap/apply_image_match_review_migration.sql").read_text(encoding="utf-8")
-        self.assertIn("\\ir ../migrations/0010_image_match_review.sql", bootstrap)
+        reset = Path("db/bootstrap/reset_imported_data.sql").read_text(encoding="utf-8")
+        self.assertIn("\\ir ../migrations/0010_image_match_review.sql", reset)
 
 
 if __name__ == "__main__":

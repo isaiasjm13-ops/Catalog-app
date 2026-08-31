@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "db" / "migrations" / "0005_release_publication_workflow.sql"
-BOOTSTRAP = ROOT / "db" / "bootstrap" / "apply_release_publication_migration.sql"
+RESET = ROOT / "db" / "bootstrap" / "reset_imported_data.sql"
 
 
 class ReleasePublicationMigrationTests(unittest.TestCase):
@@ -58,11 +58,11 @@ class ReleasePublicationMigrationTests(unittest.TestCase):
         self.assertNotRegex(self.sql, r"(?i)GRANT\s+DELETE")
         self.assertNotRegex(self.sql, r"(?i)GRANT\s+UPDATE\s+ON")
 
-    def test_bootstrap_uses_owner_and_restores_role(self) -> None:
-        bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
-        self.assertIn("SET ROLE perfect_catalog_owner;", bootstrap)
-        self.assertIn("\\ir ../migrations/0005_release_publication_workflow.sql", bootstrap)
-        self.assertTrue(bootstrap.rstrip().endswith("RESET ROLE;"))
+    def test_central_rebuild_uses_owner_and_applies_migration(self) -> None:
+        reset = RESET.read_text(encoding="utf-8")
+        self.assertIn("SET ROLE perfect_catalog_owner;", reset)
+        self.assertIn("\\ir ../migrations/0005_release_publication_workflow.sql", reset)
+        self.assertIn("RESET ROLE;", reset)
 
 
 if __name__ == "__main__":

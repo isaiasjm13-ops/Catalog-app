@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "db" / "migrations" / "0007_secure_intake.sql"
-BOOTSTRAP = ROOT / "db" / "bootstrap" / "apply_intake_migration.sql"
+RESET = ROOT / "db" / "bootstrap" / "reset_imported_data.sql"
 
 
 class IntakeMigrationTests(unittest.TestCase):
@@ -46,11 +46,11 @@ class IntakeMigrationTests(unittest.TestCase):
         )
         self.assertNotRegex(self.sql, r"(?i)GRANT\s+(?:UPDATE|DELETE)")
 
-    def test_bootstrap_uses_owner_and_restores_role(self) -> None:
-        bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
-        self.assertIn("SET ROLE perfect_catalog_owner;", bootstrap)
-        self.assertIn("\\ir ../migrations/0007_secure_intake.sql", bootstrap)
-        self.assertTrue(bootstrap.rstrip().endswith("RESET ROLE;"))
+    def test_central_rebuild_uses_owner_and_applies_migration(self) -> None:
+        reset = RESET.read_text(encoding="utf-8")
+        self.assertIn("SET ROLE perfect_catalog_owner;", reset)
+        self.assertIn("\\ir ../migrations/0007_secure_intake.sql", reset)
+        self.assertIn("RESET ROLE;", reset)
 
 
 if __name__ == "__main__":

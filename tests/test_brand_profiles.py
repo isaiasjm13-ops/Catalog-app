@@ -92,8 +92,8 @@ class BrandProfileTests(unittest.TestCase):
         template = (ROOT / "src/perfect_catalog/templates/operator_import_plan.html").read_text(encoding="utf-8")
         self.assertIn('name="brand_code"', template)
 
-    def test_brand_workflow_launcher_applies_missing_prerequisite_once(self) -> None:
-        bootstrap = (ROOT / "db/bootstrap/apply_brand_profile_workflow_migration.sql").read_text(encoding="utf-8")
+    def test_central_updater_applies_brand_prerequisites_once(self) -> None:
+        bootstrap = (ROOT / "db/bootstrap/apply_pending_migrations.sql").read_text(encoding="utf-8")
         self.assertIn("to_regclass('perfect_catalog.brand_profile')", bootstrap)
         self.assertIn("\\ir ../migrations/0013_brand_profiles.sql", bootstrap)
         self.assertIn("information_schema.columns", bootstrap)

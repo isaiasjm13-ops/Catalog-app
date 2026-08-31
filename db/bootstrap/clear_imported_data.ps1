@@ -6,6 +6,8 @@ $backupRoot = Join-Path $dataRoot 'backups'
 $psqlPath = 'C:\Program Files\PostgreSQL\18\bin\psql.exe'
 $pgDumpPath = 'C:\Program Files\PostgreSQL\18\bin\pg_dump.exe'
 $sqlPath = Join-Path $PSScriptRoot 'reset_imported_data.sql'
+$migration0017 = Join-Path $projectRoot 'db\migrations\0017_migration_ledger.sql'
+$migration0018 = Join-Path $projectRoot 'db\migrations\0018_companies.sql'
 $databaseName = 'perfect_catalog_dev'
 $activeFolders = @('imports', 'intake', 'images', 'exports')
 
@@ -21,6 +23,8 @@ function Assert-ChildPath {
 if (-not (Test-Path -LiteralPath $psqlPath)) { throw "psql no existe: $psqlPath" }
 if (-not (Test-Path -LiteralPath $pgDumpPath)) { throw "pg_dump no existe: $pgDumpPath" }
 if (-not (Test-Path -LiteralPath $sqlPath)) { throw "SQL de limpieza no existe: $sqlPath" }
+$checksum0017 = (Get-FileHash -LiteralPath $migration0017 -Algorithm SHA256).Hash.ToLowerInvariant()
+$checksum0018 = (Get-FileHash -LiteralPath $migration0018 -Algorithm SHA256).Hash.ToLowerInvariant()
 
 $listener = Get-NetTCPConnection -LocalPort 8081 -State Listen -ErrorAction SilentlyContinue
 if ($listener) {
@@ -76,7 +80,8 @@ try {
     }
 
     Write-Host 'Limpiando datos y reaplicando migraciones...'
-    & $psqlPath -X -h localhost -p 5432 -U postgres -d $databaseName -v ON_ERROR_STOP=1 -f $sqlPath
+    & $psqlPath -X -h localhost -p 5432 -U postgres -d $databaseName -v ON_ERROR_STOP=1 `
+        -v "checksum_0017=$checksum0017" -v "checksum_0018=$checksum0018" -f $sqlPath
     if ($LASTEXITCODE -ne 0) {
         throw "psql termino con codigo $LASTEXITCODE. El respaldo esta en: $backupDir"
     }

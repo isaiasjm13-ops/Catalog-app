@@ -1,5 +1,20 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-31: limpieza de ejecutores de migración obsoletos
+
+- Se eliminaron 26 wrappers internos duplicados (`apply_*_migration.sql` y
+  `run_*_migration.ps1`). Eran rutas históricas de ejecución individual, ya sustituidas por
+  `ACTUALIZAR-SISTEMA.cmd` y el actualizador central con detección de pendientes.
+- Se conservaron todos los accesos públicos con funciones vigentes: iniciar operador, iniciar
+  catálogo publicado, actualizar sistema, preparar multiempresa, limpiar importaciones,
+  restablecer acceso y validar bloque.
+- La reconstrucción voluntaria de `LIMPIAR-IMPORTACIONES.cmd` aplica ahora directamente 0001-0018
+  en orden y entrega los checksums de 0017-0018. Así no depende de archivos retirados ni falla al
+  reconstruir el ledger multiempresa.
+- Los tests de contrato verifican la ruta central y no ejecutores individuales obsoletos.
+- Verificación: 266 pruebas correctas; 6 integraciones PostgreSQL omitidas sin credenciales. No se
+  borraron importaciones, imágenes, respaldos ni recursos de marca durante esta limpieza de código.
+
 ## Bloque 2026-08-31: inventario de marcas desde recurso de red
 
 - Lectura sin modificaciones de `PERFECT/HIGH RES` y `PDM/HIGH RES`: 29 y 89 carpetas.
