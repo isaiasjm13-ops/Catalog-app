@@ -3,24 +3,14 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable
 
+from .vehicle_makes import VEHICLE_MAKE_ALIASES
 
-PARSER_VERSION = "vehicle-name-suggestions-v2"
+
+PARSER_VERSION = "vehicle-name-suggestions-v3"
 REVIEW_STATUS = "pending_review"
 SOURCE_PROFILES = frozenset({"generic", "perfect", "pdm"})
 
-_BRANDS = {
-    "TOY.": "Toyota", "TOYO.": "Toyota", "TOYOTA": "Toyota",
-    "NIS.": "Nissan", "NISS.": "Nissan", "NISSAN": "Nissan",
-    "MIT.": "Mitsubishi", "MITS.": "Mitsubishi", "MITSUBISHI": "Mitsubishi",
-    "HON.": "Honda", "HONDA": "Honda", "HYU.": "Hyundai", "HYUNDAI": "Hyundai",
-    "CHEV.": "Chevrolet", "CHEVROLET": "Chevrolet", "GM": "Chevrolet",
-    "FORD": "Ford", "MAZDA": "Mazda", "KIA": "Kia", "VW": "Volkswagen",
-    "VOLKSWAGEN": "Volkswagen", "SUZUKI": "Suzuki", "RENAULT": "Renault",
-    "ISUZU": "Isuzu", "DAIHATSU": "Daihatsu", "SUBARU": "Subaru",
-    "DODGE": "Dodge", "JEEP": "Jeep", "HINO": "Hino", "BMW": "BMW",
-    "MERCEDES": "Mercedes-Benz", "M.BENZ": "Mercedes-Benz",
-    "CHERY": "Chery", "GEELY": "Geely", "GREAT WALL": "Great Wall",
-}
+_BRANDS = VEHICLE_MAKE_ALIASES
 _BRAND_RE = re.compile(
     r"(?<![A-Z0-9])(" + "|".join(re.escape(k) for k in sorted(_BRANDS, key=len, reverse=True)) + r")(?![A-Z0-9])",
     re.IGNORECASE,

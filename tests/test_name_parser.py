@@ -1,9 +1,35 @@
 import unittest
 
 from perfect_catalog.name_parser import PARSER_VERSION, parse_product_name
+from perfect_catalog.vehicle_makes import VEHICLE_MAKES, VEHICLE_MAKE_ALIASES
 
 
 class NameParserTests(unittest.TestCase):
+    def test_curated_registry_contract_is_stable_and_deduplicated(self) -> None:
+        self.assertEqual(len(VEHICLE_MAKES), 100)
+        self.assertEqual(len(VEHICLE_MAKE_ALIASES), 122)
+        self.assertEqual(len(VEHICLE_MAKES), len(set(VEHICLE_MAKES)))
+
+    def test_global_registry_recognizes_current_aliases_without_publishing_them(self) -> None:
+        cases = {
+            "CHIREY TIGGO 7 2022-2025 1.5L": "Chery",
+            "GWM POER 2021-2024 2.0L": "Great Wall",
+            "MERCEDES-BENZ SPRINTER 2019-2024 2.1L": "Mercedes-Benz",
+            "SSANG YONG KORANDO 2014-2018 2.0L": "KGM",
+            "VW AMAROK 2011-2020 2.0L": "Volkswagen",
+            "CITROËN C3 2018-2023 1.2L": "Citroën",
+            "MARUTI SUZUKI SWIFT 2017-2024 1.2L": "Maruti Suzuki",
+        }
+        for source, expected in cases.items():
+            with self.subTest(source=source):
+                parsed = parse_product_name(source)
+                self.assertEqual(parsed["applications"][0]["vehicle_brand"], expected)
+                self.assertEqual(parsed["review_status"], "pending_review")
+
+    def test_ambiguous_generic_abbreviations_are_not_claimed_as_vehicle_makes(self) -> None:
+        parsed = parse_product_name("KIT GM RAM MINI SEAT MAN 2018-2020")
+        self.assertEqual(parsed["applications"], [])
+
     def test_vehicle_data_is_only_a_pending_review_suggestion(self) -> None:
         result = parse_product_name("EMPAQUE TOY. COROLLA 1.8L 2010-2015 DEL. [11213-0T020]")
         self.assertEqual(result["parser_version"], PARSER_VERSION)

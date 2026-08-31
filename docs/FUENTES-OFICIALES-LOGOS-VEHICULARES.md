@@ -1,6 +1,14 @@
 # Fuentes oficiales de logos vehiculares
 
-Verificado el 31 de agosto de 2026 para las 15 marcas que reconoce actualmente el parser.
+Verificado el 31 de agosto de 2026. El directorio siguiente cubre las fuentes comprobadas
+manualmente; no pretende conceder derechos sobre los activos.
+
+El parser v3 reconoce 100 marcas normalizadas y 122 alias. La cobertura se mantiene en
+`src/perfect_catalog/vehicle_makes.py` y se basa en fabricantes probables para catálogos de
+repuestos de América Latina, Norteamérica, Europa y Asia. Se contrastó la metodología con la API
+vehicular oficial vPIC de NHTSA y con la clasificación de fabricantes del JRC europeo. No se copió
+el catálogo completo de vPIC porque incluye fabricantes legales, carroceros y remolques que
+producirían falsos positivos.
 
 ## Regla de uso
 
@@ -38,3 +46,11 @@ Verificado el 31 de agosto de 2026 para las 15 marcas que reconoce actualmente e
 4. Construir una versión nueva del catálogo. Los releases anteriores son inmutables.
 
 Los logos vehiculares aparecen solamente junto al nombre de la marca del vehículo. No reemplazan el logo de la empresa ni la marca del producto.
+
+## Logos todavía no verificados
+
+Una marca reconocida por el parser no recibe un logo inventado ni descargado de agregadores. Cuando
+aparezca por primera vez, queda como sugerencia pendiente. Tras aprobarla, se habilita en **Marcas →
+Logos de marcas vehiculares**, donde debe cargarse el archivo entregado por el fabricante,
+distribuidor o centro de prensa oficial. El reconocimiento del parser funciona aunque todavía no
+exista logo.

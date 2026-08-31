@@ -1180,3 +1180,12 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 - `docs/FUENTES-OFICIALES-LOGOS-VEHICULARES.md` registra las fuentes corporativas verificadas para las 15 marcas reconocidas por el parser y advierte las restricciones de uso comercial/editorial.
 - Se identificaron transiciones vigentes que requieren cuidado: Honda 2026, Mazda 2025 y Suzuki 2025 no deben sustituirse indiscriminadamente en modelos o mercados anteriores.
 - No requiere migración de base de datos. Los colores se cambian en `INICIAR-REVISOR.cmd` → **Marcas** → **Identidad madre** después de seleccionar la empresa activa; hay que construir una edición nueva para propagarlos.
+
+## 2026-08-31 - Registro vehicular global del parser v3
+
+- El diccionario embebido se separó en `vehicle_makes.py`: 100 marcas normalizadas y 122 alias de turismos, SUV, pickups y camiones probables en América Latina, Norteamérica, Europa y Asia.
+- Incluye equivalencias comerciales relevantes como Chirey→Chery, GWM→Great Wall, SsangYong→KGM, Chevy→Chevrolet y VW→Volkswagen.
+- Se retiró la inferencia insegura GM→Chevrolet y no se aceptan como marca abreviaturas genéricas aisladas como RAM, MINI, SEAT o MAN.
+- Las detecciones continúan siendo `pending_review`: no se publican ni aprueban automáticamente. Solo crean la marca al materializar una aplicación revisada.
+- Los logos permanecen separados del parser. No se incorporan archivos de terceros o limitados a uso editorial; cada marca aprobada habilita su carga desde fuente oficial en **Marcas**.
+- Referencias de cobertura: API vPIC de NHTSA y clasificación de fabricantes JRC/Comisión Europea. No requiere migración.

@@ -147,8 +147,11 @@ interlineado 1.8; las fichas sin imagen recuperan el espacio fotográfico en vez
 
 La misma pantalla permite asociar un logo independiente a cada marca vehicular aprobada. Este
 activo aparece únicamente junto al nombre de la marca del vehículo cuando el catálogo se agrupa
-por ese campo; no sustituye el logo de Perfect Trading ni el de la marca del producto. Después de
-recibir esta función, ejecuta una vez `ACTUALIZAR-SISTEMA.cmd` para aplicar la migración `0016`.
+por ese campo; no sustituye el logo de Perfect Trading ni el de la marca del producto.
+El parser v3 reconoce 100 marcas vehiculares normalizadas mediante 122 nombres y abreviaturas
+controladas. Solo materializa como pendiente las marcas encontradas realmente en una importación;
+los logos son activos visuales independientes y no intervienen en la detección.
+La migración `0016` debe estar aplicada; el actualizador central la detecta automáticamente.
 
 La misma consola incorpora un centro de ingreso en `/operator/intake`. Si el actualizador lo solicita,
 ejecuta `ACTUALIZAR-SISTEMA.cmd`. Recibe XLSX/CSV/TSV de Odoo, PDF y paquetes ZIP de imágenes o
