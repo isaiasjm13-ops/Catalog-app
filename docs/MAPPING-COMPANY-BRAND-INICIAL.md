@@ -7,9 +7,10 @@ por `PREPARAR-MULTIEMPRESA.cmd` antes de escribir SQL estructural.
 |---|---|---|---|---|
 | Perfect Company | Perfect | PENDIENTE | Marcas propias de Perfect Company | Por verificar |
 | KMC - King Motors Company | A1 | PENDIENTE | A1 pertenece exclusivamente a KMC | Por verificar |
-| Natsuki | Natsuki | PENDIENTE | Company y Brand distintas con mismo nombre | Por verificar |
+| Natsuki | Natsuki | NATSUKI (193 productos) | Company y Brand distintas con mismo nombre | Verificado en BD |
 | Masaki | Masaki | PENDIENTE | Company y Brand distintas con mismo nombre | Por verificar |
 | PDM | Marcas OEM por definir | PENDIENTE | Sólo marcas originales/OEM aprobadas | Bloqueado por lista |
+| PENDIENTE | Exact Cars | EXACTCARS (279 productos) | No asignar sin confirmación comercial | Bloqueante |
 
 ## Decisiones que debe confirmar el informe y el usuario
 
@@ -23,3 +24,11 @@ por `PREPARAR-MULTIEMPRESA.cmd` antes de escribir SQL estructural.
 
 No se permite asignar automáticamente una marca desconocida ni ejecutar el backfill con filas
 `PENDIENTE`.
+
+## Evidencia de la base del 2026-08-31
+
+- 472 productos activos: 193 Natsuki y 279 Exact Cars.
+- Dos releases publicados: uno Natsuki y uno Exact Cars, con 472 items en total.
+- Dos perfiles y dos revisiones visuales, ambos de scope `brand`; no existe identidad `company`.
+- 472 referencias internas aprobadas; no hay referencias cruzadas ni duplicados normalizados.
+- Perfect, A1 y Masaki no existen todavía como Brand en la base auditada.

@@ -11,6 +11,8 @@ class MultiCompanyPhaseZeroTests(unittest.TestCase):
         self.assertIn("Read-Host 'Contraseña de PostgreSQL para postgres' -AsSecureString", script)
         self.assertIn("--format=custom", script)
         self.assertIn("--list $backupFile", script)
+        self.assertIn("Get-FileHash -LiteralPath $backupFile -Algorithm SHA256", script)
+        self.assertIn("Get-FileHash -LiteralPath $backupFile -Algorithm SHA256", script)
         self.assertIn("audit_pre_multicompany.sql", script)
         self.assertIn("Remove-Item Env:PGPASSWORD", script)
         self.assertNotIn("DROP ", script.upper())

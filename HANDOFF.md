@@ -1,5 +1,19 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-31: evidencia real y diseño multiempresa
+
+- Fase 0 ejecutada correctamente: dump custom de 2.214.158 bytes, 427 entradas verificables y
+  checksum SHA-256 registrado. PostgreSQL 18.6 confirma las estructuras 0001-0016.
+- Base real: 472 productos activos (NATSUKI 193, EXACTCARS 279), dos releases publicados, dos
+  perfiles/revisiones visuales `brand`, ninguna identidad `company`, y 472 referencias internas
+  aprobadas sin duplicados entre productos.
+- `DISENO-MIGRACION-MULTIEMPRESA.md` define Company sin Corporation inicial, Company autoritativa
+  por Brand, categorías compartidas, código de Brand global durante transición y etapas 0017A-C/0018.
+- NATSUKI queda mapeada con evidencia. El backfill está bloqueado únicamente hasta confirmar a qué
+  Company pertenece EXACTCARS; Perfect, A1 y Masaki todavía no existen en la BD.
+- El preparador ahora genera automáticamente el archivo SHA-256 para futuros backups.
+- Verificación: 263 pruebas pasan; 6 integraciones PostgreSQL siguen omitidas en la suite ordinaria.
+
 ## Bloque 2026-08-31: inicio controlado de Fase 0 multiempresa
 
 - `PREPARAR-MULTIEMPRESA.cmd` concentra el primer paso seguro: contraseña `postgres` oculta,

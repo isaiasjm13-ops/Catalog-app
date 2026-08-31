@@ -15,6 +15,8 @@ $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $phaseRoot = Join-Path $projectRoot 'backups\phase0-multicompany'
 $backupFile = Join-Path $phaseRoot "perfect_catalog_dev-$timestamp.dump"
 $backupList = Join-Path $phaseRoot "perfect_catalog_dev-$timestamp.contents.txt"
+$backupHash = Join-Path $phaseRoot "perfect_catalog_dev-$timestamp.sha256.txt"
+$backupHash = Join-Path $phaseRoot "perfect_catalog_dev-$timestamp.sha256.txt"
 $auditReport = Join-Path $phaseRoot "audit-pre-multicompany-$timestamp.txt"
 New-Item -ItemType Directory -Force -Path $phaseRoot | Out-Null
 
@@ -37,6 +39,12 @@ try {
     if ($LASTEXITCODE -ne 0 -or (Get-Item -LiteralPath $backupList).Length -lt 100) {
         throw "pg_restore no pudo verificar el backup (código $LASTEXITCODE)."
     }
+    $hash = Get-FileHash -LiteralPath $backupFile -Algorithm SHA256
+    ($hash.Hash.ToLowerInvariant() + '  ' + (Split-Path -Leaf $backupFile)) |
+        Set-Content -LiteralPath $backupHash -Encoding ascii
+    $hash = Get-FileHash -LiteralPath $backupFile -Algorithm SHA256
+    ($hash.Hash.ToLowerInvariant() + '  ' + (Split-Path -Leaf $backupFile)) |
+        Set-Content -LiteralPath $backupHash -Encoding ascii
 
     Write-Host '3/3 Ejecutando auditoría SQL de solo lectura...'
     & $psqlPath -X -w -h 127.0.0.1 -p 5432 -U postgres -d perfect_catalog_dev `
@@ -48,6 +56,8 @@ try {
     Write-Host 'FASE 0 COMPLETADA.' -ForegroundColor Green
     Write-Host "Backup: $backupFile"
     Write-Host "Verificación: $backupList"
+    Write-Host "Checksum: $backupHash"
+    Write-Host "Checksum: $backupHash"
     Write-Host "Auditoría: $auditReport"
 }
 finally {

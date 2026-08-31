@@ -217,6 +217,18 @@ Antes de editar estructura deben cumplirse estas condiciones:
 - [ ] Feature flag/Company predeterminada definida para compatibilidad gradual.
 - [ ] Casos de aislamiento y rollback escritos antes de ejecutar SQL.
 
-Hasta entonces el estado es: **auditoría completa de código y especificación; implementación
-estructural bloqueada correctamente por evidencia insuficiente de la base real y decisiones de
-mapping**.
+## 9. Evidencia PostgreSQL obtenida el 2026-08-31
+
+- Backup custom de 2.214.158 bytes verificado con `pg_restore --list` (427 entradas TOC) y SHA-256
+  `d020b6f96147ea06f03992bddaf0011414dbcbc42984c330825f5c243b1fd28f`.
+- PostgreSQL 18.6; 34 tablas y presencia estructural confirmada de 0001-0016.
+- 472 productos activos: NATSUKI 193 y EXACTCARS 279.
+- Dos releases publicados y 472 items de release.
+- Dos perfiles/revisiones visuales de scope `brand`; cero revisiones `company`.
+- 472 referencias `internal` aprobadas; cero referencias cruzadas y cero códigos normalizados
+  vinculados a más de un producto.
+- Roles de aplicación/readonly conservan SELECT; el owner mantiene administración total.
+
+La evidencia elimina el bloqueo técnico de inspección y confirma que el backfill puede ser pequeño,
+pero queda un bloqueo comercial: **EXACTCARS no tiene Company confirmada en la especificación**.
+NATSUKI sí puede mapearse a Natsuki Company. No se escribirá 0017B hasta resolver Exact Cars.
