@@ -211,6 +211,11 @@ class RowPreparationTests(unittest.TestCase):
         enrichment = row.normalized["name_enrichment"]
         self.assertEqual(enrichment["review_status"], "pending_review")
         self.assertEqual(enrichment["additional_references"], ["ALT-99"])
+        candidates = row.normalized["reference_candidates"]
+        self.assertEqual(
+            [(item["reference_type"], item["value_normalized"], item["review_status"]) for item in candidates],
+            [("fmsi", "D1035-7779", "pending"), ("additional", "ALT-99", "pending")],
+        )
         self.assertEqual(enrichment["applications"][0]["vehicle_brand"], "Chevrolet")
         self.assertIsNone(row.normalized["quantity_on_hand"])
         self.assertNotIn("quantity_on_hand_invalid", {issue["code"] for issue in row.issue_specs})

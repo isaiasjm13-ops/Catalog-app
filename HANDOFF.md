@@ -1,5 +1,19 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-31: candidatos A1 seguros en dry-run (reglas v0.4)
+
+- El enriquecimiento convierte OEM, FMSI, referencias adicionales dedicadas y referencias alternas
+  del nombre en candidatos tipados con original, normalizada, confianza, procedencia y estado
+  `pending`. Duplicados se consolidan y nunca se replica la referencia interna como A1.
+- El dry-run detecta el mismo código candidato en productos distintos del archivo y consulta los
+  propietarios no rechazados dentro de la Company activa. Cualquier colisión crea
+  `cross_reference_conflict` de severidad error y bloquea esa identidad sin escribir datos maestros.
+- Nuevos planes usan `normalization-v0.4`; los planes exactos v0.3 siguen verificables para no dejar
+  trabajo ya revisado inutilizable. Versiones anteriores permanecen rechazadas.
+- Esta fase conserva candidatos únicamente en staging/plan y los incluye en el fingerprint. No los
+  inserta todavía en `product_reference` ni los publica. Siguiente compuerta: mostrarlos en la cola
+  de identidad y materializarlos pendientes para que la misma decisión humana los apruebe o rechace.
+
 ## Bloque 2026-08-31: búsqueda multipalabra offline en HTML
 
 - El HTML ligero y el autónomo generan un índice explícito por producto con referencia original y

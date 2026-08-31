@@ -20,6 +20,7 @@ from .importer import (
     CONTRACT_VERSION,
     NAMESPACE,
     RULES_VERSION,
+    SUPPORTED_RULES_VERSIONS,
     approval_fingerprint,
     plan_hash,
     plan_item_hash,
@@ -128,7 +129,8 @@ def verify_plan_integrity(
     if supplied != recalculated_fingerprint:
         raise PermissionError("El fingerprint proporcionado no corresponde al plan exacto.")
     if require_current_versions and (
-        plan["contract_version"] != CONTRACT_VERSION or plan["rules_version"] != RULES_VERSION
+        plan["contract_version"] != CONTRACT_VERSION
+        or plan["rules_version"] not in SUPPORTED_RULES_VERSIONS
     ):
         raise RuntimeError(
             "Las versiones del plan no coinciden con el código actual; genere y revise un plan nuevo."

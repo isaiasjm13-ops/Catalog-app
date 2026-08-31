@@ -22,7 +22,8 @@ from .name_parser import parse_product_name
 
 
 CONTRACT_VERSION = "natsuki-empaques-v0.2"
-RULES_VERSION = "normalization-v0.3"
+RULES_VERSION = "normalization-v0.4"
+SUPPORTED_RULES_VERSIONS = frozenset({"normalization-v0.3", RULES_VERSION})
 PROFILER_VERSION = "0.1"
 SOURCE_CODE = "odoo"
 SOURCE_MODEL = "product.template"
@@ -117,6 +118,41 @@ def _as_bool(value: Any) -> bool | None:
     if key in {"false", "falso", "no", "0"}:
         return False
     return None
+
+
+def reference_candidates(enrichment: dict[str, Any]) -> list[dict[str, Any]]:
+    """Convierte inferencias del parser en candidatos tipados; nunca los aprueba."""
+    candidates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def add(value: Any, kind: str, confidence: Any, source: str) -> None:
+        original = str(value or "").strip()
+        normalized = normalize_reference(original)
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        candidates.append({
+            "reference_type": kind,
+            "value_original": original,
+            "value_normalized": normalized,
+            "confidence": float(confidence),
+            "source": source,
+            "review_status": "pending",
+        })
+
+    for value in enrichment.get("oem_references") or []:
+        add(value, "oem", 0.82, "product_name")
+    for value in enrichment.get("fmsi_references") or []:
+        add(value, "fmsi", 0.82, "product_name")
+    for item in enrichment.get("reference_suggestions") or []:
+        kind = str(item.get("kind") or "alternate")
+        add(
+            item.get("value"),
+            "additional" if kind == "additional" else "fmsi" if kind == "fmsi" else "alternate",
+            item.get("confidence", 0.5),
+            str(item.get("source") or "product_name"),
+        )
+    return candidates
 
 
 def _as_number(value: Any) -> int | float | None:
@@ -234,6 +270,16 @@ def prepare_rows(sheet_name: str, headers: tuple[str, ...], rows: list[list[Any]
                 "message": "El nombre del producto está vacío.",
                 "column_name": "Nombre",
             })
+        enrichment = parse_product_name(
+            name_original,
+            source_profile="perfect",
+            additional_references=field("Referencias Adicionales") or "",
+        )
+        normalized_internal = normalize_reference(reference_original)
+        candidates = [
+            candidate for candidate in reference_candidates(enrichment)
+            if candidate["value_normalized"] != normalized_internal
+        ]
         normalized = {
             "source_model": SOURCE_MODEL,
             "brand": BRAND,
@@ -245,7 +291,7 @@ def prepare_rows(sheet_name: str, headers: tuple[str, ...], rows: list[list[Any]
             "name_original": name_original,
             "name_normalized": normalize_name(name_original),
             "internal_reference_original": reference_original,
-            "internal_reference_normalized": normalize_reference(reference_original),
+            "internal_reference_normalized": normalized_internal,
             "variant_count_observed": _as_number(field("# Variantes de producto")),
             "quantity_on_hand": None,
             "uom_original": None,
@@ -256,11 +302,8 @@ def prepare_rows(sheet_name: str, headers: tuple[str, ...], rows: list[list[Any]
             "show_quantity_status": None,
             "source_active": None,
             "catalog_status": "pending_review",
-            "name_enrichment": parse_product_name(
-                name_original,
-                source_profile="perfect",
-                additional_references=field("Referencias Adicionales") or "",
-            ),
+            "name_enrichment": enrichment,
+            "reference_candidates": candidates,
         }
         row_evidence = {
             "headers": list(headers),
@@ -359,6 +402,31 @@ def _existing_products(
     return matches
 
 
+def _existing_reference_owners(
+    connection: Connection[Any], company_id: uuid.UUID,
+    references: list[str],
+) -> dict[str, set[uuid.UUID]]:
+    owners: dict[str, set[uuid.UUID]] = defaultdict(set)
+    if not references:
+        return owners
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT pr.value_normalized, pr.product_template_id
+            FROM perfect_catalog.product_reference AS pr
+            JOIN perfect_catalog.brand AS b ON b.brand_id=pr.brand_id
+            WHERE b.company_id=%s
+              AND COALESCE(pr.review_status, 'pending') <> 'rejected'
+              AND pr.value_normalized = ANY(%s)
+            ORDER BY pr.value_normalized, pr.product_template_id
+            """,
+            (company_id, references),
+        )
+        for reference, product_id in cursor.fetchall():
+            owners[str(reference)].add(product_id)
+    return owners
+
+
 def _make_item(
     plan_id: uuid.UUID,
     file_id: uuid.UUID,
@@ -421,6 +489,7 @@ def _write_reports(summary: dict[str, Any], output_dir: Path) -> tuple[Path, Pat
         f"- Aplicaciones sugeridas / confianza alta: {summary['name_enrichment']['application_suggestions']} / {summary['name_enrichment']['high_confidence_applications']}",
         f"- Motores sugeridos / filas con años / filas con posición: {summary['name_enrichment']['engine_suggestions']} / {summary['name_enrichment']['with_year_range']} / {summary['name_enrichment']['with_position']}",
         f"- OEM / FMSI / referencias adicionales sugeridas: {summary['name_enrichment']['oem_reference_suggestions']} / {summary['name_enrichment']['fmsi_reference_suggestions']} / {summary['name_enrichment']['dedicated_additional_references']}",
+        f"- Candidatos A1 tipados pendientes: {summary['name_enrichment'].get('reference_candidates', 0)}",
         f"- Escrituras empresariales: {summary['business_writes']}",
         "",
         "El contenido Base64 no se incluye en este reporte y ninguna imagen fue decodificada.",
@@ -620,6 +689,17 @@ def run_dry_run(
             existing = _existing_products(
                 connection, source_system_id, references, company_id=company_id,
             )
+            candidate_products: dict[str, set[str]] = defaultdict(set)
+            candidate_values: list[str] = []
+            for row in prepared:
+                internal = row.normalized["internal_reference_normalized"]
+                for candidate in row.normalized["reference_candidates"]:
+                    value = candidate["value_normalized"]
+                    candidate_products[value].add(internal)
+                    candidate_values.append(value)
+            existing_candidate_owners = _existing_reference_owners(
+                connection, company_id, sorted(set(candidate_values)),
+            )
             items: list[dict[str, Any]] = []
             order = 0
             for row, staging_id in zip(prepared, staging_ids, strict=True):
@@ -640,13 +720,27 @@ def run_dry_run(
                     {"code": issue["code"], "severity": issue["severity"]}
                     for issue in row.issue_specs
                 ]
+                candidate_conflicts = sorted({
+                    candidate["value_normalized"]
+                    for candidate in row.normalized["reference_candidates"]
+                    if len(candidate_products[candidate["value_normalized"]]) > 1
+                    or any(owner != planned_id for owner in existing_candidate_owners.get(
+                        candidate["value_normalized"], set()
+                    ))
+                })
+                if candidate_conflicts:
+                    row_issue_codes.append({
+                        "code": "cross_reference_conflict",
+                        "severity": "error",
+                        "references": candidate_conflicts,
+                    })
                 inventory_complete = False
                 if not inventory_complete:
                     row_issue_codes.append({
                         "code": "inventory_snapshot_not_planned",
                         "severity": "warning",
                     })
-                if any(issue["severity"] in {"error", "fatal"} for issue in row.issue_specs):
+                if any(issue["severity"] in {"error", "fatal"} for issue in row_issue_codes):
                     order += 1
                     items.append(_make_item(
                         plan_id, file_id, staging_id, order, "blocked", planned_id, resolved_id,
@@ -675,6 +769,7 @@ def run_dry_run(
                         "catalog_status": "pending_review",
                         "source_active": None,
                         "name_enrichment": row.normalized["name_enrichment"],
+                        "reference_candidates": row.normalized["reference_candidates"],
                     },
                     row_issue_codes,
                 ))
@@ -802,6 +897,7 @@ def run_dry_run(
             "oem_reference_suggestions": sum(len(item["oem_references"]) for item in enrichments),
             "fmsi_reference_suggestions": sum(len(item["fmsi_references"]) for item in enrichments),
             "dedicated_additional_references": sum(len(item["additional_references"]) for item in enrichments),
+            "reference_candidates": sum(len(row.normalized["reference_candidates"]) for row in prepared),
         },
         "media_present": sum(row.normalized["image_status"] == "present" for row in prepared),
         "media_absent": sum(row.normalized["image_status"] == "absent" for row in prepared),

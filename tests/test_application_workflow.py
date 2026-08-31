@@ -133,6 +133,21 @@ class PlanIntegrityTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "versiones"):
             verify_plan_integrity(plan, items, fingerprint)
 
+    def test_immediately_previous_rules_remain_verifiable(self) -> None:
+        plan, items, _ = make_plan()
+        plan["rules_version"] = "normalization-v0.3"
+        digest = plan_hash(
+            plan["file_sha256"], items,
+            contract_version=plan["contract_version"], rules_version=plan["rules_version"],
+        )
+        fingerprint = approval_fingerprint(
+            plan["file_sha256"], digest,
+            contract_version=plan["contract_version"], rules_version=plan["rules_version"],
+        )
+        plan["plan_sha256"] = digest
+        plan["approval_fingerprint_sha256"] = fingerprint
+        verify_plan_integrity(plan, items, fingerprint)
+
     def test_unsupported_update_is_rejected_before_writes(self) -> None:
         plan, items, _ = make_plan()
         items[0]["operation_type"] = "update"
