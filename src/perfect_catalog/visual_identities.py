@@ -91,7 +91,7 @@ def list_visual_identities(
 def create_visual_identity(
     *, scope: str, company_id: uuid.UUID | None, brand_profile_id: uuid.UUID | None,
     vehicle_make_id: uuid.UUID | None = None, display_name: str,
-    colors: dict[str, str], filename: str, content: bytes, actor: str, reason: str,
+    colors: dict[str, str], filename: str | None, content: bytes | None, actor: str, reason: str,
     asset_root: Path, config: DatabaseConfig, password: str,
 ) -> dict[str, Any]:
     targets = {
@@ -111,15 +111,33 @@ def create_visual_identity(
         normalized[key] = value
     if _contrast_ratio(normalized["ink_color"], normalized["paper_color"]) < 4.5 or _contrast_ratio(normalized["primary_color"], normalized["paper_color"]) < 4.5:
         raise ValueError("Texto y color principal deben alcanzar contraste 4.5:1 sobre el fondo.")
-    media_type, extension = _validate_logo(filename, content)
-    digest = hashlib.sha256(content).hexdigest()
-    relative = Path("objects") / digest[:2] / f"{digest}.{extension}"
-    root = asset_root.resolve(); target = (root / relative).resolve()
-    if not target.is_relative_to(root): raise ValueError("Ruta de logo no segura.")
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists() and target.read_bytes() != content: raise RuntimeError("Colisión SHA-256 de logo.")
-    if not target.exists(): target.write_bytes(content)
     with psycopg.connect(**config.connection_kwargs(password), row_factory=dict_row) as connection:
+        if content:
+            media_type, extension = _validate_logo(filename or "logo", content)
+            digest = hashlib.sha256(content).hexdigest()
+            relative = Path("objects") / digest[:2] / f"{digest}.{extension}"
+            root = asset_root.resolve(); target = (root / relative).resolve()
+            if not target.is_relative_to(root): raise ValueError("Ruta de logo no segura.")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists() and target.read_bytes() != content: raise RuntimeError("Colisión SHA-256 de logo.")
+            if not target.exists(): target.write_bytes(content)
+            original_filename = Path(filename or "logo").name
+        else:
+            previous = connection.execute(
+                """SELECT logo_sha256, logo_media_type, logo_storage_relpath, original_filename
+                   FROM perfect_catalog.visual_identity_revision
+                   WHERE scope=%s AND company_id IS NOT DISTINCT FROM %s
+                     AND brand_profile_id IS NOT DISTINCT FROM %s
+                     AND vehicle_make_id IS NOT DISTINCT FROM %s
+                   ORDER BY created_at DESC, visual_identity_revision_id DESC LIMIT 1""",
+                (scope, company_id, brand_profile_id, vehicle_make_id),
+            ).fetchone()
+            if previous is None:
+                raise ValueError("Debes seleccionar un logo para crear esta identidad.")
+            digest = previous["logo_sha256"]
+            media_type = previous["logo_media_type"]
+            relative = Path(previous["logo_storage_relpath"])
+            original_filename = previous["original_filename"]
         row = connection.execute(
             """INSERT INTO perfect_catalog.visual_identity_revision (
                  visual_identity_revision_id, scope, company_id, brand_profile_id, vehicle_make_id, display_name,
@@ -128,7 +146,7 @@ def create_visual_identity(
                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (uuid.uuid4(), scope, company_id, brand_profile_id, vehicle_make_id, display_name, normalized["primary_color"],
              normalized["secondary_color"], normalized["ink_color"], normalized["paper_color"],
-             digest, media_type, relative.as_posix(), Path(filename).name, actor, reason),
+             digest, media_type, relative.as_posix(), original_filename, actor, reason),
         ).fetchone()
     return dict(row)
 

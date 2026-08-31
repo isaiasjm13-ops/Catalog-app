@@ -1173,3 +1173,10 @@ El frontend inicial debe ofrecer una interfaz premium, responsive y moderna. La 
 - Se reprodujo el caso con una imagen horizontal de 1600x900 marcada en sus cuatro bordes y se renderizó localmente en Edge. El original y la copia optimizada conservan su relación de aspecto y no se recortan.
 - Los HTML ya exportados no se modifican retroactivamente: es necesario generar un entregable nuevo para recibir el CSS 1.16.1.
 - Suite completa: 252 pruebas aprobadas; 6 integraciones PostgreSQL opt-in omitidas.
+
+## 2026-08-31 - Paletas editables y fuentes oficiales de logos 1.39.1
+
+- Una empresa o marca con identidad existente puede cambiar sus cuatro colores sin volver a cargar el logo. Se crea una revisión auditada nueva que reutiliza el hash, tipo y ruta del activo anterior; una identidad nueva todavía exige logo.
+- `docs/FUENTES-OFICIALES-LOGOS-VEHICULARES.md` registra las fuentes corporativas verificadas para las 15 marcas reconocidas por el parser y advierte las restricciones de uso comercial/editorial.
+- Se identificaron transiciones vigentes que requieren cuidado: Honda 2026, Mazda 2025 y Suzuki 2025 no deben sustituirse indiscriminadamente en modelos o mercados anteriores.
+- No requiere migración de base de datos. Los colores se cambian en `INICIAR-REVISOR.cmd` → **Marcas** → **Identidad madre** después de seleccionar la empresa activa; hay que construir una edición nueva para propagarlos.

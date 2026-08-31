@@ -54,7 +54,7 @@ from .importer import DEFAULT_MAX_PILOT_ROWS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.39.0"
+OPERATOR_VERSION = "1.39.1"
 LOGGER = logging.getLogger(__name__)
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
@@ -1002,14 +1002,14 @@ def create_operator_app(
             content_length = int(request.headers.get("content-length") or 0)
             if not 0 < content_length <= 6 * 1024 * 1024: raise ValueError("La carga supera el límite permitido.")
             async with request.form(max_files=1, max_fields=12, max_part_size=5 * 1024 * 1024 + 1) as form:
-                upload = form.get("logo")
-                if not isinstance(upload, UploadFile): raise ValueError("Debes seleccionar un logo.")
                 expected = {"csrf_token","scope","brand_profile_id","vehicle_make_id","display_name","primary_color","secondary_color","ink_color","paper_color","reason","confirm","logo"}
-                if set(form) != expected: raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+                if set(form) not in (expected, expected - {"logo"}): raise ValueError("El formulario contiene campos ausentes o desconocidos.")
                 if not _same_origin(request) or not hmac.compare_digest(str(form["csrf_token"]), session.csrf_token):
                     return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
                 if str(form["confirm"]) != "yes": raise ValueError("Debes confirmar la identidad visual.")
-                content = await upload.read(5 * 1024 * 1024 + 1)
+                upload = form.get("logo")
+                if upload is not None and not isinstance(upload, UploadFile): raise ValueError("El logo no es un archivo válido.")
+                content = await upload.read(5 * 1024 * 1024 + 1) if isinstance(upload, UploadFile) else None
                 scope = str(form["scope"])
                 profile_id = _uuid(str(form["brand_profile_id"]), "brand_profile_id") if scope == "brand" else None
                 vehicle_make_id = _uuid(str(form["vehicle_make_id"]), "vehicle_make_id") if scope == "vehicle_make" else None
@@ -1020,7 +1020,8 @@ def create_operator_app(
                     brand_profile_id=profile_id,
                     vehicle_make_id=vehicle_make_id,
                     display_name=str(form["display_name"]), colors={key: str(form[key]) for key in ("primary_color","secondary_color","ink_color","paper_color")},
-                    filename=str(upload.filename or "logo"), content=content, actor=session.actor,
+                    filename=str(upload.filename or "logo") if isinstance(upload, UploadFile) else None,
+                    content=content, actor=session.actor,
                     reason=str(form["reason"]), asset_root=resolved_brand_assets,
                 )
         except (ValueError, RuntimeError, PermissionError) as exc:

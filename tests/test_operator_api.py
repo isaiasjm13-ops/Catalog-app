@@ -1129,7 +1129,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.39.0")
+        self.assertEqual(OPERATOR_VERSION, "1.39.1")
 
     async def test_company_identity_upload_requires_csrf_and_records_logo_without_exposing_it(self) -> None:
         await self.login()
@@ -1169,6 +1169,38 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(recorded["scope"], "company")
         self.assertEqual(recorded["filename"], "perfect.svg")
         self.assertNotIn(b"perfect.svg", accepted.content)
+
+    async def test_existing_company_identity_can_change_colors_without_reuploading_logo(self) -> None:
+        await self.login()
+        revision_id = uuid.uuid4()
+        self.gateway.visual_identities = lambda **_: {
+            "company": {
+                "visual_identity_revision_id": str(revision_id),
+                "display_name": "Perfect Trading International",
+                "primary_color": "#086650", "secondary_color": "#C7DF54",
+                "ink_color": "#17211D", "paper_color": "#FFFFFF",
+            },
+            "brands": {}, "vehicle_makes": [], "vehicle_make_identities": {},
+        }
+        page = await self.client.get("/operator/brands")
+        self.assertIn("Opcional: déjalo vacío para conservar el logo actual.", page.text)
+        response = await self.client.post(
+            "/operator/brands/identity",
+            data={
+                "csrf_token": hidden_value(page.text, "csrf_token"), "scope": "company",
+                "brand_profile_id": "", "vehicle_make_id": "",
+                "display_name": "Perfect Trading International", "primary_color": "#123456",
+                "secondary_color": "#C7DF54", "ink_color": "#17211D",
+                "paper_color": "#FFFFFF", "reason": "Ajuste de paleta corporativa",
+                "confirm": "yes",
+            },
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 303)
+        recorded = self.gateway.visual_identity_records[-1]
+        self.assertIsNone(recorded["filename"])
+        self.assertIsNone(recorded["content"])
+        self.assertEqual(recorded["colors"]["primary_color"], "#123456")
 
     async def test_vehicle_make_logo_is_managed_separately_from_product_brand(self) -> None:
         await self.login()

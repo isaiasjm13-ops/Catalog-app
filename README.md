@@ -116,6 +116,8 @@ cambio crea una revisión auditada; no sobrescribe el historial. Los logos admit
 seguros (máximo 5 MiB). Usa PNG o JPG cuando el mismo archivo deba aparecer también en PDF y
 PowerPoint; SVG se conserva para HTML e InDesign. La identidad queda congelada al construir una
 versión nueva, por lo que un release anterior no cambia retroactivamente.
+Para cambiar solo la paleta de una identidad existente, deja vacío el selector de logo: la revisión
+nueva reutiliza el archivo ya validado. En una identidad nueva el logo continúa siendo obligatorio.
 Los cuatro colores congelados gobiernan también la vista previa y todos los formatos exportados:
 el principal define jerarquía, el secundario aporta acentos, y texto/fondo controlan legibilidad.
 El tema editorial elegido solo actúa como respaldo si no existe un perfil de marca.
