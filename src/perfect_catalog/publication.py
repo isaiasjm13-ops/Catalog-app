@@ -60,6 +60,7 @@ def snapshot_from_record(record: dict[str, Any]) -> dict[str, Any]:
         f"{template_name} — {variant_name}" if variant_name else template_name
     )
     application_details = list(record.get("application_details") or [])
+    cross_references = [dict(item) for item in record.get("cross_references") or []]
     for item in application_details:
         notes = item.get("notes")
         if isinstance(notes, str):
@@ -134,6 +135,19 @@ def snapshot_from_record(record: dict[str, Any]) -> dict[str, Any]:
         "applications": applications,
         "application_details": application_details,
         "engine_types": engine_types,
+        "oem_references": [
+            item["value_original"] for item in cross_references
+            if item.get("reference_type") == "oem"
+        ],
+        "fmsi_references": [
+            item["value_original"] for item in cross_references
+            if item.get("reference_type") == "fmsi"
+        ],
+        "additional_references": [
+            item["value_original"] for item in cross_references
+            if item.get("reference_type") in {"additional", "alternate"}
+        ],
+        "cross_references": cross_references,
         "family": None,
         "source_active": record.get("source_active"),
         "source_updated_at": json_compatible(record.get("source_updated_at")),
@@ -324,6 +338,8 @@ def _load_release_records(
                    approved_image.storage_relpath AS approved_image_relpath,
                    approved_image.content_sha256 AS approved_image_sha256,
                    approved_image.media_type AS approved_image_media_type,
+                   COALESCE(xref.cross_references, '[]'::jsonb) AS cross_references,
+                   COALESCE(xref.unresolved_count, 0) AS unresolved_reference_count,
                    COALESCE(app.application_details, '[]'::jsonb) AS application_details,
                    b.name AS brand_name
             FROM targets AS t
@@ -363,6 +379,24 @@ def _load_release_records(
             ) AS approved_image ON true
             LEFT JOIN LATERAL (
                 SELECT jsonb_agg(jsonb_build_object(
+                           'reference_type', r.reference_type,
+                           'value_original', r.value_original,
+                           'value_normalized', r.value_normalized,
+                           'confidence', r.confidence
+                       ) ORDER BY r.reference_type, r.value_normalized,
+                                  r.product_reference_id) FILTER (
+                           WHERE r.review_status='approved'
+                       ) AS cross_references,
+                       (count(*) FILTER (
+                           WHERE COALESCE(r.review_status, 'pending')='pending'
+                       ))::int AS unresolved_count
+                FROM perfect_catalog.product_reference AS r
+                WHERE r.product_template_id=t.product_template_id
+                  AND r.product_variant_id IS NOT DISTINCT FROM t.product_variant_id
+                  AND NOT (r.reference_type='internal' AND r.is_primary=true)
+            ) AS xref ON true
+            LEFT JOIN LATERAL (
+                SELECT jsonb_agg(jsonb_build_object(
                     'make', vm.name, 'model', vmo.name,
                     'year_from', pac.year_from, 'year_to', pac.year_to,
                     'position', pac.position, 'confidence', pac.confidence,
@@ -388,6 +422,10 @@ def _load_release_records(
 
     if not records:
         raise RuntimeError("La marca no tiene productos activos publicables.")
+    if any(int(record.get("unresolved_reference_count") or 0) for record in records):
+        raise PermissionError(
+            "La marca conserva referencias A1 pendientes; deben revisarse antes del release."
+        )
     invalid = [
         str(record.get("product_variant_id") or record["product_template_id"])
         for record in records

@@ -69,6 +69,16 @@
         <div><dt>Referencia</dt><dd>{{ item.reference_status or 'pending' }}</dd></div>
         <div><dt>Referencias primarias</dt><dd>{{ item.reference_count }}</dd></div>
       </dl>
+      {% if item.get('cross_references') %}
+      <details class="application-evidence" open>
+        <summary>Referencias A1 detectadas · {{ item.get('cross_references')|length }}</summary>
+        <ul>
+          {% for ref in item.get('cross_references') %}
+          <li><b>{{ ref.reference_type|upper }}</b> · <code>{{ ref.value_original }}</code>{% if ref.confidence is not none %} <small>{{ (ref.confidence * 100)|round|int }}% confianza</small>{% endif %}</li>
+          {% endfor %}
+        </ul>
+      </details>
+      {% endif %}
       {% if item.get('vehicle_applications') %}
       <details class="application-evidence" open>
         <summary>Aplicaciones detectadas · {{ item.get('vehicle_applications')|length }}</summary>

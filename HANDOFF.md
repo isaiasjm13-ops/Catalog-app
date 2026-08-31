@@ -1,5 +1,19 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-31: referencias A1 dentro de la revisión y publicación (v1.38)
+
+- Al aplicar un plan nuevo, los candidatos OEM, FMSI, adicionales y alternos se materializan como
+  `product_reference` pendientes. Una defensa adicional impide asignar un código no rechazado a
+  otra identidad de la misma marca aunque el estado haya cambiado después del dry-run.
+- La ficha de revisión muestra todas las A1 detectadas y el `review_sha256` las compromete. Aprobar
+  o rechazar una identidad decide en la misma transacción su referencia interna, todas sus A1 y sus
+  aplicaciones vehiculares; un estado parcial se trata como inconsistente.
+- Los releases sólo incorporan A1 aprobadas y se bloquean si queda alguna pendiente. El snapshot y
+  el HTML exponen OEM, FMSI, adicionales/alternas sin inventar información.
+- No requiere migración: reutiliza `product_reference`. Los planes antiguos no ganan candidatos
+  retroactivamente; hay que generar y aplicar un dry-run nuevo para aprovechar esta fase.
+- Verificación: compilación correcta, `git diff --check` limpio y 277 pruebas correctas; 6 omitidas.
+
 ## Bloque 2026-08-31: candidatos A1 seguros en dry-run (reglas v0.4)
 
 - El enriquecimiento convierte OEM, FMSI, referencias adicionales dedicadas y referencias alternas

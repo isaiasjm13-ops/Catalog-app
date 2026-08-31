@@ -575,10 +575,14 @@ def generate_catalog_html(
             category = escape(str(row.get("category_path") or ""))
             brand = escape(str(row.get("brand") or ""))
             oem = escape(", ".join(map(str, row.get("oem_references") or [])))
+            fmsi = escape(", ".join(map(str, row.get("fmsi_references") or [])))
+            additional = escape(", ".join(map(str, row.get("additional_references") or [])))
             visible_category = category if show_category else ""
             visible_brand = brand if show_brand else ""
             specifications = (
                 (f'<div><dt>OEM</dt><dd>{oem}</dd></div>' if oem and show_oem else "")
+                + (f'<div><dt>FMSI</dt><dd>{fmsi}</dd></div>' if fmsi and show_oem else "")
+                + (f'<div><dt>Alternas</dt><dd>{additional}</dd></div>' if additional and show_oem else "")
                 + (f'<div><dt>Aplicaciones</dt><dd>{applications}</dd></div>' if applications and show_applications else "")
                 + (f'<div><dt>Motor</dt><dd>{engines}</dd></div>' if engines and show_engine else "")
             )

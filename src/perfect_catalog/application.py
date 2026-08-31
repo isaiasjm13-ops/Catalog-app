@@ -544,6 +544,44 @@ def _apply_create_item(
             normalized_reference,
         ),
     )
+    for candidate in proposed.get("reference_candidates") or []:
+        reference_type = str(candidate.get("reference_type") or "").strip().lower()
+        if reference_type not in {"oem", "fmsi", "additional", "alternate"}:
+            raise ValueError("Tipo de referencia A1 no permitido en el plan.")
+        value_original = _require_text(candidate.get("value_original"), "referencia A1")
+        value_normalized = normalize_reference(value_original)
+        if value_normalized != str(candidate.get("value_normalized") or ""):
+            raise RuntimeError("La referencia A1 normalizada no coincide con su evidencia.")
+        conflict = connection.execute(
+            """SELECT product_template_id
+               FROM perfect_catalog.product_reference
+               WHERE brand_id=%s AND value_normalized=%s
+                 AND COALESCE(review_status, 'pending') <> 'rejected'
+                 AND product_template_id<>%s
+               ORDER BY product_template_id LIMIT 1""",
+            (brand_id, value_normalized, product_id),
+        ).fetchone()
+        if conflict is not None:
+            raise PermissionError(
+                f"La referencia A1 {value_normalized} ya pertenece a otra identidad."
+            )
+        candidate_id = uuid.uuid5(
+            NAMESPACE, f"reference:{product_id}:{reference_type}:{value_normalized}"
+        )
+        connection.execute(
+            """
+            INSERT INTO perfect_catalog.product_reference (
+                product_reference_id, source_system_id, brand_id, product_template_id,
+                staging_row_id, reference_type, value_original, value_normalized,
+                is_primary, confidence, review_status
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,false,%s,'pending')
+            """,
+            (
+                candidate_id, plan["source_system_id"], brand_id, product_id,
+                item["staging_row_id"], reference_type, value_original,
+                value_normalized, candidate.get("confidence"),
+            ),
+        )
     _insert_audit_event(
         connection,
         plan=plan,

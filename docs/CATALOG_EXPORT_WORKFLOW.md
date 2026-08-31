@@ -17,8 +17,11 @@ y entregables. Los presets de tema, densidad y perfil InDesign son controles HTM
 sin JavaScript; el servidor sigue validando cada valor contra listas cerradas.
 
 La ficha base mantiene paridad semántica entre vista previa, HTML, PDF, PowerPoint e InDesign:
-referencia, nombre, categoría, marca, referencias OEM y aplicaciones. Cada campo opcional sólo aparece
+referencia, nombre, categoría, marca, referencias OEM/FMSI/adicionales y aplicaciones. Cada campo opcional sólo aparece
 cuando pertenece al snapshot publicado; no se completan datos comerciales por inferencia.
+
+Sólo se congelan referencias A1 aprobadas. La construcción del release falla si encuentra una A1
+pendiente, para impedir que una exportación omita silenciosamente información aún no revisada.
 
 El HTML exportado contiene un índice de búsqueda local por ficha. La consulta se normaliza sin
 acentos, se divide en palabras que pueden escribirse en cualquier orden y compara además una versión

@@ -34,6 +34,14 @@ def publication_record() -> dict[str, object]:
         "source_import_batch_id": uuid.uuid4(),
         "has_processed_media": True,
         "brand_name": "Natsuki",
+        "cross_references": [
+            {"reference_type": "oem", "value_original": "44310-0K020",
+             "value_normalized": "44310-0K020", "confidence": 0.82},
+            {"reference_type": "fmsi", "value_original": "D1035-7779",
+             "value_normalized": "D1035-7779", "confidence": 0.82},
+            {"reference_type": "additional", "value_original": "ALT-99",
+             "value_normalized": "ALT-99", "confidence": 1.0},
+        ],
         "application_details": [
             {"make": "Toyota", "model": "Corolla", "year_from": 2010,
              "year_to": 2015, "position": "delantero", "confidence": 0.9,
@@ -58,6 +66,9 @@ class PublicationContractTests(unittest.TestCase):
         self.assertEqual(snapshot["vehicle_make"], "Toyota")
         self.assertEqual(snapshot["piece_type"], "Empaques")
         self.assertEqual(snapshot["engine_types"], ["1.8L"])
+        self.assertEqual(snapshot["oem_references"], ["44310-0K020"])
+        self.assertEqual(snapshot["fmsi_references"], ["D1035-7779"])
+        self.assertEqual(snapshot["additional_references"], ["ALT-99"])
         self.assertEqual(snapshot["applications"], ["Toyota Corolla 2010–2015 · delantero · 1.8L"])
         self.assertEqual(snapshot["source_updated_at"], "2026-08-24T00:00:00+00:00")
 

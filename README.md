@@ -151,7 +151,8 @@ Véase [`docs/INTAKE_WORKFLOW.md`](docs/INTAKE_WORKFLOW.md).
 Un dry-run se inspecciona desde **Ingresos** mediante **Inspeccionar y autorizar plan**. La consola
 web exige dos decisiones separadas y auditadas: primero aprobar el fingerprint exacto (sin escribir
 productos) y luego aplicar el plan aprobado. Los productos aplicados quedan pendientes de revisión
-individual; nunca se publican automáticamente. Véase [`docs/OPERATOR_WEB.md`](docs/OPERATOR_WEB.md).
+individual; sus OEM, FMSI y referencias adicionales detectadas se muestran y resuelven junto con la
+misma identidad. Nunca se publican automáticamente. Véase [`docs/OPERATOR_WEB.md`](docs/OPERATOR_WEB.md).
 
 Sin `--source` ni `--source-dir`, la API v1.2 lee por defecto el último release publicado de la
 marca solicitada y expone UUID estables. El release completo y cada snapshot se validan contra sus

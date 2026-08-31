@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from unittest.mock import Mock, patch
 
 from perfect_catalog.application import (
+    _apply_create_item,
     _apply_plan_in_connection,
     _insert_vehicle_applications,
     assert_applicable_items,
@@ -235,6 +236,40 @@ class VehicleApplicationMaterializationTests(unittest.TestCase):
         self.assertIn("product_application_candidate", sql)
         candidate_parameters = connection.execute.call_args_list[-1].args[1]
         self.assertIn('"engines": ["1.8L"]', candidate_parameters[-1])
+
+
+class CrossReferenceMaterializationTests(unittest.TestCase):
+    def test_create_materializes_typed_a1_candidate_as_pending(self) -> None:
+        plan, items, _ = make_plan()
+        plan["source_system_id"] = uuid.uuid4()
+        plan["import_batch_id"] = uuid.uuid4()
+        item = items[0]
+        item["proposed_values"]["reference_candidates"] = [{  # type: ignore[index]
+            "reference_type": "oem",
+            "value_original": "44310-0K020",
+            "value_normalized": "44310-0K020",
+            "confidence": 0.94,
+        }]
+        connection = Mock()
+        no_conflict = Mock()
+        no_conflict.fetchone.return_value = None
+        connection.execute.side_effect = [Mock(), Mock(), no_conflict, Mock()]
+
+        with (
+            patch("perfect_catalog.application._ensure_category", return_value=None),
+            patch("perfect_catalog.application._insert_vehicle_applications"),
+            patch("perfect_catalog.application._insert_audit_event"),
+        ):
+            _apply_create_item(
+                connection, plan, item, uuid.uuid4(), "reviewer", "checked", uuid.uuid4()
+            )
+
+        candidate_call = connection.execute.call_args_list[-1]
+        self.assertIn("confidence, review_status", candidate_call.args[0])
+        self.assertIn("'pending'", candidate_call.args[0])
+        self.assertEqual(candidate_call.args[1][5:9], (
+            "oem", "44310-0K020", "44310-0K020", 0.94,
+        ))
 
 
 if __name__ == "__main__":

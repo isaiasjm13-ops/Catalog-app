@@ -5,8 +5,8 @@ Estado: implementado y validado en PostgreSQL local. La migración `0006` está 
 
 ## Propósito y estados
 
-`apply-plan` crea cada producto y su referencia interna primaria como pendientes. La revisión es
-una compuerta humana independiente:
+`apply-plan` crea cada producto, su referencia interna primaria y los candidatos A1 (OEM, FMSI,
+adicionales y alternos) como pendientes. La revisión es una compuerta humana independiente:
 
 ```text
 producto pending_review + referencia pending
@@ -47,7 +47,7 @@ conservado en auditoría.
 ```
 
 El hash compromete plan y batch de origen, identidad estable, marca, nombre, variante, fila fuente,
-estado actual y todos los campos visibles de la referencia primaria. Si cualquiera cambia entre
+estado actual y todos los campos visibles de la referencia primaria y las referencias A1. Si cualquiera cambia entre
 inspección y decisión, la operación se rechaza.
 
 ## Garantías de base de datos
@@ -55,13 +55,15 @@ inspección y decisión, la operación se rechaza.
 - Solo se admiten `pending_review → active|inactive` y `pending → approved|rejected`.
 - Las columnas empresariales y de identidad permanecen inmutables durante la revisión.
 - Producto y referencia deben llegar al estado correspondiente en una sola transacción.
+- La misma decisión resuelve todas las A1 y aplicaciones vehiculares ligadas a la identidad; no se
+  acepta una mezcla parcial de estados.
 - El rol `perfect_catalog_app` no recibe `UPDATE` de tabla: solo de las columnas mínimas de estado y
   evidencia humana; no recibe `DELETE`.
 - Cada decisión genera un evento append-only `catalog_identity.approved` o
   `catalog_identity.rejected` con el hash revisado.
 - Una variante no puede aprobarse antes que su template.
 
-El constructor de releases rechaza toda la marca si conserva identidades pendientes; no puede
+El constructor de releases rechaza toda la marca si conserva identidades o referencias A1 pendientes; no puede
 omitirlas silenciosamente y publicar un subconjunto accidental. Los productos rechazados quedan
 fuera por estado, pero siguen preservados en la base y en auditoría.
 

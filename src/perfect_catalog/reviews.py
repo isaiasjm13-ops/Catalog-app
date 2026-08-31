@@ -138,22 +138,30 @@ def _load_review_target(
         cursor.execute(
             f"""
             SELECT product_reference_id, reference_type, value_original,
-                   value_normalized, is_primary, review_status,
+                   value_normalized, is_primary, confidence, review_status,
                    reviewed_by, reviewed_at, review_note, staging_row_id
             FROM perfect_catalog.product_reference
             WHERE product_template_id=%s
               AND product_variant_id IS NOT DISTINCT FROM %s
-              AND reference_type='internal' AND is_primary=true
-            ORDER BY product_reference_id{suffix}
+            ORDER BY is_primary DESC, reference_type, value_normalized,
+                     product_reference_id{suffix}
             """,
             (target["product_template_id"], target["product_variant_id"]),
         )
         references = [dict(row) for row in cursor.fetchall()]
-    if len(references) != 1:
+    primary = [
+        reference for reference in references
+        if reference["reference_type"] == "internal" and reference["is_primary"]
+    ]
+    if len(primary) != 1:
         raise RuntimeError(
             "La identidad requiere exactamente una referencia interna primaria para revisión."
         )
-    target["reference"] = references[0]
+    target["reference"] = primary[0]
+    target["cross_references"] = [
+        reference for reference in references
+        if reference["product_reference_id"] != primary[0]["product_reference_id"]
+    ]
     return target
 
 
@@ -186,6 +194,17 @@ def review_evidence(
             "is_primary": reference["is_primary"],
             "review_status": reference["review_status"],
         },
+        "cross_references": [
+            {
+                "product_reference_id": item["product_reference_id"],
+                "reference_type": item["reference_type"],
+                "value_original": item["value_original"],
+                "value_normalized": item["value_normalized"],
+                "confidence": item.get("confidence"),
+                "review_status": item["review_status"],
+            }
+            for item in target.get("cross_references") or []
+        ],
     }
 
 
@@ -232,6 +251,7 @@ def _review_target_from_row(row: dict[str, Any]) -> dict[str, Any]:
         "staging_row_id": row["staging_row_id"],
         "source_row_number": row["source_row_number"],
         "vehicle_applications": _vehicle_applications_from_row(row),
+        "cross_references": [dict(item) for item in row.get("cross_references") or []],
         "reference": {
             "product_reference_id": row["product_reference_id"],
             "reference_type": row["reference_type"],
@@ -264,6 +284,10 @@ WITH target_ids AS (
         sr.source_row_number,
         ref.product_reference_id, ref.reference_type, ref.value_original,
         ref.value_normalized, ref.is_primary, ref.review_status,
+        COALESCE(xref.cross_references, '[]'::jsonb) AS cross_references,
+        COALESCE(xref.all_pending, true) AS cross_all_pending,
+        COALESCE(xref.all_approved, true) AS cross_all_approved,
+        COALESCE(xref.all_rejected, true) AS cross_all_rejected,
         COALESCE(app.vehicle_applications, '[]'::jsonb) AS vehicle_applications,
         COALESCE(ref.reference_count, 0) AS reference_count
     FROM target_ids AS t
@@ -290,6 +314,24 @@ WITH target_ids AS (
     ) AS ref ON true
     LEFT JOIN LATERAL (
         SELECT jsonb_agg(jsonb_build_object(
+                   'product_reference_id', pr.product_reference_id,
+                   'reference_type', pr.reference_type,
+                   'value_original', pr.value_original,
+                   'value_normalized', pr.value_normalized,
+                   'confidence', pr.confidence,
+                   'review_status', pr.review_status
+               ) ORDER BY pr.reference_type, pr.value_normalized,
+                          pr.product_reference_id) AS cross_references,
+               bool_and(COALESCE(pr.review_status, 'pending')='pending') AS all_pending,
+               bool_and(pr.review_status='approved') AS all_approved,
+               bool_and(pr.review_status='rejected') AS all_rejected
+        FROM perfect_catalog.product_reference AS pr
+        WHERE pr.product_template_id=t.planned_product_template_id
+          AND pr.product_variant_id IS NOT DISTINCT FROM t.planned_product_variant_id
+          AND NOT (pr.reference_type='internal' AND pr.is_primary=true)
+    ) AS xref ON true
+    LEFT JOIN LATERAL (
+        SELECT jsonb_agg(jsonb_build_object(
             'make', vm.name, 'model', vmo.name,
             'year_from', pac.year_from, 'year_to', pac.year_to,
             'position', pac.position, 'confidence', pac.confidence,
@@ -309,9 +351,12 @@ WITH target_ids AS (
              WHEN source_system_id IS NULL OR catalog_status IS NULL
                OR reference_count <> 1 THEN 'inconsistent'
              WHEN catalog_status='pending_review'
-               AND COALESCE(review_status, 'pending')='pending' THEN 'pending'
-             WHEN catalog_status='active' AND review_status='approved' THEN 'approved'
-             WHEN catalog_status='inactive' AND review_status='rejected' THEN 'rejected'
+               AND COALESCE(review_status, 'pending')='pending'
+               AND cross_all_pending THEN 'pending'
+             WHEN catalog_status='active' AND review_status='approved'
+               AND cross_all_approved THEN 'approved'
+             WHEN catalog_status='inactive' AND review_status='rejected'
+               AND cross_all_rejected THEN 'rejected'
              ELSE 'inconsistent'
            END AS review_state
     FROM review_rows
@@ -412,6 +457,7 @@ def _review_queue_page_in_connection(
                 "reference_count": int(row["reference_count"]),
                 "source_row_number": row["source_row_number"],
                 "vehicle_applications": _vehicle_applications_from_row(row),
+                "cross_references": [dict(item) for item in row.get("cross_references") or []],
                 "review_state": row["review_state"],
                 "review_sha256": review_evidence_sha256(target, plan),
             }
@@ -478,7 +524,10 @@ def _list_review_plans_in_connection(
                             t.planned_product_template_id) AS public_id,
                    CASE WHEN t.planned_product_variant_id IS NULL
                         THEN p.catalog_status ELSE v.catalog_status END AS catalog_status,
-                   ref.review_status, COALESCE(ref.reference_count, 0) AS reference_count
+                   ref.review_status, COALESCE(ref.reference_count, 0) AS reference_count,
+                   COALESCE(xref.all_pending, true) AS cross_all_pending,
+                   COALESCE(xref.all_approved, true) AS cross_all_approved,
+                   COALESCE(xref.all_rejected, true) AS cross_all_rejected
             FROM targets AS t
             LEFT JOIN perfect_catalog.product_template AS p
               ON p.product_template_id=t.planned_product_template_id
@@ -494,15 +543,27 @@ def _list_review_plans_in_connection(
                 ORDER BY pr.product_reference_id
                 LIMIT 1
             ) AS ref ON true
+            LEFT JOIN LATERAL (
+                SELECT bool_and(COALESCE(pr.review_status, 'pending')='pending') AS all_pending,
+                       bool_and(pr.review_status='approved') AS all_approved,
+                       bool_and(pr.review_status='rejected') AS all_rejected
+                FROM perfect_catalog.product_reference AS pr
+                WHERE pr.product_template_id=t.planned_product_template_id
+                  AND pr.product_variant_id IS NOT DISTINCT FROM t.planned_product_variant_id
+                  AND NOT (pr.reference_type='internal' AND pr.is_primary=true)
+            ) AS xref ON true
         ), classified AS (
             SELECT target_states.*,
                    CASE
                      WHEN catalog_status IS NULL OR reference_count <> 1
                        THEN 'inconsistent'
                      WHEN catalog_status='pending_review'
-                       AND COALESCE(review_status, 'pending')='pending' THEN 'pending'
-                     WHEN catalog_status='active' AND review_status='approved' THEN 'approved'
-                     WHEN catalog_status='inactive' AND review_status='rejected' THEN 'rejected'
+                       AND COALESCE(review_status, 'pending')='pending'
+                       AND cross_all_pending THEN 'pending'
+                     WHEN catalog_status='active' AND review_status='approved'
+                       AND cross_all_approved THEN 'approved'
+                     WHEN catalog_status='inactive' AND review_status='rejected'
+                       AND cross_all_rejected THEN 'rejected'
                      ELSE 'inconsistent'
                    END AS review_state
             FROM target_states
@@ -780,9 +841,11 @@ def _review_product_in_connection(
     reference = target["reference"]
     desired_catalog = "active" if decision == "approve" else "inactive"
     desired_reference = "approved" if decision == "approve" else "rejected"
+    cross_references = target.get("cross_references") or []
     if (
         target["catalog_status"] == desired_catalog
         and reference["review_status"] == desired_reference
+        and all(item["review_status"] == desired_reference for item in cross_references)
     ):
         event_type = (
             "catalog_identity.approved"
@@ -816,9 +879,11 @@ def _review_product_in_connection(
             "reference_status": desired_reference,
             "review_evidence_sha256": expected_review_sha256,
         }
-    if target["catalog_status"] != "pending_review" or reference[
-        "review_status"
-    ] not in (None, "pending"):
+    if (
+        target["catalog_status"] != "pending_review"
+        or reference["review_status"] not in (None, "pending")
+        or any(item["review_status"] not in (None, "pending") for item in cross_references)
+    ):
         raise PermissionError(
             "La identidad o su referencia ya tienen una decisión diferente; "
             "no se sobrescribe una revisión previa."
@@ -856,7 +921,8 @@ def _review_product_in_connection(
         UPDATE perfect_catalog.product_reference
         SET review_status=%s, reviewed_by=%s, reviewed_at=%s,
             review_note=%s, updated_at=%s
-        WHERE product_reference_id=%s
+        WHERE product_template_id=%s
+          AND product_variant_id IS NOT DISTINCT FROM %s
           AND COALESCE(review_status, 'pending')='pending'
         """,
         (
@@ -865,10 +931,11 @@ def _review_product_in_connection(
             now,
             reason,
             now,
-            reference["product_reference_id"],
+            target["product_template_id"],
+            target["product_variant_id"],
         ),
     ).rowcount
-    if changed != 1:
+    if changed != 1 + len(cross_references):
         raise RuntimeError("La referencia cambió mientras se revisaba.")
     application_count = _review_vehicle_applications(
         connection, target["product_template_id"], decision, actor, reason, now
@@ -881,6 +948,7 @@ def _review_product_in_connection(
         "catalog_status": desired_catalog,
         "reference_status": desired_reference,
         "product_reference_id": reference["product_reference_id"],
+        "cross_reference_count": len(cross_references),
         "vehicle_application_count": application_count,
         "review_evidence_sha256": recalculated,
     }

@@ -42,6 +42,7 @@ def review_fixture() -> tuple[dict[str, object], dict[str, object]]:
             "is_primary": True,
             "review_status": "pending",
         },
+        "cross_references": [],
     }
     plan: dict[str, object] = {
         "import_plan_id": plan_id,
@@ -58,6 +59,17 @@ class ReviewContractTests(unittest.TestCase):
         self.assertEqual(digest, review_evidence_sha256(target, plan))
         self.assertRegex(digest, r"^[0-9a-f]{64}$")
         target["reference"]["value_original"] = "ABC-002"  # type: ignore[index]
+        self.assertNotEqual(digest, review_evidence_sha256(target, plan))
+
+    def test_review_hash_binds_cross_references_and_their_status(self) -> None:
+        target, plan = review_fixture()
+        target["cross_references"] = [{
+            "product_reference_id": uuid.uuid4(), "reference_type": "oem",
+            "value_original": "44310-0K020", "value_normalized": "44310-0K020",
+            "confidence": 0.82, "review_status": "pending",
+        }]
+        digest = review_evidence_sha256(target, plan)
+        target["cross_references"][0]["value_original"] = "OTRO"  # type: ignore[index]
         self.assertNotEqual(digest, review_evidence_sha256(target, plan))
 
     def test_decision_and_hash_contracts_are_strict(self) -> None:

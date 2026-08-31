@@ -224,6 +224,8 @@ class CatalogExportTests(unittest.TestCase):
         rows[0]["name_original"] = '<script>alert("x")</script>'
         rows[0]["image_path"] = "image-safe.png"
         rows[0]["oem_references"] = ["OEM-123"]
+        rows[0]["fmsi_references"] = ["D1035-7779"]
+        rows[0]["additional_references"] = ["ALT-99"]
         rows[0]["applications"] = ["Toyota Hilux"]
         content = generate_catalog_html(
             rows, {"title": "Edición digital", "columns_per_row": 3, "theme": "industrial"}, release=release
@@ -252,6 +254,8 @@ class CatalogExportTests(unittest.TestCase):
         self.assertNotIn("fetch(", content)
         self.assertIn("Motor / Empaques · Natsuki", content)
         self.assertIn("<dt>OEM</dt><dd>OEM-123</dd>", content)
+        self.assertIn("<dt>FMSI</dt><dd>D1035-7779</dd>", content)
+        self.assertIn("<dt>Alternas</dt><dd>ALT-99</dd>", content)
         self.assertIn("<dt>Aplicaciones</dt><dd>Toyota Hilux</dd>", content)
 
     def test_digital_search_indexes_hidden_codes_and_technical_fields(self) -> None:
