@@ -1,5 +1,20 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-31: filtros móviles y estado offline del HTML
+
+- El HTML ligero y el autónomo incorporan filtros combinables por categoría, marca de producto y
+  marca vehicular. Las opciones se derivan únicamente del snapshot congelado y no consultan red.
+- El usuario puede alternar entre Tarjetas y Lista. En móvil, la lista compacta imagen y referencia
+  sin recortar la fotografía; el visor completo y `object-fit: contain` permanecen intactos.
+- Búsqueda, filtros, vista y posición de scroll se conservan en `localStorage` bajo una clave ligada
+  al checksum/version del release. Si el navegador bloquea almacenamiento, el catálogo continúa
+  funcionando sin persistencia.
+- Validación real en Edge con viewport 390x844: filtros combinados, ocultación de secciones, vista
+  Lista y restauración tras recarga correctos. El archivo sigue siendo autocontenido y offline.
+- No requiere migración. Hay que generar un HTML nuevo para incorporar estos controles.
+- Verificación automatizada: compilación sin advertencias, `git diff --check` limpio y 277 pruebas
+  correctas; 6 integraciones PostgreSQL omitidas sin credenciales.
+
 ## Bloque 2026-08-31: jerarquía cromática empresa/marca (v1.39)
 
 - La marca de producto sigue controlando fondo, texto, color principal/secundario, tipografía,

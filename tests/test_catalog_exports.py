@@ -227,6 +227,7 @@ class CatalogExportTests(unittest.TestCase):
         rows[0]["fmsi_references"] = ["D1035-7779"]
         rows[0]["additional_references"] = ["ALT-99"]
         rows[0]["applications"] = ["Toyota Hilux"]
+        rows[0]["vehicle_makes"] = ["Toyota"]
         content = generate_catalog_html(
             rows, {"title": "Edición digital", "columns_per_row": 3, "theme": "industrial"}, release=release
         ).decode("utf-8")
@@ -251,6 +252,18 @@ class CatalogExportTests(unittest.TestCase):
         self.assertIn("card.dataset.searchCompact.includes(compact(term))", content)
         self.assertIn("data-search=", content)
         self.assertIn("normalize('NFD')", content)
+        self.assertIn('class="catalog-filter-panel"', content)
+        self.assertIn('id="filter-category"', content)
+        self.assertIn('id="filter-brand"', content)
+        self.assertIn('id="filter-vehicle"', content)
+        self.assertIn('<option value="Toyota">Toyota</option>', content)
+        self.assertIn('id="view-list"', content)
+        self.assertIn("catalog-list-view", content)
+        self.assertIn("localStorage.setItem(stateKey", content)
+        self.assertIn("scrollY:window.scrollY", content)
+        self.assertIn('data-category="Motor / Empaques"', content)
+        self.assertIn('data-brand="Natsuki"', content)
+        self.assertIn('data-vehicle="Toyota"', content)
         self.assertNotIn("fetch(", content)
         self.assertIn("Motor / Empaques · Natsuki", content)
         self.assertIn("<dt>OEM</dt><dd>OEM-123</dd>", content)

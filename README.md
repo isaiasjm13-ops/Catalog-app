@@ -124,6 +124,8 @@ categoría, aplicaciones, motor y OEM; la imagen se muestra entera y el visor co
 La marca seleccionada controla la dirección visual. La Company aporta su logo de portada y una
 firma cromática discreta en los pies de HTML, PDF, PowerPoint e InDesign, sin reemplazar los colores
 de Natsuki, Exact Cars u otra marca de producto.
+El HTML permite filtrar offline por categoría, marca y vehículo, alternar Tarjetas/Lista y recuperar
+la búsqueda, filtros, vista y posición de lectura al volver a abrir la misma edición.
 Su buscador offline acepta varias palabras en cualquier orden, ignora acentos y encuentra códigos
 con o sin espacios/guiones. También indexa aplicaciones, motores, OEM y referencias adicionales
 aunque esos campos se hayan ocultado visualmente en la edición.

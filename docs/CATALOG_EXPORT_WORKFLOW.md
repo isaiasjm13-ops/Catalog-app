@@ -34,6 +34,11 @@ compacta de los códigos, de modo que `NK001` encuentra `NK-001`. El índice inc
 nombre, categoría, marca, vehículos, aplicaciones, motores, OEM, FMSI y referencias adicionales,
 incluso cuando un campo opcional no se muestra. No usa red ni envía la consulta fuera del archivo.
 
+El panel **Filtros y vista** permite combinar categoría, marca y vehículo, además de alternar entre
+Tarjetas y Lista. La consulta, los filtros, la vista y el scroll se restauran localmente por release;
+un fallo o bloqueo de `localStorage` no impide buscar ni navegar. Los dos tipos de HTML comparten
+este comportamiento y mantienen todos sus datos dentro del archivo/paquete exportado.
+
 En la vista previa, `Destino` alterna entre la cuadrícula digital configurable y una simulación de
 InDesign. Esta última representa T4 en dos columnas, T2/T1 en fichas progresivamente amplias y TABLE
 como filas compactas sin imagen. Es una prueba de composición; el JSX sigue siendo quien crea el INDD.

@@ -581,6 +581,21 @@ def generate_catalog_html(
     show_oem = bool(config.get("show_oem", True))
     show_applications = bool(config.get("show_applications", True))
     show_engine = bool(config.get("show_engine", True))
+    def row_vehicle_makes(row: dict[str, Any]) -> list[str]:
+        values = row.get("vehicle_makes")
+        if isinstance(values, (list, tuple, set)):
+            return [str(value) for value in values if value not in (None, "")]
+        if values not in (None, ""):
+            return [str(values)]
+        return [str(row["vehicle_make"])] if row.get("vehicle_make") else []
+    categories = sorted({str(row.get("category_path") or "").strip() for row in rows} - {""})
+    brands = sorted({str(row.get("brand") or "").strip() for row in rows} - {""})
+    vehicle_makes = sorted({
+        str(make).strip()
+        for row in rows
+        for make in row_vehicle_makes(row)
+        if str(make).strip()
+    })
     navigation: list[str] = []
     for section_index, (section, section_rows) in enumerate(grouped_rows, 1):
         section_id = f"seccion-{section_index:02d}"
@@ -630,7 +645,10 @@ def generate_catalog_html(
                 + (f'<div><dt>Motor</dt><dd>{engines}</dd></div>' if engines and show_engine else "")
             )
             cards.append(
-                f'<article class="product" data-search="{escape(search_text(row), quote=True)}">' + image
+                f'<article class="product" data-search="{escape(search_text(row), quote=True)}" '
+                f'data-category="{escape(str(row.get("category_path") or ""), quote=True)}" '
+                f'data-brand="{escape(str(row.get("brand") or ""), quote=True)}" '
+                f'data-vehicle="{escape("|".join(row_vehicle_makes(row)), quote=True)}">' + image
                 + f'<code>{escape(str(row.get("internal_reference_original") or "Sin referencia"))}</code>'
                 + f'<h3>{escape(str(row.get("name_original") or "Sin nombre"))}</h3>'
                 + (f'<p class="meta">{visible_category}{" · " if visible_category and visible_brand else ""}{visible_brand}</p>' if visible_category or visible_brand else "")
@@ -652,6 +670,25 @@ def generate_catalog_html(
     brand_logo_path = _logo_path(config, bundle_dir)
     company_logo_uri = logo_uri(_logo_path(config, bundle_dir, company=True) or brand_logo_path)
     brand_logo_uri = logo_uri(brand_logo_path)
+    def filter_options(values: list[str]) -> str:
+        return "".join(
+            f'<option value="{escape(value, quote=True)}">{escape(value)}</option>'
+            for value in values
+        )
+    mobile_filters = (
+        '<details class="catalog-filter-panel"><summary>Filtros y vista</summary>'
+        '<div class="catalog-filter-grid">'
+        '<label>Categoría<select id="filter-category"><option value="">Todas</option>'
+        + filter_options(categories) + '</select></label>'
+        '<label>Marca<select id="filter-brand"><option value="">Todas</option>'
+        + filter_options(brands) + '</select></label>'
+        '<label>Vehículo<select id="filter-vehicle"><option value="">Todos</option>'
+        + filter_options(vehicle_makes) + '</select></label>'
+        '<fieldset><legend>Vista</legend><button id="view-cards" type="button" aria-pressed="true">Tarjetas</button>'
+        '<button id="view-list" type="button" aria-pressed="false">Lista</button></fieldset>'
+        '<button id="filters-clear" class="filters-clear" type="button">Limpiar filtros</button>'
+        '</div></details>'
+    )
     html = f"""<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="generator" content="Perfect Catalog"><meta name="release-sha256" content="{checksum}">
@@ -667,6 +704,11 @@ def generate_catalog_html(
         f'<footer class="proof">Release SHA-256: {checksum}</footer>',
         f'<footer class="proof corporate-signature"><span>{company_name}</span>'
         f'<small>Release SHA-256: {checksum}</small></footer>',
+        1,
+    )
+    html = html.replace(
+        '</form><nav class="contents"',
+        '</form>' + mobile_filters + '<nav class="contents"',
         1,
     )
     legacy_index = "fold=value=>value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es');for(const card of cards)card.dataset.search=fold(card.textContent);"
@@ -687,6 +729,10 @@ def generate_catalog_html(
     html = html.replace("</style>", detail_css + "</style>", 1)
     detail_script = """<script>(()=>{const viewer=document.querySelector('#photo-viewer'),caption=viewer.querySelector('p'),details=document.createElement('div');details.className='photo-viewer-details';details.setAttribute('aria-live','polite');caption.replaceWith(details);for(const trigger of document.querySelectorAll('.photo'))trigger.addEventListener('click',()=>{const card=trigger.closest('.product');details.replaceChildren(...[...card.children].filter(node=>!node.classList.contains('photo')).map(node=>node.cloneNode(true)))})})();</script>"""
     html = html.replace("</body>", detail_script + "</body>", 1)
+    filter_css = """.catalog-filter-panel{margin:18px 0;border:1px solid var(--line);border-radius:14px;background:var(--card)}.catalog-filter-panel summary{min-height:48px;padding:13px 16px;color:var(--forest);font-weight:800;cursor:pointer}.catalog-filter-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:12px;padding:0 16px 16px}.catalog-filter-grid label{display:grid;gap:5px;color:var(--muted);font-size:12px;font-weight:800}.catalog-filter-grid select,.catalog-filter-grid button{min-height:44px;padding:8px 11px;border:1px solid var(--line);border-radius:10px;color:var(--ink);background:var(--card);font:inherit}.catalog-filter-grid fieldset{display:flex;gap:6px;align-items:end;margin:0;padding:0;border:0}.catalog-filter-grid legend{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}.catalog-filter-grid button[aria-pressed=true]{border-color:var(--forest);color:var(--forest);box-shadow:inset 0 0 0 1px var(--forest)}.filters-clear{align-self:end}.catalog-list-view .products{grid-template-columns:1fr}.catalog-list-view .product{display:grid;grid-template-columns:minmax(150px,220px) minmax(120px,.35fr) minmax(0,1fr);gap:8px 18px;align-items:start}.catalog-list-view .photo{grid-row:1/5;width:auto;height:150px;margin:-10px 0 -10px -10px}.catalog-list-view .product h3,.catalog-list-view .product .meta{margin:0}.catalog-list-view .specifications{grid-column:3;grid-row:1/5;margin:0}@media(max-width:760px){.catalog-filter-grid{grid-template-columns:1fr 1fr}.catalog-filter-grid fieldset,.filters-clear{align-self:auto}.catalog-list-view .product{grid-template-columns:110px minmax(0,1fr);gap:6px 12px;padding:12px}.catalog-list-view .photo{grid-row:1/5;width:auto;height:110px;margin:0}.catalog-list-view .specifications{grid-column:1/-1;grid-row:auto;margin-top:8px}}@media print{.catalog-filter-panel{display:none}.catalog-list-view .product{display:block}}"""
+    html = html.replace("</style>", filter_css + "</style>", 1)
+    filter_script = f"""<script>(()=>{{const q=document.querySelector('#catalog-query'),status=document.querySelector('#catalog-status'),main=document.querySelector('main'),cards=[...document.querySelectorAll('.product')],sections=[...document.querySelectorAll('main>section')],category=document.querySelector('#filter-category'),brand=document.querySelector('#filter-brand'),vehicle=document.querySelector('#filter-vehicle'),cardsButton=document.querySelector('#view-cards'),listButton=document.querySelector('#view-list'),clear=document.querySelector('#filters-clear'),fold=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es'),stateKey='perfect-catalog-state:{checksum or version or "working"}';let view='cards';function save(){{try{{localStorage.setItem(stateKey,JSON.stringify({{query:q.value,category:category.value,brand:brand.value,vehicle:vehicle.value,view:view,scrollY:window.scrollY}}))}}catch(ignored){{}}}}function apply(){{const terms=fold(q.value.trim()).split(/\\s+/).filter(Boolean),wantedCategory=fold(category.value),wantedBrand=fold(brand.value),wantedVehicle=fold(vehicle.value);let visible=0;for(const card of cards){{const search=card.dataset.search||'',matchQuery=!terms.length||terms.every(term=>search.includes(term)||search.replace(/[^a-z0-9]+/g,'').includes(term.replace(/[^a-z0-9]+/g,''))),matchCategory=!wantedCategory||fold(card.dataset.category)===wantedCategory,matchBrand=!wantedBrand||fold(card.dataset.brand)===wantedBrand,matchVehicle=!wantedVehicle||fold(card.dataset.vehicle).split('|').includes(wantedVehicle),match=matchQuery&&matchCategory&&matchBrand&&matchVehicle;card.hidden=!match;if(match)visible++}}for(const section of sections)section.hidden=![...section.querySelectorAll('.product')].some(card=>!card.hidden);status.textContent=`${{visible}} de ${{cards.length}} productos encontrados`;save()}}function setView(next){{view=next==='list'?'list':'cards';main.classList.toggle('catalog-list-view',view==='list');cardsButton.setAttribute('aria-pressed',String(view==='cards'));listButton.setAttribute('aria-pressed',String(view==='list'));save()}}for(const control of [q,category,brand,vehicle])control.addEventListener(control===q?'input':'change',apply);cardsButton.addEventListener('click',()=>setView('cards'));listButton.addEventListener('click',()=>setView('list'));clear.addEventListener('click',()=>{{category.value='';brand.value='';vehicle.value='';apply()}});let restored=null;try{{restored=JSON.parse(localStorage.getItem(stateKey)||'null')}}catch(ignored){{}}if(restored){{q.value=restored.query||'';category.value=restored.category||'';brand.value=restored.brand||'';vehicle.value=restored.vehicle||'';setView(restored.view);apply();requestAnimationFrame(()=>scrollTo(0,Number(restored.scrollY)||0))}}else apply();let timer;addEventListener('scroll',()=>{{clearTimeout(timer);timer=setTimeout(save,180)}},{{passive:true}})}})();</script>"""
+    html = html.replace("</body>", filter_script + "</body>", 1)
     if company_logo_uri or brand_logo_uri:
         marks = ((f'<img class="brand-logo" src="{company_logo_uri}" alt="Perfect Trading">' if company_logo_uri else "")
                  + (f'<img class="watermark" src="{brand_logo_uri}" alt="">' if brand_logo_uri else ""))
