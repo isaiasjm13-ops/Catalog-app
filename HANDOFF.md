@@ -1,5 +1,19 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-31: inicio controlado de Fase 0 multiempresa
+
+- `PREPARAR-MULTIEMPRESA.cmd` concentra el primer paso seguro: contraseña `postgres` oculta,
+  `pg_dump` completo, verificación mediante `pg_restore --list` y auditoría SQL de sólo lectura.
+- Los resultados se guardan fuera de Git en `backups/phase0-multicompany/`. No se ejecutan DDL,
+  migraciones ni cambios de datos durante esta fase.
+- `audit_pre_multicompany.sql` recopila estructura 0001-0016, cardinalidades, marcas/perfiles,
+  productos y releases por marca, identidades, referencias duplicadas y privilegios.
+- `MAPPING-COMPANY-BRAND-INICIAL.md` deja explícitas las asignaciones aún pendientes; no permite
+  backfill automático ni marcas desconocidas.
+- PostgreSQL 18 responde en localhost, pero la inspección autenticada queda pendiente de que el
+  usuario ejecute el iniciador localmente. Verificación de código: 263 pruebas pasan, 6 integraciones
+  PostgreSQL se omiten sin credenciales.
+
 ## Bloque 2026-08-27: contenido editorial automático v1.35
 
 - Las fichas omiten OEM, aplicaciones, motor, categoría o marca cuando el dato no existe, evitando

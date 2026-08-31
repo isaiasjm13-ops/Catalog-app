@@ -59,6 +59,15 @@ historial técnico de esos cambios y no son accesos de uso diario. No debes esco
 Úsalo después de recibir una actualización que incluya cambios de base de datos o cuando la consola
 lo indique. Para el trabajo normal abre únicamente `INICIAR-REVISOR.cmd`.
 
+### Preparación multiempresa - Fase 0
+
+Antes de cualquier migración multiempresa ejecuta una sola vez `PREPARAR-MULTIEMPRESA.cmd`.
+Solicita la contraseña de `postgres` de forma oculta, crea un backup lógico completo bajo
+`backups/phase0-multicompany/`, comprueba que `pg_restore` pueda leerlo y genera allí un informe
+de sólo lectura con esquema, marcas, productos, releases, referencias, identidades y permisos.
+No modifica PostgreSQL ni aplica migraciones. El informe se usa para completar y aprobar
+[`docs/MAPPING-COMPANY-BRAND-INICIAL.md`](docs/MAPPING-COMPANY-BRAND-INICIAL.md).
+
 Al hacer doble clic en `INICIAR-SERVER.cmd`, la web queda visible en
 `http://127.0.0.1:8080/`. Ese iniciador conserva deliberadamente el piloto XLSX y detecta el archivo más reciente de
 `data/imports`. Para fijar una fuente concreta:
