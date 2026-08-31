@@ -1,5 +1,16 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-08-31: búsqueda multipalabra offline en HTML
+
+- El HTML ligero y el autónomo generan un índice explícito por producto con referencia original y
+  normalizada, nombre, pieza/categoría, marca de producto/vehículo, aplicaciones, motores, OEM,
+  FMSI y referencias adicionales. Los campos siguen siendo buscables aunque la edición los oculte.
+- Las consultas se pliegan sin acentos, aceptan palabras en cualquier orden y comparan también una
+  versión alfanumérica compacta: `NK001` encuentra `NK-001` y `hilux empaque 1kd` exige los tres
+  términos dentro de la misma ficha. Todo funciona localmente, sin `fetch` ni servidor.
+- Verificación focalizada: 28 pruebas de exportación correctas. No requiere migración PostgreSQL;
+  hay que generar una exportación HTML nueva para incorporar el buscador.
+
 ## Bloque 2026-08-31: ingresos e imágenes aislados por Company (v1.37)
 
 - `ACTUALIZAR-SISTEMA.cmd` conserva ahora la salida del último intento en

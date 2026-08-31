@@ -245,11 +245,36 @@ class CatalogExportTests(unittest.TestCase):
         self.assertIn('role="search"', content)
         self.assertIn('id="catalog-query" type="search" inputmode="search"', content)
         self.assertIn("card.dataset.search.includes(term)", content)
+        self.assertIn("terms.every(term=>card.dataset.search.includes(term)", content)
+        self.assertIn("card.dataset.searchCompact.includes(compact(term))", content)
+        self.assertIn("data-search=", content)
         self.assertIn("normalize('NFD')", content)
         self.assertNotIn("fetch(", content)
         self.assertIn("Motor / Empaques · Natsuki", content)
         self.assertIn("<dt>OEM</dt><dd>OEM-123</dd>", content)
         self.assertIn("<dt>Aplicaciones</dt><dd>Toyota Hilux</dd>", content)
+
+    def test_digital_search_indexes_hidden_codes_and_technical_fields(self) -> None:
+        release, items = fixture_release()
+        rows = export_rows_from_release(release, items)
+        rows[0].update({
+            "internal_reference_normalized": "NK-001",
+            "applications": ["Toyota Hilux 2012"],
+            "engine_types": ["1KD FTV"],
+            "oem_references": ["44310-0K020"],
+            "additional_references": ["ABC 99-XY"],
+        })
+        content = generate_catalog_html(
+            rows,
+            {"show_applications": False, "show_engine": False, "show_oem": False},
+            release=release,
+        ).decode("utf-8")
+        article = content.split('<article class="product"', 1)[1].split(">", 1)[0]
+        self.assertIn("Toyota Hilux 2012", article)
+        self.assertIn("1KD FTV", article)
+        self.assertIn("44310-0K020", article)
+        self.assertIn("ABC 99-XY", article)
+        self.assertNotIn("<dt>Aplicaciones</dt>", content)
 
     def test_standalone_html_embeds_approved_image_as_data_uri(self) -> None:
         release, items = fixture_release()

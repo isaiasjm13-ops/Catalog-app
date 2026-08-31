@@ -121,6 +121,9 @@ el principal define jerarquía, el secundario aporta acentos, y texto/fondo cont
 El tema editorial elegido solo actúa como respaldo si no existe un perfil de marca.
 En el catálogo HTML, tocar una fotografía abre una ficha completa responsive con referencia,
 categoría, aplicaciones, motor y OEM; la imagen se muestra entera y el visor continúa offline.
+Su buscador offline acepta varias palabras en cualquier orden, ignora acentos y encuentra códigos
+con o sin espacios/guiones. También indexa aplicaciones, motores, OEM y referencias adicionales
+aunque esos campos se hayan ocultado visualmente en la edición.
 El compositor de **Catálogos** conserva automáticamente un borrador local independiente por release
 y muestra un resumen vivo. No almacena credenciales ni confirmaciones, y puede restablecerse desde
 la misma pantalla.

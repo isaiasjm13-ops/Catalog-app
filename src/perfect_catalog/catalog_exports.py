@@ -499,6 +499,23 @@ def generate_catalog_html(
     sections: list[str] = []
     vehicle_visuals = (_visual(config).get("vehicle_makes") or {})
 
+    def search_text(row: dict[str, Any]) -> str:
+        """Índice explícito del visor; no depende de que un dato esté visible en la ficha."""
+        fields = (
+            "internal_reference_original", "internal_reference_normalized",
+            "name_original", "name_normalized", "piece_type", "category_path", "brand",
+            "vehicle_make", "vehicle_makes", "applications", "engine_types",
+            "oem_references", "fmsi_references", "additional_references",
+        )
+        values: list[str] = []
+        for field in fields:
+            value = row.get(field)
+            if isinstance(value, (list, tuple, set)):
+                values.extend(str(item) for item in value if item not in (None, ""))
+            elif value not in (None, ""):
+                values.append(str(value))
+        return " ".join(values)
+
     def vehicle_logo_source(make: str) -> str:
         filename = str((vehicle_visuals.get(make) or {}).get("packaged_logo_path") or "")
         if not filename:
@@ -566,7 +583,7 @@ def generate_catalog_html(
                 + (f'<div><dt>Motor</dt><dd>{engines}</dd></div>' if engines and show_engine else "")
             )
             cards.append(
-                '<article class="product">' + image
+                f'<article class="product" data-search="{escape(search_text(row), quote=True)}">' + image
                 + f'<code>{escape(str(row.get("internal_reference_original") or "Sin referencia"))}</code>'
                 + f'<h3>{escape(str(row.get("name_original") or "Sin nombre"))}</h3>'
                 + (f'<p class="meta">{visible_category}{" · " if visible_category and visible_brand else ""}{visible_brand}</p>' if visible_category or visible_brand else "")
@@ -599,6 +616,15 @@ def generate_catalog_html(
 .catalog-search{{position:sticky;top:0;z-index:20;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;padding:14px 0;background:color-mix(in srgb,var(--paper) 94%,transparent);backdrop-filter:blur(12px)}}.catalog-search label{{grid-column:1/-1;color:var(--forest);font-weight:800}}.catalog-search input{{width:100%;min-height:48px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit}}.catalog-search input:focus{{outline:3px solid color-mix(in srgb,var(--forest) 24%,transparent);border-color:var(--forest)}}.catalog-search button{{min-height:48px;padding:10px 16px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit;font-weight:800}}.search-status{{grid-column:1/-1;margin:0;color:var(--muted)}}[hidden]{{display:none!important}}@media(max-width:760px){{.catalog-search{{margin-inline:-10px;padding:12px 10px}}}}@media print{{.catalog-search{{display:none}}}}
 .vehicle-make-logo{{display:inline-block;width:auto;height:1.05em;max-width:3.2em;margin-left:.3em;object-fit:contain;vertical-align:-.08em}}
 </style></head><body><main><header class="hero"><small>Perfect Trading · edición {version}</small><h1>{title}</h1><p>{subtitle}</p></header><form class="catalog-search" role="search" onsubmit="return false"><label for="catalog-query">Buscar en este catálogo</label><input id="catalog-query" type="search" inputmode="search" autocomplete="off" placeholder="Referencia, pieza, vehículo, motor u OEM"><button id="catalog-clear" type="button" hidden>Limpiar</button><p id="catalog-status" class="search-status" role="status" aria-live="polite">{len(rows)} productos disponibles</p></form><nav class="contents" aria-label="Secciones del catálogo">{''.join(navigation)}</nav>{''.join(sections)}<footer class="proof">Release SHA-256: {checksum}</footer></main><dialog class="photo-viewer" id="photo-viewer"><img alt=""><p></p><form method="dialog"><button class="photo-viewer-close" value="close">Cerrar</button></form></dialog><script>(()=>{{const q=document.querySelector('#catalog-query'),clear=document.querySelector('#catalog-clear'),status=document.querySelector('#catalog-status'),cards=[...document.querySelectorAll('.product')],sections=[...document.querySelectorAll('main>section')],viewer=document.querySelector('#photo-viewer'),viewerImage=viewer.querySelector('img'),viewerCaption=viewer.querySelector('p'),fold=value=>value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es');for(const card of cards)card.dataset.search=fold(card.textContent);function filter(){{const term=fold(q.value.trim());let visible=0;for(const card of cards){{const match=!term||card.dataset.search.includes(term);card.hidden=!match;if(match)visible++}}for(const section of sections)section.hidden=![...section.querySelectorAll('.product')].some(card=>!card.hidden);clear.hidden=!term;status.textContent=term?`${{visible}} de ${{cards.length}} productos encontrados`:`${{cards.length}} productos disponibles`}}q.addEventListener('input',filter);clear.addEventListener('click',()=>{{q.value='';filter();q.focus()}});for(const trigger of document.querySelectorAll('.photo'))trigger.addEventListener('click',()=>{{const source=trigger.querySelector('img');viewerImage.src=source.currentSrc||source.src;viewerImage.alt=source.alt;viewerCaption.textContent=source.alt;viewer.showModal()}});viewer.addEventListener('click',event=>{{if(event.target===viewer)viewer.close()}})}})();</script></body></html>"""
+    legacy_index = "fold=value=>value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es');for(const card of cards)card.dataset.search=fold(card.textContent);"
+    token_index = "fold=value=>value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es'),compact=value=>fold(value).replace(/[^a-z0-9]+/g,'');for(const card of cards){const source=card.dataset.search||card.textContent;card.dataset.search=fold(source);card.dataset.searchCompact=compact(source)}"
+    legacy_filter = "function filter(){const term=fold(q.value.trim());let visible=0;for(const card of cards){const match=!term||card.dataset.search.includes(term);card.hidden=!match;if(match)visible++}"
+    token_filter = "function filter(){const terms=fold(q.value.trim()).split(/\\s+/).filter(Boolean);let visible=0;for(const card of cards){const match=!terms.length||terms.every(term=>card.dataset.search.includes(term)||(compact(term)&&card.dataset.searchCompact.includes(compact(term))));card.hidden=!match;if(match)visible++}"
+    legacy_status = "clear.hidden=!term;status.textContent=term?"
+    token_status = "clear.hidden=!terms.length;status.textContent=terms.length?"
+    if legacy_index not in html or legacy_filter not in html or legacy_status not in html:
+        raise RuntimeError("No se encontró el contrato de búsqueda HTML esperado.")
+    html = html.replace(legacy_index, token_index, 1).replace(legacy_filter, token_filter, 1).replace(legacy_status, token_status, 1)
     brand_css = """@font-face{font-family:'DM Sans';src:url(data:font/ttf;base64,%s)}@font-face{font-family:'Barlow Condensed';src:url(data:font/ttf;base64,%s);font-weight:700}body{font-family:'DM Sans',sans-serif;font-size:16px;line-height:1.8}h1,h2,h3{font-family:'Barlow Condensed',sans-serif;font-weight:700}.meta,.proof{font-size:16px}.brand-logo{position:absolute;right:2rem;top:2rem;width:min(260px,35vw);z-index:2}.watermark{position:absolute;right:5%%;bottom:8%%;width:55%%;opacity:.05;pointer-events:none}""" % (
         base64.b64encode(files("perfect_catalog").joinpath("assets/brands/natsuki/fonts/DMSans-Regular.ttf").read_bytes()).decode("ascii"),
         base64.b64encode(files("perfect_catalog").joinpath("assets/brands/natsuki/fonts/BarlowCondensed-Bold.ttf").read_bytes()).decode("ascii"),
