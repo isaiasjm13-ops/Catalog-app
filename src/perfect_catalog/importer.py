@@ -662,30 +662,25 @@ def run_dry_run(
 
             staging_ids: list[uuid.UUID] = []
             result_ids: list[uuid.UUID] = []
+            staging_rows_data: list[tuple[Any, ...]] = []
+            staging_results_data: list[tuple[Any, ...]] = []
+            issues_data: list[tuple[Any, ...]] = []
             for row in prepared:
                 staging_id = uuid.uuid4()
                 result_id = uuid.uuid4()
                 staging_ids.append(staging_id)
                 result_ids.append(result_id)
-                cursor.execute(
-                    """
-                    INSERT INTO perfect_catalog.staging_row (
-                        staging_row_id, import_file_id, sheet_name, source_row_number,
-                        raw_headers, raw_values, raw_excel_serials, structural_metadata, row_sha256
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        staging_id,
-                        file_id,
-                        sheet.name,
-                        row.source_row_number,
-                        Jsonb(list(headers)),
-                        Jsonb(row.raw_values),
-                        Jsonb(row.raw_excel_serials),
-                        Jsonb(row.structural_metadata),
-                        row.row_sha256,
-                    ),
-                )
+                staging_rows_data.append((
+                    staging_id,
+                    file_id,
+                    sheet.name,
+                    row.source_row_number,
+                    Jsonb(list(headers)),
+                    Jsonb(row.raw_values),
+                    Jsonb(row.raw_excel_serials),
+                    Jsonb(row.structural_metadata),
+                    row.row_sha256,
+                ))
                 result_status = "valid" if not row.issue_specs else "valid_with_warnings"
                 if any(issue["severity"] in {"error", "fatal"} for issue in row.issue_specs):
                     result_status = "invalid"
@@ -695,50 +690,63 @@ def run_dry_run(
                     "contract_version": CONTRACT_VERSION,
                     "rules_version": RULES_VERSION,
                 }
-                cursor.execute(
-                    """
-                    INSERT INTO perfect_catalog.staging_row_result (
-                        staging_row_result_id, staging_row_id, import_batch_id, import_file_id,
-                        contract_version, rules_version, processing_stage, attempt_number,
-                        status, normalized_data, result_sha256, processor_version, metadata, completed_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, 'reconciled', 1, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        result_id,
-                        staging_id,
+                staging_results_data.append((
+                    result_id,
+                    staging_id,
+                    batch_id,
+                    file_id,
+                    CONTRACT_VERSION,
+                    RULES_VERSION,
+                    result_status,
+                    Jsonb(row.normalized),
+                    canonical_sha256(result_evidence),
+                    "perfect-catalog-importer/0.1.0",
+                    Jsonb({"image_decoded": False}),
+                    datetime.now(UTC),
+                ))
+                for issue in row.issue_specs:
+                    issues_data.append((
+                        uuid.uuid4(),
                         batch_id,
                         file_id,
-                        CONTRACT_VERSION,
-                        RULES_VERSION,
-                        result_status,
-                        Jsonb(row.normalized),
-                        canonical_sha256(result_evidence),
-                        "perfect-catalog-importer/0.1.0",
-                        Jsonb({"image_decoded": False}),
-                        datetime.now(UTC),
-                    ),
+                        staging_id,
+                        result_id,
+                        issue["severity"],
+                        issue["code"],
+                        issue["message"],
+                        issue.get("column_name"),
+                        Jsonb({"source_row_number": row.source_row_number}),
+                    ))
+
+            cursor.executemany(
+                """
+                INSERT INTO perfect_catalog.staging_row (
+                    staging_row_id, import_file_id, sheet_name, source_row_number,
+                    raw_headers, raw_values, raw_excel_serials, structural_metadata, row_sha256
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                staging_rows_data,
+            )
+            cursor.executemany(
+                """
+                INSERT INTO perfect_catalog.staging_row_result (
+                    staging_row_result_id, staging_row_id, import_batch_id, import_file_id,
+                    contract_version, rules_version, processing_stage, attempt_number,
+                    status, normalized_data, result_sha256, processor_version, metadata, completed_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, 'reconciled', 1, %s, %s, %s, %s, %s, %s)
+                """,
+                staging_results_data,
+            )
+            if issues_data:
+                cursor.executemany(
+                    """
+                    INSERT INTO perfect_catalog.import_issue (
+                        import_issue_id, import_batch_id, import_file_id, staging_row_id,
+                        staging_row_result_id, severity, code, message, status, column_name, details
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'open', %s, %s)
+                    """,
+                    issues_data,
                 )
-                for issue in row.issue_specs:
-                    cursor.execute(
-                        """
-                        INSERT INTO perfect_catalog.import_issue (
-                            import_issue_id, import_batch_id, import_file_id, staging_row_id,
-                            staging_row_result_id, severity, code, message, status, column_name, details
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'open', %s, %s)
-                        """,
-                        (
-                            uuid.uuid4(),
-                            batch_id,
-                            file_id,
-                            staging_id,
-                            result_id,
-                            issue["severity"],
-                            issue["code"],
-                            issue["message"],
-                            issue.get("column_name"),
-                            Jsonb({"source_row_number": row.source_row_number}),
-                        ),
-                    )
 
             references = [row.normalized["internal_reference_normalized"] for row in prepared]
             existing = _existing_products(

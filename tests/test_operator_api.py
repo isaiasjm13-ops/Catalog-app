@@ -167,22 +167,6 @@ class SyntheticReviewGateway:
     def visual_identity_asset(self, revision_id: uuid.UUID, asset_root: Path) -> tuple[Path, str]:
         raise FileNotFoundError(revision_id)
 
-    def approve_import_plan(
-        self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
-    ) -> dict[str, Any]:
-        if plan_id != PLAN_ID or fingerprint != FINGERPRINT or self.import_plan_status != "awaiting_review":
-            raise PermissionError("Aprobación rechazada")
-        self.import_plan_status = "approved"
-        return {"plan_id": str(plan_id), "status": "approved", "approved_by": actor}
-
-    def apply_import_plan(
-        self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
-    ) -> dict[str, Any]:
-        if plan_id != PLAN_ID or fingerprint != FINGERPRINT or self.import_plan_status != "approved":
-            raise PermissionError("Aplicación rechazada")
-        self.import_plan_status = "applied"
-        return {"plan_id": str(plan_id), "status": "applied", "counts": {"create": 1}}
-
     def prepare_import_plan(
         self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
     ) -> dict[str, Any]:
@@ -359,16 +343,6 @@ class SyntheticReviewGateway:
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
         )
 
-    def decide_image_candidate(
-        self, candidate_id: uuid.UUID, evidence_sha256: str, decision: str,
-        actor: str, reason: str, company_id: uuid.UUID,
-    ) -> dict[str, Any]:
-        candidate = next(item for item in self.image_candidate_data if item["image_product_candidate_id"] == str(candidate_id))
-        if candidate["evidence_sha256"] != evidence_sha256:
-            raise PermissionError("evidencia incorrecta")
-        candidate.update({"decision": decision, "decided_by": actor, "decided_at": "2026-08-26"})
-        return {"status": decision}
-
     def decide_image_candidates_bulk(
         self, expected_count: int, decision: str, actor: str, reason: str,
         company_id: uuid.UUID,
@@ -380,18 +354,6 @@ class SyntheticReviewGateway:
             candidate.update({"decision": decision, "decided_by": actor, "decided_at": "2026-08-27"})
         return {"status": "bulk_approved" if decision == "approved" else "bulk_rejected",
                 "count": expected_count}
-
-    def materialize_approved_image(
-        self, candidate_id: uuid.UUID, evidence_sha256: str,
-        intake_root: Path, image_root: Path, actor: str, reason: str,
-        company_id: uuid.UUID,
-    ) -> dict[str, Any]:
-        candidate = next(item for item in self.image_candidate_data if item["image_product_candidate_id"] == str(candidate_id))
-        if candidate["decision"] != "approved" or candidate["evidence_sha256"] != evidence_sha256:
-            raise PermissionError("no aprobado")
-        candidate["approved_image_materialization_id"] = str(uuid.uuid4())
-        candidate["storage_relpath"] = "objects/88/" + "8" * 64 + ".jpg"
-        return {"status": "materialized"}
 
     def image_candidate_preview(
         self, candidate_id: uuid.UUID, intake_root: Path, company_id: uuid.UUID,
@@ -1005,14 +967,12 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         foreign_id = uuid.uuid4()
         intake = await self.client.post(f"/operator/intake/{foreign_id}/index-images")
         image_index = await self.client.post(f"/operator/images/index/{foreign_id}/candidates")
-        image_candidate = await self.client.post(
-            f"/operator/images/candidates/{foreign_id}/decision"
-        )
+        image_candidate_preview = await self.client.get(f"/operator/images/candidates/{foreign_id}/preview")
         self.assertEqual(plan.status_code, 404)
         self.assertEqual(release.status_code, 404)
         self.assertEqual(intake.status_code, 404)
         self.assertEqual(image_index.status_code, 404)
-        self.assertEqual(image_candidate.status_code, 404)
+        self.assertEqual(image_candidate_preview.status_code, 404)
         self.assertIn("empresa activa", plan.text)
 
     async def test_login_challenge_cookie_scope_and_missing_cookie_diagnostic(self) -> None:
@@ -1791,7 +1751,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         missing = await self.client.get(f"/operator/images/entries/{uuid.uuid4()}/preview")
         self.assertEqual(missing.status_code, 404)
 
-    async def test_image_candidate_generation_and_decision_are_separate_posts(self) -> None:
+    async def test_image_candidate_generation_shows_a_previewable_thumbnail(self) -> None:
         await self.login()
         page = await self.client.get("/operator/images")
         self.assertEqual(page.status_code, 200)
@@ -1817,53 +1777,6 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(preview.headers["content-type"], "image/jpeg")
         missing_preview = await self.client.get(f"/operator/images/candidates/{uuid.uuid4()}/preview")
         self.assertEqual(missing_preview.status_code, 404)
-        decided = await self.client.post(
-            f"/operator/images/candidates/{candidate['image_product_candidate_id']}/decision",
-            data={"csrf_token": csrf, "evidence_sha256": candidate["evidence_sha256"],
-                  "decision": "approved", "reason": "Fotografía confirmada", "confirm": "yes"},
-            headers={"Origin": "http://testserver"},
-        )
-        self.assertEqual(decided.status_code, 303)
-        self.assertIn("result=approved", decided.headers["location"])
-        self.assertEqual(candidate["decision"], "approved")
-        materialized = await self.client.post(
-            f"/operator/images/candidates/{candidate['image_product_candidate_id']}/materialize",
-            data={"csrf_token": csrf, "evidence_sha256": candidate["evidence_sha256"],
-                  "reason": "Copia primaria autorizada", "confirm": "yes"},
-            headers={"Origin": "http://testserver"},
-        )
-        self.assertEqual(materialized.status_code, 303)
-        self.assertIn("result=materialized", materialized.headers["location"])
-        self.assertTrue(candidate["storage_relpath"].startswith("objects/"))
-
-    async def test_image_candidates_can_be_approved_as_exact_pending_batch(self) -> None:
-        await self.login()
-        self.gateway.generate_image_candidates(
-            uuid.uuid4(), "web-reviewer", "Cruce exacto", COMPANY_ID,
-        )
-        page = await self.client.get("/operator/images")
-        self.assertIn("Validar en lote · 1 asociaciones pendientes", page.text)
-        response = await self.client.post(
-            "/operator/images/candidates/bulk-decision",
-            data={"csrf_token": hidden_value(page.text, "csrf_token"), "expected_count": "1",
-                  "decision": "approved", "reason": "Referencias e imágenes verificadas",
-                  "confirm": "approved"},
-            headers={"Origin": "http://testserver"},
-        )
-        self.assertEqual(response.status_code, 303)
-        self.assertIn("result=bulk_approved", response.headers["location"])
-        self.assertEqual(self.gateway.image_candidate_data[0]["decision"], "approved")
-        materialize_page = await self.client.get("/operator/images")
-        self.assertIn("Materializar aprobadas en lote · 1", materialize_page.text)
-        materialized = await self.client.post(
-            "/operator/images/candidates/bulk-materialize",
-            data={"csrf_token": hidden_value(materialize_page.text, "csrf_token"),
-                  "expected_count": "1", "reason": "Copia aprobada para nueva versión", "confirm": "yes"},
-            headers={"Origin": "http://testserver"},
-        )
-        self.assertEqual(materialized.status_code, 303)
-        self.assertIn("result=bulk_materialized", materialized.headers["location"])
-        self.assertIsNotNone(self.gateway.image_candidate_data[0]["approved_image_materialization_id"])
 
     async def test_exact_image_preparation_combines_approval_and_materialization(self) -> None:
         await self.login()

@@ -21,34 +21,7 @@
   </form>
 </details>
 {% endif %}
-{% if candidates.approved_unmaterialized_count and candidates.approved_unmaterialized_count <= 500 %}
-<details class="bulk-review-panel">
-  <summary>Materializar aprobadas en lote · {{ candidates.approved_unmaterialized_count }}</summary>
-  <form method="post" action="/operator/images/candidates/bulk-materialize">
-    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><input type="hidden" name="expected_count" value="{{ candidates.approved_unmaterialized_count }}">
-    <label><span>Motivo común</span><textarea name="reason" minlength="4" maxlength="500" required placeholder="Ej. Fotografías aprobadas para la nueva versión"></textarea></label>
-    <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Verificar y copiar las {{ candidates.approved_unmaterialized_count }} imágenes sin modificar el ZIP original.</span></label>
-    <button class="primary-button" type="submit">Materializar {{ candidates.approved_unmaterialized_count }} aprobadas</button>
-  </form>
-</details>
-{% endif %}
-{% if candidates.pending_count and candidates.pending_count <= 500 %}
-<details class="bulk-review-panel">
-  <summary>Validar en lote · {{ candidates.pending_count }} asociaciones pendientes</summary>
-  <form method="post" action="/operator/images/candidates/bulk-decision">
-    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
-    <input type="hidden" name="expected_count" value="{{ candidates.pending_count }}">
-    <label><span>Motivo común</span><textarea name="reason" minlength="4" maxlength="500" required placeholder="Ej. Nombres de archivo y referencias exactas verificados"></textarea></label>
-    <p>El servidor volverá a comprobar el conjunto y conservará el SHA-256 individual de cada asociación.</p>
-    <div class="bulk-actions">
-      <label class="confirm-field"><input type="radio" name="confirm" value="rejected" required><span>Confirmo rechazar todas las pendientes.</span></label>
-      <button class="reject-button" type="submit" name="decision" value="rejected">Rechazar {{ candidates.pending_count }}</button>
-      <label class="confirm-field"><input type="radio" name="confirm" value="approved" required><span>Confirmo aprobar todas las pendientes.</span></label>
-      <button class="approve-button" type="submit" name="decision" value="approved">Aprobar {{ candidates.pending_count }}</button>
-    </div>
-  </form>
-</details>
-{% elif candidates.pending_count > 500 %}
+{% if candidates.pending_count > 500 %}
 <div class="blocked-note">Hay {{ candidates.pending_count }} asociaciones pendientes. El lote seguro admite hasta 500.</div>
 {% endif %}
 {% if candidates["items"] %}
@@ -74,26 +47,10 @@
       <strong>{{ candidate.decision }}</strong><br>Decidido por {{ candidate.decided_by }}
       {% if candidate.approved_image_materialization_id %}
       <p>Objeto verificado</p><code>{{ candidate.storage_relpath }}</code>
-      {% elif candidate.decision == 'approved' %}
-      <details class="materialize-action"><summary>Materializar copia aprobada</summary>
-        <form method="post" action="/operator/images/candidates/{{ candidate.image_product_candidate_id }}/materialize">
-          <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
-          <input type="hidden" name="evidence_sha256" value="{{ candidate.evidence_sha256 }}">
-          <label><span>Motivo</span><textarea name="reason" minlength="4" maxlength="500" required></textarea></label>
-          <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Verificar y copiar sin modificar el ZIP original.</span></label>
-          <button class="primary-button">Crear objeto content-addressed</button>
-        </form>
-      </details>
       {% endif %}
     </div>
     {% else %}
-    <form class="decision-form" method="post" action="/operator/images/candidates/{{ candidate.image_product_candidate_id }}/decision">
-      <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
-      <input type="hidden" name="evidence_sha256" value="{{ candidate.evidence_sha256 }}">
-      <label><span>Motivo</span><textarea name="reason" minlength="4" maxlength="500" required></textarea></label>
-      <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo esta decisión individual sobre la evidencia mostrada.</span></label>
-      <div class="decision-actions"><button class="reject-button" name="decision" value="rejected">Rechazar</button><button class="approve-button" name="decision" value="approved">Aprobar</button></div>
-    </form>
+    <div class="resolved-note"><strong>Pendiente</strong><br>Se aprobará y copiará con "Preparar coincidencias exactas".</div>
     {% endif %}
   </article>
   {% endfor %}
