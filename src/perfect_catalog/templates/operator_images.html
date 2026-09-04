@@ -102,4 +102,28 @@
 <section class="empty-state"><span class="empty-symbol">◇</span><h2>No hay candidatos</h2><p>Indexa un ZIP desde Ingresos y genera propuestas exactas. Las coincidencias difusas no se crean automáticamente.</p><a class="secondary-button" href="/operator/intake?kind=image_archive">Abrir ingresos de imágenes</a></section>
 {% endif %}
 <nav class="pagination">{% if previous_url %}<a class="secondary-button" href="{{ previous_url }}">← Anterior</a>{% else %}<span></span>{% endif %}{% if next_url %}<a class="secondary-button" href="{{ next_url }}">Siguiente →</a>{% endif %}</nav>
+{% if unlinked_entries["items"] %}
+<section class="transition-panel unlinked-image-panel">
+  <h2>Fotos sin asociar o ambiguas · {{ unlinked_entries.filtered_count }}</h2>
+  <p>Ningún archivo se pierde: estas fotos quedaron en cuarentena sin coincidencia exacta, o dos archivos del mismo ZIP tienen el mismo nombre normalizado. No se aprueban ni se rechazan aquí; revísalas y vuelve a subir con el nombre correcto si hace falta.</p>
+  <div class="image-candidate-list">
+    {% for entry in unlinked_entries["items"] %}
+    <article class="image-candidate-card unlinked-entry-card">
+      <div class="candidate-file">
+        <img class="candidate-placeholder" src="/operator/images/entries/{{ entry.image_archive_entry_id }}/preview" alt="Miniatura de {{ entry.original_filename }}" loading="lazy">
+        <span class="row-label">Archivo indexado</span>
+        <h2>{{ entry.original_filename }}</h2>
+        <code>{{ entry.content_sha256[:16] }}…</code>
+        <small>Clave: {{ entry.lookup_key }}</small>
+      </div>
+      {% if entry.match_status == 'ambiguous' %}
+      <div class="resolved-note"><strong>Ambigua</strong><br>{{ entry.conflict_count }} archivos de este ZIP normalizan al mismo nombre. Revisa cuál corresponde a qué referencia y vuelve a subir con nombres distintos.</div>
+      {% else %}
+      <div class="resolved-note"><strong>Sin coincidencia</strong><br>Ninguna referencia aprobada corresponde a «{{ entry.lookup_key }}». Verifica que la referencia esté aprobada o que el nombre del archivo sea exacto.</div>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 {% endblock %}

@@ -170,6 +170,51 @@ def list_image_candidates(
             "limit": limit, "offset": offset}
 
 
+def list_unlinked_image_entries(
+    config: DatabaseConfig, password: str, *, limit: int = 100, offset: int = 0,
+    company_id: uuid.UUID,
+) -> dict[str, Any]:
+    """Fotos indexadas que quedaron invisibles hasta ahora: sin ningún candidato de coincidencia
+    (su nombre de archivo no correspondió a ninguna referencia aprobada) o marcadas ambiguas
+    (dos archivos del mismo ZIP normalizan al mismo nombre). Ninguna se materializa ni se
+    rechaza aquí; esto es solo para que el operador las vea y decida qué hacer manualmente."""
+    if limit < 1 or limit > 200 or offset < 0:
+        raise ValueError("Paginación inválida.")
+    with psycopg.connect(**config.connection_kwargs(password)) as connection:
+        with connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                """
+                SELECT e.image_archive_entry_id, e.original_filename, e.lookup_key,
+                       e.match_status, e.conflict_count, e.content_sha256, e.indexed_at,
+                       count(*) OVER () AS filtered_count
+                FROM perfect_catalog.image_archive_entry AS e
+                JOIN perfect_catalog.image_archive_index AS i
+                  ON i.image_archive_index_id=e.image_archive_index_id
+                JOIN perfect_catalog.intake_submission AS s
+                  ON s.intake_submission_id=i.intake_submission_id
+                WHERE s.company_id=%s
+                  AND (
+                    e.match_status='ambiguous'
+                    OR NOT EXISTS (
+                      SELECT 1 FROM perfect_catalog.image_product_candidate AS c
+                      WHERE c.image_archive_entry_id=e.image_archive_entry_id
+                    )
+                  )
+                ORDER BY e.indexed_at DESC, e.image_archive_entry_id
+                LIMIT %s OFFSET %s
+                """,
+                (company_id, limit, offset),
+            )
+            rows = [dict(row) for row in cursor.fetchall()]
+    count = int(rows[0].pop("filtered_count")) if rows else 0
+    for row in rows[1:]:
+        row.pop("filtered_count", None)
+    for row in rows:
+        row["image_archive_entry_id"] = str(row["image_archive_entry_id"])
+        row["indexed_at"] = row["indexed_at"].isoformat()
+    return {"items": rows, "filtered_count": count, "limit": limit, "offset": offset}
+
+
 def decide_image_candidate(
     candidate_id: uuid.UUID, evidence_sha256: str, decision: str,
     actor: str, reason: str, config: DatabaseConfig, password: str,

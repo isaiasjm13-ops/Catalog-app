@@ -235,6 +235,14 @@ class ReviewGateway(Protocol):
         self, *, limit: int = 100, offset: int = 0, company_id: uuid.UUID,
     ) -> dict[str, Any]: ...
 
+    def unlinked_image_entries(
+        self, *, limit: int = 100, offset: int = 0, company_id: uuid.UUID,
+    ) -> dict[str, Any]: ...
+
+    def image_entry_preview(
+        self, entry_id: uuid.UUID, intake_root: Path, company_id: uuid.UUID,
+    ) -> bytes: ...
+
     def decide_image_candidate(
         self, candidate_id: uuid.UUID, evidence_sha256: str, decision: str,
         actor: str, reason: str, company_id: uuid.UUID,
@@ -1999,6 +2007,10 @@ def create_operator_app(
                 gateway.image_candidates, limit=limit, offset=(page - 1) * limit,
                 company_id=session_or_redirect.company_id,
             )
+            unlinked_entries = await run_in_threadpool(
+                gateway.unlinked_image_entries, limit=50, offset=0,
+                company_id=session_or_redirect.company_id,
+            )
         except ValueError as exc:
             return _error(environment, 400, "Página inválida", str(exc), session=session_or_redirect)
         except Exception as exc:
@@ -2020,6 +2032,7 @@ def create_operator_app(
         next_url = f"/operator/images?page={page + 1}" if page * limit < candidates["filtered_count"] else None
         return _render(
             environment, "operator_images.html", candidates=candidates,
+            unlinked_entries=unlinked_entries,
             message=result_message, page=page, previous_url=previous_url, next_url=next_url,
             session=session_or_redirect, version=OPERATOR_VERSION,
         )
@@ -2204,6 +2217,21 @@ def create_operator_app(
             content = await run_in_threadpool(
                 gateway.image_candidate_preview,
                 _uuid(candidate_id, "candidate_id"), resolved_intake_root, session.company_id,
+            )
+        except (ValueError, RuntimeError, PermissionError, OSError):
+            return Response(status_code=404)
+        return Response(content=content, media_type="image/jpeg")
+
+    @app.get("/operator/images/entries/{entry_id}/preview")
+    async def image_entry_preview_route(request: Request, entry_id: str) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            content = await run_in_threadpool(
+                gateway.image_entry_preview,
+                _uuid(entry_id, "entry_id"), resolved_intake_root, session.company_id,
             )
         except (ValueError, RuntimeError, PermissionError, OSError):
             return Response(status_code=404)

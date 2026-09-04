@@ -1425,6 +1425,25 @@ class DatabaseReviewGateway:
             company_id=company_id,
         )
 
+    def unlinked_image_entries(
+        self, *, limit: int = 100, offset: int = 0, company_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        from .image_match_review import list_unlinked_image_entries
+
+        return list_unlinked_image_entries(
+            self._config, self._password, limit=limit, offset=offset,
+            company_id=company_id,
+        )
+
+    def image_entry_preview(
+        self, entry_id: uuid.UUID, intake_root: Path, company_id: uuid.UUID,
+    ) -> bytes:
+        from .approved_image_materialization import resolve_image_entry_preview
+
+        return resolve_image_entry_preview(
+            entry_id, intake_root, self._config, self._password, company_id=company_id,
+        )
+
     def decide_image_candidate(
         self, candidate_id: uuid.UUID, evidence_sha256: str, decision: str,
         actor: str, reason: str, company_id: uuid.UUID,

@@ -47,6 +47,7 @@ class SyntheticReviewGateway:
         self.promotions: list[dict[str, Any]] = []
         self.image_indexes: list[dict[str, Any]] = []
         self.image_candidate_data: list[dict[str, Any]] = []
+        self.unlinked_image_data: list[dict[str, Any]] = []
         self.catalog_exports: list[dict[str, Any]] = []
         self.release_changes: list[dict[str, Any]] = []
         self.visual_identity_records: list[dict[str, Any]] = []
@@ -341,6 +342,22 @@ class SyntheticReviewGateway:
                     for item in self.image_candidate_data
                 ),
                 "limit": limit, "offset": offset}
+
+    def unlinked_image_entries(
+        self, *, limit: int = 100, offset: int = 0, company_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        items = self.unlinked_image_data[offset:offset + limit]
+        return {"items": items, "filtered_count": len(self.unlinked_image_data), "limit": limit, "offset": offset}
+
+    def image_entry_preview(
+        self, entry_id: uuid.UUID, intake_root: Path, company_id: uuid.UUID,
+    ) -> bytes:
+        matches = [item for item in self.unlinked_image_data if item["image_archive_entry_id"] == str(entry_id)]
+        if not matches:
+            raise ValueError("no existe")
+        return base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        )
 
     def decide_image_candidate(
         self, candidate_id: uuid.UUID, evidence_sha256: str, decision: str,
@@ -1737,6 +1754,31 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         history = await self.client.get("/operator/intake")
         self.assertIn("2 imágenes indexadas", history.text)
         self.assertIn("1 ambiguas", history.text)
+
+    async def test_images_page_shows_unmatched_and_ambiguous_entries_with_real_thumbnails(self) -> None:
+        await self.login()
+        unmatched_id, ambiguous_id = uuid.uuid4(), uuid.uuid4()
+        self.gateway.unlinked_image_data = [
+            {"image_archive_entry_id": str(unmatched_id), "original_filename": "REF-999.jpg",
+             "lookup_key": "REF-999", "match_status": "unmatched", "conflict_count": 1,
+             "content_sha256": "c" * 64, "indexed_at": "2026-09-04T00:00:00+00:00"},
+            {"image_archive_entry_id": str(ambiguous_id), "original_filename": "NK-001 (1).jpg",
+             "lookup_key": "NK-001", "match_status": "ambiguous", "conflict_count": 2,
+             "content_sha256": "d" * 64, "indexed_at": "2026-09-04T00:00:00+00:00"},
+        ]
+        page = await self.client.get("/operator/images")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("Fotos sin asociar o ambiguas · 2", page.text)
+        self.assertIn("REF-999.jpg", page.text)
+        self.assertIn("Sin coincidencia", page.text)
+        self.assertIn("NK-001 (1).jpg", page.text)
+        self.assertIn("Ambigua", page.text)
+        self.assertIn(f"/operator/images/entries/{unmatched_id}/preview", page.text)
+        preview = await self.client.get(f"/operator/images/entries/{unmatched_id}/preview")
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.headers["content-type"], "image/jpeg")
+        missing = await self.client.get(f"/operator/images/entries/{uuid.uuid4()}/preview")
+        self.assertEqual(missing.status_code, 404)
 
     async def test_image_candidate_generation_and_decision_are_separate_posts(self) -> None:
         await self.login()

@@ -76,6 +76,27 @@ def _thumbnail_jpeg(content: bytes, *, max_side_px: int = MAX_CANDIDATE_PREVIEW_
     return output.getvalue()
 
 
+def _verified_thumbnail_from_archive(intake_root: Path, record: dict[str, Any]) -> bytes:
+    """Cola compartida: verifica el ZIP en cuarentena y su entrada exactamente igual que al
+    materializar (tamaño, SHA-256, CRC), y devuelve una miniatura — sin copiar ni aprobar nada."""
+    archive_path = _confined(intake_root, record["archive_relpath"])
+    if not archive_path.is_file() or archive_path.stat().st_size != record["archive_size"]:
+        raise RuntimeError("El ZIP de cuarentena falta o cambió de tamaño.")
+    if _sha256(archive_path) != record["archive_sha256"]:
+        raise RuntimeError("El ZIP de cuarentena no coincide con su SHA-256.")
+    with zipfile.ZipFile(archive_path) as archive:
+        try:
+            info = archive.getinfo(record["member_path"])
+        except KeyError as exc:
+            raise RuntimeError("La entrada indexada ya no existe dentro del ZIP.") from exc
+        if info.file_size != record["uncompressed_size"] or f"{info.CRC:08x}" != record["crc32"]:
+            raise RuntimeError("Tamaño o CRC de la entrada no coincide con el índice.")
+        content = archive.read(info)
+    if hashlib.sha256(content).hexdigest() != record["content_sha256"]:
+        raise RuntimeError("Los bytes leídos no coinciden con el SHA-256 indexado.")
+    return _thumbnail_jpeg(content)
+
+
 def resolve_image_candidate_preview(
     candidate_id: uuid.UUID, intake_root: Path,
     config: DatabaseConfig, password: str, *, company_id: uuid.UUID,
@@ -105,22 +126,36 @@ def resolve_image_candidate_preview(
         ).fetchone()
     if record is None:
         raise ValueError("No existe el candidato de imagen solicitado.")
-    archive_path = _confined(intake_root, record["archive_relpath"])
-    if not archive_path.is_file() or archive_path.stat().st_size != record["archive_size"]:
-        raise RuntimeError("El ZIP de cuarentena falta o cambió de tamaño.")
-    if _sha256(archive_path) != record["archive_sha256"]:
-        raise RuntimeError("El ZIP de cuarentena no coincide con su SHA-256.")
-    with zipfile.ZipFile(archive_path) as archive:
-        try:
-            info = archive.getinfo(record["member_path"])
-        except KeyError as exc:
-            raise RuntimeError("La entrada indexada ya no existe dentro del ZIP.") from exc
-        if info.file_size != record["uncompressed_size"] or f"{info.CRC:08x}" != record["crc32"]:
-            raise RuntimeError("Tamaño o CRC de la entrada no coincide con el índice.")
-        content = archive.read(info)
-    if hashlib.sha256(content).hexdigest() != record["content_sha256"]:
-        raise RuntimeError("Los bytes leídos no coinciden con el SHA-256 indexado.")
-    return _thumbnail_jpeg(content)
+    return _verified_thumbnail_from_archive(intake_root, record)
+
+
+def resolve_image_entry_preview(
+    entry_id: uuid.UUID, intake_root: Path,
+    config: DatabaseConfig, password: str, *, company_id: uuid.UUID,
+) -> bytes:
+    """Miniatura de solo lectura de cualquier entrada indexada, tenga o no un candidato de
+    coincidencia — para revisar fotos sin match o ambiguas antes de decidir qué hacer con ellas."""
+    intake_root = Path(intake_root).resolve()
+    with psycopg.connect(**config.connection_kwargs(password), row_factory=dict_row) as connection:
+        record = connection.execute(
+            """
+            SELECT e.member_path, e.uncompressed_size, e.crc32, e.content_sha256,
+                   a.storage_relpath AS archive_relpath, a.size_bytes AS archive_size,
+                   a.sha256 AS archive_sha256
+            FROM perfect_catalog.image_archive_entry AS e
+            JOIN perfect_catalog.image_archive_index AS i
+              ON i.image_archive_index_id=e.image_archive_index_id
+            JOIN perfect_catalog.intake_submission AS s
+              ON s.intake_submission_id=i.intake_submission_id
+            JOIN perfect_catalog.intake_asset AS a
+              ON a.intake_asset_id=s.intake_asset_id
+            WHERE e.image_archive_entry_id=%s AND s.company_id=%s
+            """,
+            (entry_id, company_id),
+        ).fetchone()
+    if record is None:
+        raise ValueError("No existe la entrada de imagen solicitada.")
+    return _verified_thumbnail_from_archive(intake_root, record)
 
 
 def materialize_approved_image(

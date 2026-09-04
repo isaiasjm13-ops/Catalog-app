@@ -1,3 +1,4 @@
+import datetime
 import unittest
 import uuid
 from unittest.mock import Mock, patch
@@ -5,6 +6,7 @@ from unittest.mock import Mock, patch
 from perfect_catalog.config import DatabaseConfig
 from perfect_catalog.image_match_review import (
     MATCH_ALGORITHM, decide_image_candidate, decide_image_candidates_bulk, exact_image_candidates,
+    list_unlinked_image_entries,
 )
 
 
@@ -132,6 +134,32 @@ class ImageMatchReviewTests(unittest.TestCase):
                     1, "rejected", "isa", "Lote exacto revisado", DatabaseConfig(), "secret",
                     company_id=self.COMPANY_ID,
                 )
+
+    def test_unlinked_entries_query_targets_ambiguous_or_candidate_free_rows(self) -> None:
+        rows = [{
+            "image_archive_entry_id": uuid.uuid4(), "original_filename": "NK-001.jpg",
+            "lookup_key": "NK-001", "match_status": "unmatched", "conflict_count": 1,
+            "content_sha256": "a" * 64, "indexed_at": datetime.datetime(2026, 9, 4, tzinfo=datetime.UTC),
+            "filtered_count": 1,
+        }]
+        cursor = Mock(); cursor.fetchall.return_value = rows
+        cursor_context = Mock(); cursor_context.__enter__ = Mock(return_value=cursor); cursor_context.__exit__ = Mock(return_value=False)
+        connection = Mock(); connection.cursor.return_value = cursor_context
+        connection_context = Mock(); connection_context.__enter__ = Mock(return_value=connection); connection_context.__exit__ = Mock(return_value=False)
+        with patch("perfect_catalog.image_match_review.psycopg.connect", return_value=connection_context):
+            result = list_unlinked_image_entries(DatabaseConfig(), "secret", company_id=self.COMPANY_ID)
+        self.assertEqual(result["filtered_count"], 1)
+        self.assertEqual(result["items"][0]["original_filename"], "NK-001.jpg")
+        self.assertIsInstance(result["items"][0]["image_archive_entry_id"], str)
+        selection_sql = cursor.execute.call_args_list[0].args[0]
+        self.assertIn("match_status='ambiguous'", selection_sql)
+        self.assertIn("NOT EXISTS", selection_sql)
+
+    def test_unlinked_entries_rejects_invalid_pagination(self) -> None:
+        with self.assertRaises(ValueError):
+            list_unlinked_image_entries(DatabaseConfig(), "secret", company_id=self.COMPANY_ID, limit=0)
+        with self.assertRaises(ValueError):
+            list_unlinked_image_entries(DatabaseConfig(), "secret", company_id=self.COMPANY_ID, offset=-1)
 
 
 if __name__ == "__main__":
