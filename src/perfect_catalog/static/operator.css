@@ -116,6 +116,8 @@ button:active, .primary-button:active, .secondary-button:active { transform: tra
 .plan-card { border-radius: 20px; padding: 26px; }
 .plan-card-top { display: flex; justify-content: space-between; gap: 18px; align-items: start; }
 .file-label { color: var(--muted); font-size: 12px; }
+.keyboard-hint { margin: 4px 0 14px; color: var(--muted); font-size: 12px; }
+.keyboard-hint code { padding: 2px 6px; border-radius: 5px; background: #eef1ec; color: var(--ink); font-size: 11px; }
 .state-pill { display: inline-flex; width: fit-content; border-radius: 999px; padding: 7px 10px; font-size: 11px; font-weight: 800; white-space: nowrap; background: #eef1f5; color: #1c2733; }
 .plan-operation-breakdown { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .plan-diff-list { display: grid; gap: 10px; margin-top: 10px; }

@@ -53,6 +53,7 @@
 {% endif %}
 
 {% if queue["items"] %}
+<p class="keyboard-hint"><code>j</code>/<code>k</code> mueve entre identidades · <code>Ctrl+Enter</code> aprueba la activa · <code>Ctrl+Shift+Enter</code> rechaza. El motivo y la confirmación siguen siendo obligatorios.</p>
 <section class="review-list">
   {% for item in queue["items"] %}
   <article class="review-card state-{{ item.review_state }}">
@@ -120,3 +121,4 @@
   {% if next_url %}<a class="secondary-button" href="{{ next_url }}">Siguiente →</a>{% endif %}
 </nav>
 {% endblock %}
+{% block scripts %}<script src="/operator/static/review-shortcuts.js" defer></script>{% endblock %}

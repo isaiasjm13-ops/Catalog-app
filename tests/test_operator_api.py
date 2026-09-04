@@ -1493,6 +1493,17 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["products"][0]["category"], "Motor / Empaques")
         self.assertEqual(payload["products"][0]["applications"], ["Toyota Corolla"])
 
+    async def test_review_queue_offers_keyboard_shortcuts_without_bypassing_required_fields(self) -> None:
+        await self.login()
+        queue = await self.client.get(f"/operator/plans/{PLAN_ID}?state=pending")
+        self.assertEqual(queue.status_code, 200)
+        self.assertIn("Ctrl+Enter", queue.text)
+        self.assertIn('<script src="/operator/static/review-shortcuts.js" defer></script>', queue.text)
+        script = await self.client.get("/operator/static/review-shortcuts.js")
+        self.assertEqual(script.status_code, 200)
+        self.assertIn("requestSubmit", script.text)
+        self.assertIn("isTyping", script.text)
+
     async def test_decision_requires_same_origin_and_exact_csrf(self) -> None:
         await self.login()
         queue = await self.client.get(f"/operator/plans/{PLAN_ID}?state=pending")
