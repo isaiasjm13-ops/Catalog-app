@@ -1,6 +1,6 @@
-# Perfect Trading Catalog System
+# Nexo ISA — Sistema de Catálogo Multiempresa
 
-**Système local de catálogo de autopartes para Perfect Trading**
+**Integración y Sincronización Automática · Sistema local de catálogo de autopartes**
 
 ```
 ┌─ Perfect Trading (Empresa)

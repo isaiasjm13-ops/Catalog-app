@@ -1,4 +1,4 @@
-# Perfect Trading Catalog System
+# Nexo ISA — Sistema de Catálogo Multiempresa
 
 ## Visión General
 
