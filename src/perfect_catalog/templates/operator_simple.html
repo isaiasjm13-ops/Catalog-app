@@ -1,0 +1,36 @@
+{% extends "operator_base.html" %}
+{% block title %}Modo simple{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><span class="kicker">Atajo guiado</span><h1>Modo simple</h1><p>Para cargas rápidas: sube el Excel de productos y la carpeta de fotos. El resto del proceso corre solo hasta el punto en que necesita tu revisión.</p></div>
+  <span class="safety-chip"><span>●</span> Mismo motor auditado</span>
+</section>
+{% if error_message %}<div class="alert alert-error" role="alert">{{ error_message }}</div>{% endif %}
+<section class="transition-panel brand-profile-builder">
+  <h2>Qué hace este modo automáticamente</h2>
+  <ol>
+    <li>Ingresa el Excel y la carpeta de fotos a cuarentena, igual que en Ingresos.</li>
+    <li>Genera el dry-run y lo prepara: crea las identidades pendientes de revisión para esa marca.</li>
+    <li>Indexa las fotos y vincula automáticamente las que coincidan exactamente con el nombre de archivo de una referencia <strong>ya aprobada</strong>.</li>
+    <li>Te lleva directo a revisar las identidades nuevas. Las fotos de productos nuevos se vinculan solas recién cuando los apruebes ahí — después vuelve a <a href="/operator/images">Imágenes</a> para completarlas.</li>
+  </ol>
+  <p>Nada se publica en el catálogo todavía: seguís necesitando aprobar cada identidad y, más adelante, construir y publicar una versión desde Catálogos.</p>
+</section>
+<section class="transition-panel brand-profile-builder">
+  <h2>Excel y fotos</h2>
+  <form method="post" action="/operator/simple" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+    <label><span>Marca</span>
+      <select name="brand_code" required>
+        {% for profile in profiles %}<option value="{{ profile.code }}">{{ profile.display_name }} · {{ profile.code }}</option>{% endfor %}
+      </select>
+    </label>
+    <label><span>Excel de productos</span><input type="file" name="odoo_file" accept=".xlsx,.csv,.tsv" required></label>
+    <label><span>Carpeta de fotos (subida desde el navegador)</span><input type="file" name="images" webkitdirectory multiple><small>El nombre de cada foto debe ser la referencia del producto (por ejemplo <code>REF-1234.jpg</code>).</small></label>
+    <label><span>O ruta local de la carpeta de fotos en este servidor</span><input type="text" name="local_images_path" maxlength="400" placeholder="C:\Fotos\Catalogo Septiembre"><small>Alternativa a subir por el navegador: escribe la ruta completa en el equipo donde corre la consola. El servidor lee cualquier carpeta a la que tenga acceso; usa una sola de las dos opciones.</small></label>
+    <label><span>Motivo auditable</span><textarea name="reason" minlength="4" maxlength="500" required placeholder="Actualización mensual de catálogo"></textarea></label>
+    <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo iniciar el dry-run, preparar las identidades pendientes e intentar vincular fotos automáticamente con este Excel y esta carpeta.</span></label>
+    <button class="primary-button" type="submit">Iniciar modo simple</button>
+  </form>
+</section>
+{% endblock %}

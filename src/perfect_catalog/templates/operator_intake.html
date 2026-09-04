@@ -65,6 +65,11 @@
     <option value="quarantined" {% if selected_status == 'quarantined' %}selected{% endif %}>En cuarentena</option>
     <option value="rejected" {% if selected_status == 'rejected' %}selected{% endif %}>Rechazados</option>
   </select></label>
+  <label><span>Archivado</span><select name="archived">
+    <option value="active" {% if selected_archived == 'active' %}selected{% endif %}>Activos</option>
+    <option value="archived" {% if selected_archived == 'archived' %}selected{% endif %}>Archivados</option>
+    <option value="all" {% if selected_archived == 'all' %}selected{% endif %}>Todos</option>
+  </select></label>
   <button class="secondary-button" type="submit">Filtrar</button>
 </form>
 
@@ -83,8 +88,19 @@
         {% if submission.validation_status == 'quarantined' %}En cuarentena{% else %}Rechazado{% endif %}
       </span>
       {% if submission.duplicate_content %}<span class="duplicate-chip">Contenido duplicado</span>{% endif %}
+      {% if submission.archived %}<span class="duplicate-chip">Archivado por {{ submission.archived_by }}</span>{% endif %}
       <code>{{ submission.sha256 }}</code>
     </div>
+    <details class="promotion-action">
+      <summary>{{ 'Restaurar a la lista activa' if submission.archived else 'Archivar (no borra nada)' }}</summary>
+      <form method="post" action="/operator/intake/{{ submission.intake_submission_id }}/archive">
+        <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+        <input type="hidden" name="archived" value="{{ 'false' if submission.archived else 'true' }}">
+        <label><span>Motivo</span><textarea name="reason" minlength="4" maxlength="500" required placeholder="{{ 'Vuelve a hacer falta' if submission.archived else 'Ya no se usa; deja de listarse' }}"></textarea></label>
+        <label class="confirm-field"><input type="checkbox" name="confirm" value="{{ 'restore' if submission.archived else 'archive' }}" required><span>{{ 'Confirmo restaurar este ingreso a la lista activa.' if submission.archived else 'Confirmo archivar este ingreso; su evidencia sigue intacta.' }}</span></label>
+        <button class="secondary-button" type="submit">{{ 'Restaurar' if submission.archived else 'Archivar' }}</button>
+      </form>
+    </details>
     <details class="intake-details">
       <summary>Ver evidencia</summary>
       <dl>
@@ -105,6 +121,7 @@
         <summary>Promover a dry-run</summary>
         <form method="post" action="/operator/intake/{{ submission.intake_submission_id }}/promote">
           <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+          <label><span>Marca</span><select name="brand_code" required>{% for profile in profiles %}<option value="{{ profile.code }}">{{ profile.display_name }} · {{ profile.code }}</option>{% endfor %}</select></label>
           <label><span>Motivo de procesamiento</span><textarea name="reason" minlength="4" maxlength="500" required></textarea></label>
           <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo el perfilado y dry-run de este ingreso individual. No aprueba ni aplica productos.</span></label>
           <button class="primary-button" type="submit">Perfilar y crear dry-run</button>

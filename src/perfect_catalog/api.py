@@ -15,9 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .web import (
     PAGE,
-    AutoExcelCatalogRepository,
     CatalogReader,
-    ExcelCatalogRepository,
     ReleaseCatalogRepository,
     render_product,
     render_category_filters,
@@ -98,8 +96,8 @@ def create_app(repository: CatalogReader, *, image_root: Path = Path("data/image
         title="Perfect Trading Catalog API",
         version=API_VERSION,
         description=(
-            "API de consulta del catálogo Natsuki. Los releases publicados usan UUID estables; "
-            "source-row solo aparece en el modo piloto XLSX explícito."
+            "API de consulta de solo lectura de un release publicado. Los productos usan UUID "
+            "estables identificados por marca."
         ),
         lifespan=lifespan,
     )
@@ -189,7 +187,10 @@ def create_app(repository: CatalogReader, *, image_root: Path = Path("data/image
         category_items = repository.categories()
         import html
 
+        brand_name = getattr(repository, "brand_name", "Catálogo")
         return PAGE.format(
+            eyebrow=html.escape(brand_name),
+            catalog_title=html.escape(f"Catálogo · {brand_name}"),
             query=html.escape(query, quote=True),
             category=html.escape(selected_category, quote=True),
             plan_status=html.escape(plan_status),
@@ -206,14 +207,14 @@ def create_app(repository: CatalogReader, *, image_root: Path = Path("data/image
         item = repository.product(product_id)
         if item is None:
             raise HTTPException(status_code=404, detail="Producto no encontrado")
-        return render_product(item)
+        return render_product(item, brand_name=getattr(repository, "brand_name", "Catálogo"))
 
     @app.get("/producto/{product_id}/ficha", response_class=HTMLResponse, include_in_schema=False)
     def printable_product_page(product_id: str) -> str:
         item = repository.product(product_id)
         if item is None:
             raise HTTPException(status_code=404, detail="Producto no encontrado")
-        return render_product(item, printable=True)
+        return render_product(item, printable=True, brand_name=getattr(repository, "brand_name", "Catálogo"))
 
     return app
 
@@ -222,10 +223,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Inicia el catálogo FastAPI de solo lectura")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
-    source = parser.add_mutually_exclusive_group()
-    source.add_argument("--source", type=Path, default=None)
-    source.add_argument("--source-dir", type=Path, default=None)
-    parser.add_argument("--brand", default="NATSUKI")
+    parser.add_argument("--brand", required=True, help="Código o nombre de la marca cuyo último release publicado se va a servir.")
     parser.add_argument("--image-root", type=Path, default=Path("data/images"))
     parser.add_argument("--database", default=None)
     parser.add_argument("--user", default=None)
@@ -238,21 +236,16 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        if args.source is not None:
-            repository: CatalogReader = ExcelCatalogRepository(str(args.source))
-        elif args.source_dir is not None:
-            repository = AutoExcelCatalogRepository(args.source_dir)
-        else:
-            database_args = argparse.Namespace(
-                host=args.host_db,
-                port=args.port_db,
-                database=args.database,
-                user=args.user,
-            )
-            config = DatabaseConfig.from_args(database_args)
-            repository = ReleaseCatalogRepository(
-                config, prompt_password(args.prompt_password), brand=args.brand
-            )
+        database_args = argparse.Namespace(
+            host=args.host_db,
+            port=args.port_db,
+            database=args.database,
+            user=args.user,
+        )
+        config = DatabaseConfig.from_args(database_args)
+        repository: CatalogReader = ReleaseCatalogRepository(
+            config, prompt_password(args.prompt_password), brand=args.brand
+        )
     except (FileNotFoundError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

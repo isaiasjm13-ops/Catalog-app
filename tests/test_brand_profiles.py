@@ -9,6 +9,7 @@ from perfect_catalog.catalog_exports import (
     NATSUKI_BODY_BOLD_FONT,
     NATSUKI_BODY_FONT,
     NATSUKI_TITLE_FONT,
+    _catalog_pdf_fonts,
     _register_natsuki_fonts,
 )
 
@@ -79,6 +80,14 @@ class BrandProfileTests(unittest.TestCase):
         self.assertIn('"assets/brands/*/fonts/*.ttf"', packaging)
         self.assertIn('"assets/brands/*/fonts/*.txt"', packaging)
 
+    def test_pdf_fonts_are_generic_except_for_natsukis_own_bundled_logo(self) -> None:
+        generic = _catalog_pdf_fonts({})
+        self.assertEqual(generic, ("Helvetica-Bold", "Helvetica", "Helvetica-Bold"))
+        other_brand = _catalog_pdf_fonts({"visual_profile": {"logo_asset_key": "brands/pdm/logo.svg"}})
+        self.assertEqual(other_brand, ("Helvetica-Bold", "Helvetica", "Helvetica-Bold"))
+        natsuki = _catalog_pdf_fonts({"visual_profile": {"logo_asset_key": "brands/natsuki/logo.svg"}})
+        self.assertEqual(natsuki, (NATSUKI_TITLE_FONT, NATSUKI_BODY_FONT, NATSUKI_BODY_BOLD_FONT))
+
     def test_brand_workflow_migration_binds_plan_brand_and_visual_contract(self) -> None:
         sql = (ROOT / "db/migrations/0014_brand_profile_workflow.sql").read_text(encoding="utf-8")
         self.assertTrue(sql.startswith("BEGIN;"))
@@ -90,7 +99,9 @@ class BrandProfileTests(unittest.TestCase):
         self.assertNotIn("\\\\.svg$", sql)
         self.assertNotIn("DROP ", sql.upper())
         template = (ROOT / "src/perfect_catalog/templates/operator_import_plan.html").read_text(encoding="utf-8")
-        self.assertIn('name="brand_code"', template)
+        self.assertIn('Marca fijada en el dry-run', template)
+        self.assertIn('plan.brand_profile_code', template)
+        self.assertNotIn('name="brand_code"', template)
 
     def test_central_updater_applies_brand_prerequisites_once(self) -> None:
         bootstrap = (ROOT / "db/bootstrap/apply_pending_migrations.sql").read_text(encoding="utf-8")
@@ -107,6 +118,49 @@ class BrandProfileTests(unittest.TestCase):
     def test_plan_inspection_groups_joined_brand_profile(self) -> None:
         importer = (ROOT / "src/perfect_catalog/importer.py").read_text(encoding="utf-8")
         self.assertIn("GROUP BY p.import_plan_id, bp.brand_profile_id", importer)
+
+    def test_link_brand_profile_validates_before_touching_the_database(self) -> None:
+        from perfect_catalog.brand_profiles import link_brand_profile
+
+        with self.assertRaisesRegex(ValueError, "operador"):
+            link_brand_profile(
+                brand_id="00000000-0000-0000-0000-000000000001",
+                brand_profile_id="00000000-0000-0000-0000-000000000002",
+                expected_previous_brand_profile_id=None,
+                actor="", reason="Motivo suficientemente largo",
+                config=None, password=None,
+            )
+        with self.assertRaisesRegex(ValueError, "motivo"):
+            link_brand_profile(
+                brand_id="00000000-0000-0000-0000-000000000001",
+                brand_profile_id="00000000-0000-0000-0000-000000000002",
+                expected_previous_brand_profile_id=None,
+                actor="reviewer", reason="no",
+                config=None, password=None,
+            )
+
+    def test_brand_profile_link_migration_is_append_only_and_scoped(self) -> None:
+        sql = (ROOT / "db/migrations/0023_brand_profile_linking.sql").read_text(encoding="utf-8")
+        self.assertTrue(sql.startswith("BEGIN;"))
+        self.assertTrue(sql.rstrip().endswith("COMMIT;"))
+        self.assertNotIn("DROP TABLE", sql.upper())
+        self.assertIn("trg_brand_profile_link_event_append_only", sql)
+        self.assertIn("ck_brand_profile_link_event_changes", sql)
+        self.assertIn("GRANT UPDATE (brand_profile_id, updated_at) ON perfect_catalog.brand", sql)
+        self.assertIn("GRANT SELECT, INSERT ON perfect_catalog.brand_profile_link_event", sql)
+
+    def test_new_brand_form_defaults_to_neutral_colors_not_an_existing_brands(self) -> None:
+        template = (ROOT / "src/perfect_catalog/templates/operator_brands.html").read_text(encoding="utf-8")
+        add_brand_section = template.split('Añadir una marca')[1]
+        self.assertNotIn("#C60012", add_brand_section)
+        self.assertNotIn("#202327", add_brand_section)
+        self.assertNotIn("#16191D", add_brand_section)
+        self.assertIn('name="primary_color" value="#1F2937"', add_brand_section)
+
+    def test_brands_page_offers_linking_form(self) -> None:
+        template = (ROOT / "src/perfect_catalog/templates/operator_brands.html").read_text(encoding="utf-8")
+        self.assertIn('action="/operator/brands/link"', template)
+        self.assertIn('name="expected_previous_brand_profile_id"', template)
 
 
 if __name__ == "__main__":

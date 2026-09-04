@@ -3,6 +3,7 @@ import json
 import hashlib
 import base64
 import csv
+import os
 import tempfile
 import unittest
 from unittest import mock
@@ -11,13 +12,18 @@ import zipfile
 from pathlib import Path
 from PIL import Image as PILImage
 
+from perfect_catalog import catalog_exports as catalog_exports_module
 from perfect_catalog.catalog_exports import (
     _contained_size, _optimized_raster, export_rows_from_release, generate_catalog_html,
-    generate_catalog_pdf, generate_catalog_pptx, generate_indesign_datamerge_csv,
+    generate_catalog_pdf, generate_catalog_pptx, generate_indesign_datamerge_csv, group_values,
 )
+from perfect_catalog import catalog_export_job as catalog_export_job_module
 from perfect_catalog.catalog_export_job import (
+    browse_catalog_release,
     build_catalog_bundle,
     build_catalog_preview,
+    create_operator_catalog_export,
+    _replace_with_retry,
     _selection,
     estimate_adaptive_indesign_layout,
     estimate_indesign_layout,
@@ -48,6 +54,57 @@ def fixture_release():
     release = {"catalog_release_id": uuid.uuid4(), "brand_id": brand_id, "version": "synthetic-v1", "status": "published", "definition": definition}
     release["snapshot_sha256"] = release_snapshot_sha256(brand_id, release["version"], definition, [item])
     return release, [item]
+
+
+def fixture_release_with_categories():
+    brand_id = uuid.uuid4()
+    specs = [
+        ("NK-101", "Motor / Empaques", ["Toyota"]),
+        ("NK-102", "Motor / Empaques", ["Honda"]),
+        ("NK-201", "Frenos / Pastillas", ["Toyota", "Honda"]),
+        ("NK-202", "Frenos / Pastillas", []),
+        ("NK-301", "Suspensión / Amortiguadores", ["Mazda"]),
+    ]
+    items = []
+    for order, (reference, category, vehicle_makes) in enumerate(specs, start=1):
+        template_id = uuid.uuid4()
+        data = {
+            "product_template_id": str(template_id), "product_variant_id": None,
+            "internal_reference_original": reference, "internal_reference_normalized": reference,
+            "name_original": f"Producto {reference}", "name_normalized": f"PRODUCTO {reference}",
+            "category_path": category, "brand": "Natsuki", "quantity_available": 0,
+            "vehicle_makes": vehicle_makes,
+        }
+        items.append({
+            "item_order": order, "product_template_id": template_id, "product_variant_id": None,
+            "snapshot_schema_version": SNAPSHOT_SCHEMA_VERSION, "snapshot_data": data,
+            "snapshot_sha256": product_snapshot_sha256(data),
+        })
+    definition = {"snapshot_schema_version": SNAPSHOT_SCHEMA_VERSION, "release_hash_algorithm": RELEASE_HASH_ALGORITHM,
+                  "source_kind": "applied_catalog", "item_count": len(items), "source_plan_id": str(uuid.uuid4()),
+                  "source_import_batch_id": str(uuid.uuid4()), "source_plan_fingerprint_sha256": "a"*64,
+                  "contract_version": "test-v1", "rules_version": "test-v1", "selection": {}}
+    release = {"catalog_release_id": uuid.uuid4(), "brand_id": brand_id, "version": "synthetic-v1", "status": "published", "definition": definition}
+    release["snapshot_sha256"] = release_snapshot_sha256(brand_id, release["version"], definition, items)
+    return release, items
+
+
+class GroupValuesTests(unittest.TestCase):
+    """`group_values` es la única implementación de fan-out por marca vehicular; la comparten
+    `_groups` (exportación digital/InDesign), `build_catalog_preview` y `browse_catalog_release`."""
+
+    def test_vehicle_make_fans_out_a_multi_brand_product(self) -> None:
+        row = {"vehicle_makes": ["Toyota", "Honda"]}
+        self.assertEqual(group_values(row, "vehicle_make", empty_label="Sin categoría"), ["Toyota", "Honda"])
+
+    def test_vehicle_make_falls_back_when_empty_or_missing(self) -> None:
+        self.assertEqual(group_values({"vehicle_makes": []}, "vehicle_make", empty_label="x"), ["Sin marca vehicular"])
+        self.assertEqual(group_values({}, "vehicle_make", empty_label="x"), ["Sin marca vehicular"])
+
+    def test_other_fields_use_the_caller_supplied_empty_label(self) -> None:
+        self.assertEqual(group_values({"category_path": "Motor"}, "category_path", empty_label="Sin categoría"), ["Motor"])
+        self.assertEqual(group_values({}, "category_path", empty_label="Sin categoría"), ["Sin categoría"])
+        self.assertEqual(group_values({}, "brand", empty_label="Sin subgrupo"), ["Sin subgrupo"])
 
 
 class CatalogExportTests(unittest.TestCase):
@@ -175,17 +232,22 @@ class CatalogExportTests(unittest.TestCase):
     def test_generated_pdf_and_pptx_are_valid_containers_with_content(self) -> None:
         release, items = fixture_release()
         rows = export_rows_from_release(release, items)
+        config = {
+            "title": "Catálogo sintético", "columns_per_row": 3, "theme": "industrial",
+            "visual_profile": {"company": {"display_name": "PDM"}},
+        }
         pdf = generate_catalog_pdf(
-            rows, {"title": "Catálogo sintético", "columns_per_row": 3, "theme": "industrial"},
+            rows, config,
             release=release,
         )
         self.assertTrue(pdf.startswith(b"%PDF-"))
         self.assertIn(b"%%EOF", pdf[-64:])
         self.assertGreaterEqual(pdf.count(b"/Type /Page"), 3)
-        self.assertIn(b"Perfect Trading", pdf)
+        self.assertIn(b"/Author (PDM)", pdf)
+        self.assertNotIn(b"Perfect Trading", pdf)
         self.assertIn(b"/Title (Cat", pdf)
         pptx = generate_catalog_pptx(
-            rows, {"title": "Catálogo sintético", "columns_per_row": 3, "theme": "industrial"},
+            rows, config,
             release=release,
         )
         self.assertTrue(pptx.startswith(b"PK"))
@@ -193,7 +255,8 @@ class CatalogExportTests(unittest.TestCase):
             slides = [name for name in archive.namelist() if name.startswith("ppt/slides/slide") and name.endswith(".xml")]
             slide_xml = "".join(archive.read(name).decode("utf-8") for name in slides)
         self.assertGreaterEqual(len(slides), 2)
-        self.assertIn("C34A21", slide_xml)
+        self.assertIn("E30613", slide_xml)
+        self.assertIn(">PDM<", slide_xml)
         self.assertIn(str(release["snapshot_sha256"])[:16], slide_xml)
 
     def test_pdf_escapes_untrusted_snapshot_text(self) -> None:
@@ -311,6 +374,44 @@ class CatalogExportTests(unittest.TestCase):
         encoded = content.split("data:image/jpeg;base64,", 1)[1].split('"', 1)[0]
         with PILImage.open(io.BytesIO(base64.b64decode(encoded))) as embedded:
             self.assertEqual(embedded.size, (1200, 300))
+        self.assertNotIn("data-gallery=", content)
+
+    def test_digital_html_gallery_lists_variant_photo_filenames_alongside_the_main_one(self) -> None:
+        release, items = fixture_release()
+        rows = export_rows_from_release(release, items)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in ("approved.png", "variant2.png", "variant3.png"):
+                PILImage.new("RGB", (400, 300), "red").save(root / name)
+            rows[0].update({
+                "image_path": "approved.png",
+                "variant_image_paths": ["variant2.png", "variant3.png"],
+            })
+            content = generate_catalog_html(rows, release=release, bundle_dir=root).decode("utf-8")
+        self.assertIn('data-gallery="approved.png|variant2.png|variant3.png"', content)
+        self.assertIn('src="approved.png"', content)
+        self.assertIn('3 fotos', content)
+        self.assertIn("photo-viewer-gallery", content)
+        self.assertIn("photo-viewer-thumb", content)
+
+    def test_standalone_html_embeds_every_variant_photo_as_its_own_data_uri(self) -> None:
+        release, items = fixture_release()
+        rows = export_rows_from_release(release, items)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            PILImage.new("RGB", (400, 300), "red").save(root / "approved.png")
+            PILImage.new("RGB", (400, 300), "blue").save(root / "variant2.png")
+            rows[0].update({
+                "image_path": "approved.png", "variant_image_paths": ["variant2.png"],
+            })
+            content = generate_catalog_html(
+                rows, release=release, bundle_dir=root, embed_images=True,
+            ).decode("utf-8")
+        self.assertEqual(content.count("data:image/jpeg;base64,"), 3)
+        gallery_attr = content.split('data-gallery="', 1)[1].split('"', 1)[0]
+        sources = gallery_attr.split("|")
+        self.assertEqual(len(sources), 2)
+        self.assertNotEqual(sources[0], sources[1])
 
     def test_visual_profile_overrides_palette_embeds_brand_and_minimum_type(self) -> None:
         release, items = fixture_release()
@@ -469,6 +570,85 @@ class CatalogExportTests(unittest.TestCase):
                     image_root=root / "images",
                 )
 
+    def test_bundle_packages_variant_photos_alongside_the_main_one(self) -> None:
+        release, items = fixture_release()
+        primary_bytes = io.BytesIO()
+        PILImage.new("RGB", (120, 60), "blue").save(primary_bytes, format="JPEG")
+        primary_content = primary_bytes.getvalue()
+        primary_digest = hashlib.sha256(primary_content).hexdigest()
+        variant_bytes = io.BytesIO()
+        PILImage.new("RGB", (120, 60), "green").save(variant_bytes, format="JPEG")
+        variant_content = variant_bytes.getvalue()
+        variant_digest = hashlib.sha256(variant_content).hexdigest()
+        data = items[0]["snapshot_data"]
+        data.update({
+            "image_status": True,
+            "image_storage_relpath": f"objects/{primary_digest[:2]}/{primary_digest}.jpg",
+            "image_sha256": primary_digest, "image_media_type": "image/jpeg",
+            "variant_images": [{
+                "storage_relpath": f"objects/{variant_digest[:2]}/{variant_digest}.jpg",
+                "sha256": variant_digest, "media_type": "image/jpeg", "variant_index": 2,
+            }],
+        })
+        items[0]["snapshot_sha256"] = product_snapshot_sha256(data)
+        release["snapshot_sha256"] = release_snapshot_sha256(
+            release["brand_id"], release["version"], release["definition"], items
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            primary_source = root / "images" / data["image_storage_relpath"]
+            primary_source.parent.mkdir(parents=True)
+            primary_source.write_bytes(primary_content)
+            variant_source = root / "images" / data["variant_images"][0]["storage_relpath"]
+            variant_source.parent.mkdir(parents=True, exist_ok=True)
+            variant_source.write_bytes(variant_content)
+            output = root / "bundle"
+            result = build_catalog_bundle(
+                release, items, output, formats=("html", "html-standalone"), image_root=root / "images",
+            )
+            image_entries = [entry for entry in result["files"] if entry["format"] == "image"]
+            self.assertEqual({entry["sha256"] for entry in image_entries}, {primary_digest, variant_digest})
+            html_entry = next(entry for entry in result["files"] if entry["format"] == "html")
+            html_text = (output / html_entry["filename"]).read_text(encoding="utf-8")
+            self.assertIn(f"image-{primary_digest}.jpg|image-{variant_digest}.jpg", html_text)
+            standalone_entry = next(entry for entry in result["files"] if entry["format"] == "html-standalone")
+            standalone_text = (output / standalone_entry["filename"]).read_text(encoding="utf-8")
+            self.assertEqual(standalone_text.count("data:image/jpeg;base64,"), 3)
+
+    def test_standalone_html_refuses_to_embed_photos_over_the_size_cap(self) -> None:
+        release, items = fixture_release()
+        image_buffer = io.BytesIO()
+        PILImage.new("RGB", (120, 60), "blue").save(image_buffer, format="JPEG")
+        content = image_buffer.getvalue()
+        digest = hashlib.sha256(content).hexdigest()
+        data = items[0]["snapshot_data"]
+        data.update({
+            "image_status": True,
+            "image_storage_relpath": f"objects/{digest[:2]}/{digest}.jpg",
+            "image_sha256": digest,
+            "image_media_type": "image/jpeg",
+        })
+        items[0]["snapshot_sha256"] = product_snapshot_sha256(data)
+        release["snapshot_sha256"] = release_snapshot_sha256(
+            release["brand_id"], release["version"], release["definition"], items
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "images" / data["image_storage_relpath"]
+            source.parent.mkdir(parents=True)
+            source.write_bytes(content)
+            with mock.patch("perfect_catalog.catalog_export_job.MAX_STANDALONE_EMBED_IMAGE_BYTES", 10):
+                with self.assertRaisesRegex(ValueError, "ZIP digital"):
+                    build_catalog_bundle(
+                        release, items, root / "bundle",
+                        formats=("html-standalone",), image_root=root / "images",
+                    )
+            result = build_catalog_bundle(
+                release, items, root / "under-cap",
+                formats=("html-standalone",), image_root=root / "images",
+            )
+            self.assertEqual([entry["format"] for entry in result["files"]], ["image", "html-standalone"])
+
     def test_pdf_and_pptx_render_a_packaged_product_image(self) -> None:
         image = base64.b64decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
@@ -485,6 +665,44 @@ class CatalogExportTests(unittest.TestCase):
             pptx = generate_catalog_pptx(rows, bundle_dir=bundle)
             with zipfile.ZipFile(io.BytesIO(pptx)) as archive:
                 self.assertTrue(any(name.startswith("ppt/media/image") for name in archive.namelist()))
+
+    def test_optimized_raster_reuses_cached_bytes_for_the_same_size_and_quality(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "photo.png"
+            PILImage.new("RGB", (400, 300), "blue").save(path)
+            cache: dict = {}
+            with mock.patch("perfect_catalog.catalog_exports.PILImage.open", wraps=PILImage.open) as opened:
+                first = _optimized_raster(path, 200, 150, cache=cache)
+                second = _optimized_raster(path, 200, 150, cache=cache)
+            self.assertEqual(opened.call_count, 1)
+            self.assertEqual(first.getvalue(), second.getvalue())
+            with mock.patch("perfect_catalog.catalog_exports.PILImage.open", wraps=PILImage.open) as opened_different_size:
+                _optimized_raster(path, 100, 100, cache=cache)
+            self.assertEqual(opened_different_size.call_count, 1)
+            with mock.patch("perfect_catalog.catalog_exports.PILImage.open", wraps=PILImage.open) as opened_no_cache:
+                _optimized_raster(path, 200, 150)
+                _optimized_raster(path, 200, 150)
+            self.assertEqual(opened_no_cache.call_count, 2)
+
+    def test_shared_product_photo_is_only_decoded_once_per_export(self) -> None:
+        image = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        )
+        rows = [
+            {"internal_reference_original": f"IMG-00{index}", "name_original": "Producto visual",
+             "category_path": "Visual", "image_path": "shared.png"}
+            for index in (1, 2, 3)
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = Path(temporary)
+            (bundle / "shared.png").write_bytes(image)
+            with mock.patch(
+                "perfect_catalog.catalog_exports._optimized_raster", wraps=catalog_exports_module._optimized_raster,
+            ) as raster:
+                self.assertTrue(generate_catalog_pdf(rows, bundle_dir=bundle).startswith(b"%PDF-"))
+                self.assertEqual(raster.call_count, 3)
+                cache_used = [call.kwargs.get("cache") for call in raster.call_args_list]
+                self.assertTrue(all(cache is cache_used[0] and cache is not None for cache in cache_used))
 
     def test_bundle_refuses_drafts_and_nonempty_destinations(self) -> None:
         release, items = fixture_release()
@@ -521,6 +739,69 @@ class CatalogExportTests(unittest.TestCase):
                 resolve_catalog_download(root, release["catalog_release_id"], export_id, "private.txt")
             with self.assertRaises(ValueError):
                 resolve_catalog_download(root, release["catalog_release_id"], export_id, "../private.txt")
+
+    def test_history_orders_by_real_export_time_not_by_random_uuid(self) -> None:
+        """`export_id`/`release_id` son UUID aleatorios: ordenar por su texto no refleja
+        cuál exportación es más reciente. El orden debe salir de la fecha real del manifiesto."""
+        release, items = fixture_release()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            older_id = uuid.UUID("ffffffff-ffff-ffff-ffff-ffffffffffff")
+            newer_id = uuid.UUID("00000000-0000-0000-0000-000000000000")
+            older_output = root / str(release["catalog_release_id"]) / str(older_id)
+            newer_output = root / str(release["catalog_release_id"]) / str(newer_id)
+            build_catalog_bundle(release, items, older_output, formats=("indesign-json",))
+            older_manifest = next(older_output.glob("*.manifest.json"))
+            os.utime(older_manifest, (1_000_000, 1_000_000))
+            build_catalog_bundle(release, items, newer_output, formats=("indesign-json",))
+            newer_manifest = next(newer_output.glob("*.manifest.json"))
+            os.utime(newer_manifest, (2_000_000, 2_000_000))
+            history = list_operator_catalog_exports(root)
+            self.assertEqual([entry["export_id"] for entry in history], [str(newer_id), str(older_id)])
+
+    def test_real_operator_exports_are_indexed_incrementally_not_rewalked(self) -> None:
+        """`create_operator_catalog_export` (el camino real de la consola) debe anexar al
+        índice en vez de dejar que el próximo listado recorra todo el disco otra vez."""
+        release, items = fixture_release()
+        image = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        )
+        digest = hashlib.sha256(image).hexdigest()
+        data = items[0]["snapshot_data"]
+        data.update({
+            "image_status": True, "image_storage_relpath": f"objects/{digest[:2]}/{digest}.png",
+            "image_sha256": digest, "image_media_type": "image/png",
+        })
+        items[0]["snapshot_sha256"] = product_snapshot_sha256(data)
+        release["snapshot_sha256"] = release_snapshot_sha256(
+            release["brand_id"], release["version"], release["definition"], items
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            image_root = root / "images"
+            image_path = image_root / data["image_storage_relpath"]
+            image_path.parent.mkdir(parents=True)
+            image_path.write_bytes(image)
+            with mock.patch.object(catalog_export_job_module, "load_published_release", return_value=(release, items)):
+                first = create_operator_catalog_export(
+                    release["catalog_release_id"], mock.MagicMock(), "secret", root / "exports",
+                    formats=("indesign-json",), config={}, image_root=image_root,
+                )
+                index_path = root / "exports" / catalog_export_job_module.EXPORT_INDEX_FILENAME
+                self.assertTrue(index_path.is_file())
+                self.assertEqual(len(index_path.read_text(encoding="utf-8").splitlines()), 1)
+                second = create_operator_catalog_export(
+                    release["catalog_release_id"], mock.MagicMock(), "secret", root / "exports",
+                    formats=("indesign-json",), config={}, image_root=image_root,
+                )
+            self.assertEqual(len(index_path.read_text(encoding="utf-8").splitlines()), 2)
+            with mock.patch.object(catalog_export_job_module, "_rebuild_export_index") as rebuild:
+                history = list_operator_catalog_exports(root / "exports")
+            rebuild.assert_not_called()
+            self.assertEqual(
+                [entry["export_id"] for entry in history],
+                [second["export_id"], first["export_id"]],
+            )
 
     def test_preview_revalidates_release_and_limits_rendered_products(self) -> None:
         release, items = fixture_release()
@@ -612,3 +893,126 @@ class CatalogExportTests(unittest.TestCase):
                     release, items, root / "typo", formats=("pdf",),
                     config={"selected_references": "NK-DOES-NOT-EXIST"},
                 )
+
+    def test_digital_html_offers_copy_reference_button_with_clipboard_fallback(self) -> None:
+        release, items = fixture_release()
+        rows = export_rows_from_release(release, items)
+        content = generate_catalog_html(rows, {"title": "Edición digital"}, release=release).decode("utf-8")
+        self.assertIn('<button class="ref-copy" type="button" data-ref="NK-001">', content)
+        self.assertIn('<code>NK-001</code><span class="copy-hint" aria-hidden="true">Copiar</span>', content)
+        self.assertIn("navigator.clipboard&&navigator.clipboard.writeText", content)
+        self.assertIn("document.execCommand('copy')", content)
+        self.assertNotIn("wa.me", content)
+
+    def test_export_finalization_retries_transient_windows_permission_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            target = root / "target"
+            attempts = {"count": 0}
+            real_replace = Path.replace
+
+            def flaky_replace(self, destination):
+                attempts["count"] += 1
+                if attempts["count"] < 3:
+                    raise PermissionError(5, "Acceso denegado")
+                return real_replace(self, destination)
+
+            with mock.patch("perfect_catalog.catalog_export_job.time.sleep"), \
+                 mock.patch.object(Path, "replace", flaky_replace):
+                _replace_with_retry(source, target)
+            self.assertEqual(attempts["count"], 3)
+            self.assertTrue(target.is_dir())
+
+    def test_export_finalization_reraises_after_exhausting_retries(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            target = root / "target"
+
+            def always_denied(self, destination):
+                raise PermissionError(5, "Acceso denegado")
+
+            with mock.patch("perfect_catalog.catalog_export_job.time.sleep"), \
+                 mock.patch.object(Path, "replace", always_denied):
+                with self.assertRaises(PermissionError):
+                    _replace_with_retry(source, target, attempts=3)
+
+
+class BrowseCatalogReleaseTests(unittest.TestCase):
+    def setUp(self) -> None:
+        catalog_export_job_module._EXPORT_ROWS_CACHE.clear()
+
+    def _mock_load(self, release, items):
+        return mock.patch.object(
+            catalog_export_job_module, "load_published_release", return_value=(release, items),
+        )
+
+    def test_defaults_to_the_first_category_alphabetically_with_pagination(self) -> None:
+        release, items = fixture_release_with_categories()
+        with self._mock_load(release, items):
+            result = browse_catalog_release(release["catalog_release_id"], mock.MagicMock(), "secret")
+            self.assertEqual(result["group_by"], "category_path")
+            self.assertEqual(
+                [group["label"] for group in result["groups"]],
+                ["Frenos / Pastillas", "Motor / Empaques", "Suspensión / Amortiguadores"],
+            )
+            self.assertEqual(result["active_group"], "Frenos / Pastillas")
+            self.assertEqual(result["group_count"], 2)
+            self.assertEqual(result["total_count"], 5)
+            self.assertEqual(result["total_pages"], 1)
+            self.assertEqual(
+                [product["internal_reference_original"] for product in result["products"]],
+                ["NK-201", "NK-202"],
+            )
+
+            paged = browse_catalog_release(
+                release["catalog_release_id"], mock.MagicMock(), "secret",
+                group="Frenos / Pastillas", page=2, page_size=1,
+            )
+            self.assertEqual(paged["total_pages"], 2)
+            self.assertEqual(paged["page"], 2)
+            self.assertEqual(
+                [product["internal_reference_original"] for product in paged["products"]], ["NK-202"],
+            )
+
+    def test_vehicle_make_grouping_fans_out_multi_brand_products(self) -> None:
+        release, items = fixture_release_with_categories()
+        with self._mock_load(release, items):
+            result = browse_catalog_release(
+                release["catalog_release_id"], mock.MagicMock(), "secret",
+                group_by="vehicle_make", group="Toyota",
+            )
+            self.assertEqual(
+                sorted(product["internal_reference_original"] for product in result["products"]),
+                ["NK-101", "NK-201"],
+            )
+            unassigned = browse_catalog_release(
+                release["catalog_release_id"], mock.MagicMock(), "secret",
+                group_by="vehicle_make", group="Sin marca vehicular",
+            )
+            self.assertEqual(
+                [product["internal_reference_original"] for product in unassigned["products"]], ["NK-202"],
+            )
+
+    def test_rejects_unknown_grouping_and_out_of_range_pagination(self) -> None:
+        release, items = fixture_release_with_categories()
+        with self._mock_load(release, items):
+            with self.assertRaisesRegex(ValueError, "Agrupación"):
+                browse_catalog_release(release["catalog_release_id"], mock.MagicMock(), "secret", group_by="brand")
+            with self.assertRaisesRegex(ValueError, "page"):
+                browse_catalog_release(release["catalog_release_id"], mock.MagicMock(), "secret", page=0)
+            with self.assertRaisesRegex(ValueError, "page_size"):
+                browse_catalog_release(release["catalog_release_id"], mock.MagicMock(), "secret", page_size=1000)
+
+    def test_repeated_browsing_does_not_reverify_the_release_every_call(self) -> None:
+        release, items = fixture_release_with_categories()
+        with self._mock_load(release, items), mock.patch.object(
+            catalog_export_job_module, "export_rows_from_release", wraps=catalog_export_job_module.export_rows_from_release,
+        ) as export_rows:
+            browse_catalog_release(release["catalog_release_id"], mock.MagicMock(), "secret", group="Motor / Empaques")
+            browse_catalog_release(release["catalog_release_id"], mock.MagicMock(), "secret", group="Suspensión / Amortiguadores")
+            browse_catalog_release(release["catalog_release_id"], mock.MagicMock(), "secret", group_by="vehicle_make", group="Mazda")
+        export_rows.assert_called_once()

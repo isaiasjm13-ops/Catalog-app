@@ -74,6 +74,7 @@ una consulta set-based paginada y filtrable de 50 registros, por lo que no mater
 tarjetas a la vez ni ejecuta una consulta por identidad. El límite CLI falla de forma explícita; no
 recorta ni aprueba parcialmente la cola.
 
-La web abierta por `INICIAR-SERVER.cmd` continúa siendo el visor XLSX del piloto. Los controles de
-revisión están deliberadamente separados en `INICIAR-REVISOR.cmd` y se documentan en
-[`OPERATOR_WEB.md`](OPERATOR_WEB.md).
+Los controles de revisión viven en `INICIAR-REVISOR.cmd` y se documentan en
+[`OPERATOR_WEB.md`](OPERATOR_WEB.md). El visor XLSX del piloto (`INICIAR-SERVER.cmd`) se retiró: leía
+Excel directamente, sin pasar por cuarentena, dry-run ni aprobación. `INICIAR-CATALOGO-PUBLICADO.cmd`
+y el HTML autónomo cubren hoy los casos de uso reales de consulta.

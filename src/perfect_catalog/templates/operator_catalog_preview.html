@@ -36,7 +36,7 @@
 
 {% set visual = preview.release.get('visual_profile', {}) %}
 <section class="catalog-preview-sheet theme-{{ theme }} target-{{ preview_target }} profile-{{ template_profile }}"{% if visual %} data-brand-primary="{{ visual.primary_color }}" data-brand-secondary="{{ visual.secondary_color }}" data-brand-ink="{{ visual.ink_color }}" data-brand-paper="{{ visual.paper_color }}"{% endif %}>
-  <header class="preview-cover"><span>Perfect Trading · {{ preview.release.version }}</span><strong>{{ title }}</strong><small>{{ subtitle or (preview.total_count|string ~ ' referencias verificadas') }}</small>{% if preview.selected_references %}<small>{{ preview.selected_references|length }} referencias manuales exactas</small>{% endif %}{% if preview_target == 'indesign' %}<em>Portada · página 1</em>{% endif %}</header>
+  <header class="preview-cover"><span>{{ session.company_name }} · {{ preview.release.version }}</span><strong>{{ title }}</strong><small>{{ subtitle or (preview.total_count|string ~ ' referencias verificadas') }}</small>{% if preview.selected_references %}<small>{{ preview.selected_references|length }} referencias manuales exactas</small>{% endif %}{% if preview_target == 'indesign' %}<em>Portada · página 1</em>{% endif %}</header>
   {% for group in preview.groups %}
     {% if group.products %}
     <section class="preview-section">

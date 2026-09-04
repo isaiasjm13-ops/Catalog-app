@@ -12,16 +12,18 @@ from typing import Any, Iterable
 
 import psycopg
 from psycopg import Connection
+from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from tools.odoo_profiler import read_tabular_source, sha256_file
 
 from .canonical import canonical_sha256, normalize_name, normalize_reference
+from .import_context import resolve_import_context
 from .config import DatabaseConfig
 from .name_parser import parse_product_name
 
 
-CONTRACT_VERSION = "natsuki-empaques-v0.2"
+CONTRACT_VERSION = "perfect-catalog-v0.2"
 RULES_VERSION = "normalization-v0.4"
 SUPPORTED_RULES_VERSIONS = frozenset({"normalization-v0.3", RULES_VERSION})
 PROFILER_VERSION = "0.1"
@@ -139,7 +141,6 @@ def reference_candidates(enrichment: dict[str, Any]) -> list[dict[str, Any]]:
             "source": source,
             "review_status": "pending",
         })
-
     for value in enrichment.get("oem_references") or []:
         add(value, "oem", 0.82, "product_name")
     for value in enrichment.get("fmsi_references") or []:
@@ -229,7 +230,10 @@ def validate_pilot_row_count(row_count: int, max_rows: int = DEFAULT_MAX_PILOT_R
         )
 
 
-def prepare_rows(sheet_name: str, headers: tuple[str, ...], rows: list[list[Any]], row_numbers: list[int]) -> list[PreparedRow]:
+def prepare_rows(
+    sheet_name: str, headers: tuple[str, ...], rows: list[list[Any]], row_numbers: list[int],
+    *, brand: str = BRAND, family: str = FAMILY,
+) -> list[PreparedRow]:
     prepared: list[PreparedRow] = []
     for row, source_row_number in zip(rows, row_numbers, strict=True):
         padded = list(row[: len(headers)]) + [None] * max(0, len(headers) - len(row))
@@ -282,8 +286,8 @@ def prepare_rows(sheet_name: str, headers: tuple[str, ...], rows: list[list[Any]
         ]
         normalized = {
             "source_model": SOURCE_MODEL,
-            "brand": BRAND,
-            "family": FAMILY,
+            "brand": brand,
+            "family": family,
             "currency": None,
             "activity_state": None,
             "category_path": field("Categoría de producto"),
@@ -377,7 +381,7 @@ def _business_counts(connection: Connection[Any]) -> dict[str, int]:
 
 def _existing_products(
     connection: Connection[Any], source_system_id: uuid.UUID,
-    references: list[str], company_id: uuid.UUID | None = None,
+    references: list[str], brand_id: uuid.UUID,
 ) -> dict[str, list[uuid.UUID]]:
     matches: dict[str, list[uuid.UUID]] = defaultdict(list)
     if not references:
@@ -387,15 +391,14 @@ def _existing_products(
             """
             SELECT pr.value_normalized, pr.product_template_id
             FROM perfect_catalog.product_reference AS pr
-            JOIN perfect_catalog.brand AS b ON b.brand_id = pr.brand_id
+                        JOIN perfect_catalog.brand AS b ON b.brand_id = pr.brand_id
             WHERE pr.source_system_id = %s
-              AND b.normalized_name = %s
-              AND (%s::uuid IS NULL OR b.company_id = %s)
+                            AND b.brand_id = %s
               AND pr.reference_type = 'internal'
               AND pr.value_normalized = ANY(%s)
             ORDER BY pr.value_normalized, pr.product_template_id
             """,
-            (source_system_id, BRAND, company_id, company_id, references),
+            (source_system_id, brand_id, references),
         )
         for reference, product_id in cursor.fetchall():
             matches[str(reference)].append(product_id)
@@ -403,7 +406,7 @@ def _existing_products(
 
 
 def _existing_reference_owners(
-    connection: Connection[Any], company_id: uuid.UUID,
+    connection: Connection[Any], brand_id: uuid.UUID,
     references: list[str],
 ) -> dict[str, set[uuid.UUID]]:
     owners: dict[str, set[uuid.UUID]] = defaultdict(set)
@@ -415,16 +418,57 @@ def _existing_reference_owners(
             SELECT pr.value_normalized, pr.product_template_id
             FROM perfect_catalog.product_reference AS pr
             JOIN perfect_catalog.brand AS b ON b.brand_id=pr.brand_id
-            WHERE b.company_id=%s
+            WHERE b.brand_id=%s
               AND COALESCE(pr.review_status, 'pending') <> 'rejected'
               AND pr.value_normalized = ANY(%s)
             ORDER BY pr.value_normalized, pr.product_template_id
             """,
-            (company_id, references),
+            (brand_id, references),
         )
         for reference, product_id in cursor.fetchall():
             owners[str(reference)].add(product_id)
     return owners
+
+
+IMPORTABLE_FROM_SOURCE = frozenset({"name_original", "name_normalized", "category_path", "variant_count_observed"})
+LOCAL_PROTECTED = frozenset({"catalog_status", "name_enrichment", "reference_candidates"})
+
+
+def build_product_diff(existing: dict[str, Any], incoming: dict[str, Any]) -> list[dict[str, Any]]:
+    diffs = []
+    for field in sorted(IMPORTABLE_FROM_SOURCE):
+        before = existing.get(field)
+        incoming_value = incoming.get(field)
+        action = "KEEP_EXISTING" if _is_empty(incoming_value) else "NO_CHANGE" if before == incoming_value else "UPDATE"
+        diffs.append({"field": field, "before": before, "incoming": incoming_value,
+                      "effective": before if action != "UPDATE" else incoming_value, "action": action})
+    return diffs
+
+
+def _load_existing_product_values(
+    connection: Connection[Any], product_ids: set[uuid.UUID],
+) -> dict[uuid.UUID, dict[str, Any]]:
+    if not product_ids:
+        return {}
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """SELECT p.product_template_id, p.name_original, p.name_normalized, c.source_path,
+                      p.variant_count_observed
+               FROM perfect_catalog.product_template AS p
+               LEFT JOIN perfect_catalog.product_category AS c
+                 ON c.product_category_id=p.product_category_id
+               WHERE p.product_template_id = ANY(%s)""",
+            (list(product_ids),),
+        )
+        return {
+            row[0]: {
+                "name_original": row[1],
+                "name_normalized": row[2],
+                "category_path": row[3],
+                "variant_count_observed": row[4],
+            }
+            for row in cursor.fetchall()
+        }
 
 
 def _make_item(
@@ -437,6 +481,8 @@ def _make_item(
     resolved_product_id: uuid.UUID | None,
     proposed: dict[str, Any],
     issues: list[dict[str, Any]],
+    *,
+    before_values: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     item = {
         "import_plan_item_id": uuid.uuid5(plan_id, f"item:{order}:{operation}:{staging_row_id}"),
@@ -449,7 +495,7 @@ def _make_item(
         "planned_product_template_id": planned_product_id,
         "planned_product_variant_id": None,
         "operation_type": operation,
-        "before_values": {},
+        "before_values": dict(before_values or {}),
         "proposed_values": proposed,
         "issues": issues,
         "requires_review": True,
@@ -506,6 +552,9 @@ def run_dry_run(
     max_rows: int = DEFAULT_MAX_PILOT_ROWS,
     *,
     company_id: uuid.UUID | None = None,
+    brand_code: str = BRAND,
+    brand_profile_id: uuid.UUID | None = None,
+    family: str = FAMILY,
 ) -> dict[str, Any]:
     if company_id is None:
         raise ValueError("company_id es obligatorio para generar un dry-run nuevo.")
@@ -520,7 +569,10 @@ def run_dry_run(
     sheet = sheets[0]
     header_contract = analyze_headers(sheet.rows[0])
     headers = header_contract.headers
-    prepared = prepare_rows(sheet.name, headers, sheet.rows[1:], sheet.row_numbers[1:])
+    prepared = prepare_rows(
+        sheet.name, headers, sheet.rows[1:], sheet.row_numbers[1:],
+        brand=brand_code, family=family,
+    )
     validate_pilot_row_count(len(prepared), max_rows)
 
     batch_id = uuid.uuid4()
@@ -536,6 +588,9 @@ def run_dry_run(
 
     with psycopg.connect(**config.connection_kwargs(password)) as connection:
         business_before = _business_counts(connection)
+        import_context = resolve_import_context(
+            connection, company_id, brand_code, brand_profile_id,
+        )
         with connection.cursor() as cursor:
             cursor.execute(
                 """
@@ -558,12 +613,12 @@ def run_dry_run(
             duplicate_row = cursor.fetchone()
             duplicate_of = duplicate_row[0] if duplicate_row else None
             scope = {
-                "brand": BRAND,
-                "family": FAMILY,
+                "brand": import_context["brand_code"],
+                "family": family,
                 "source_model": SOURCE_MODEL,
                 "filters": {
-                    "brand_equals": BRAND,
-                    "product_category_contains": "empaque",
+                    "brand_equals": import_context["brand_code"],
+                    "product_category_contains": family,
                     "quantity_filter": None,
                     "exclude_missing_barcode": False,
                     "exclude_missing_image": False,
@@ -687,7 +742,7 @@ def run_dry_run(
 
             references = [row.normalized["internal_reference_normalized"] for row in prepared]
             existing = _existing_products(
-                connection, source_system_id, references, company_id=company_id,
+                connection, source_system_id, references, import_context["brand_id"],
             )
             candidate_products: dict[str, set[str]] = defaultdict(set)
             candidate_values: list[str] = []
@@ -698,7 +753,10 @@ def run_dry_run(
                     candidate_products[value].add(internal)
                     candidate_values.append(value)
             existing_candidate_owners = _existing_reference_owners(
-                connection, company_id, sorted(set(candidate_values)),
+                connection, import_context["brand_id"], sorted(set(candidate_values)),
+            )
+            existing_values = _load_existing_product_values(
+                connection, {product_id for matches in existing.values() for product_id in matches},
             )
             items: list[dict[str, Any]] = []
             order = 0
@@ -747,31 +805,41 @@ def run_dry_run(
                         {"internal_reference_normalized": reference}, row_issue_codes,
                     ))
                     continue
-                operation = "update" if resolved_id else "create"
+                proposed_values = {
+                    "brand": import_context["brand_code"],
+                    "family": family,
+                    "source_model": SOURCE_MODEL,
+                    "name_original": row.normalized["name_original"],
+                    "name_normalized": row.normalized["name_normalized"],
+                    "internal_reference_original": row.normalized["internal_reference_original"],
+                    "internal_reference_normalized": reference,
+                    "category_path": row.normalized["category_path"],
+                    "currency": row.normalized["currency"],
+                    "activity_state": row.normalized["activity_state"],
+                    "is_favorite": row.normalized["is_favorite"],
+                    "variant_count_observed": row.normalized["variant_count_observed"],
+                    "uom_original": row.normalized["uom_original"],
+                    "show_quantity_status": row.normalized["show_quantity_status"],
+                    "source_updated_at": row.normalized["source_updated_at"],
+                    "catalog_status": "pending_review",
+                    "source_active": None,
+                    "name_enrichment": row.normalized["name_enrichment"],
+                    "reference_candidates": row.normalized["reference_candidates"],
+                }
+                diffs = build_product_diff(
+                    existing_values.get(resolved_id, {}) if resolved_id else {}, proposed_values,
+                ) if resolved_id else []
+                operation = (
+                    "create" if resolved_id is None
+                    else "update" if any(diff["action"] == "UPDATE" for diff in diffs)
+                    else "no_change"
+                )
                 order += 1
                 items.append(_make_item(
                     plan_id, file_id, staging_id, order, operation, planned_id, resolved_id,
-                    {
-                        "brand": BRAND,
-                        "family": FAMILY,
-                        "source_model": SOURCE_MODEL,
-                        "name_original": row.normalized["name_original"],
-                        "internal_reference_original": row.normalized["internal_reference_original"],
-                        "internal_reference_normalized": reference,
-                        "category_path": row.normalized["category_path"],
-                        "currency": row.normalized["currency"],
-                        "activity_state": row.normalized["activity_state"],
-                        "is_favorite": row.normalized["is_favorite"],
-                        "variant_count_observed": row.normalized["variant_count_observed"],
-                        "uom_original": row.normalized["uom_original"],
-                        "show_quantity_status": row.normalized["show_quantity_status"],
-                        "source_updated_at": row.normalized["source_updated_at"],
-                        "catalog_status": "pending_review",
-                        "source_active": None,
-                        "name_enrichment": row.normalized["name_enrichment"],
-                        "reference_candidates": row.normalized["reference_candidates"],
-                    },
+                    {**proposed_values, "field_diffs": diffs},
                     row_issue_codes,
+                    before_values=existing_values.get(resolved_id, {}) if resolved_id else {},
                 ))
                 if inventory_complete:
                     order += 1
@@ -798,13 +866,13 @@ def run_dry_run(
             cursor.execute(
                 """
                 INSERT INTO perfect_catalog.import_plan (
-                    import_plan_id, company_id, import_batch_id, import_file_id, file_sha256,
+                    import_plan_id, company_id, brand_profile_id, import_batch_id, import_file_id, file_sha256,
                     contract_version, rules_version, plan_status, plan_sha256,
                     approval_fingerprint_sha256, generated_at, generated_by
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'awaiting_review', %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'awaiting_review', %s, %s, %s, %s)
                 """,
                 (
-                    plan_id, company_id, batch_id, file_id, source_sha_before, CONTRACT_VERSION,
+                    plan_id, company_id, import_context["brand_profile_id"], batch_id, file_id, source_sha_before, CONTRACT_VERSION,
                     RULES_VERSION, computed_plan_hash, fingerprint, datetime.now(UTC),
                     "perfect-catalog-importer/0.1.0",
                 ),
@@ -929,7 +997,11 @@ def inspect_plan(plan_id: uuid.UUID, config: DatabaseConfig, password: str) -> d
                 SELECT p.import_plan_id, p.plan_status, p.plan_sha256,
                        p.approval_fingerprint_sha256, p.file_sha256,
                        p.contract_version, p.rules_version,
-                       count(i.import_plan_item_id), bp.code, bp.display_name
+                       count(i.import_plan_item_id), bp.code, bp.display_name,
+                       count(*) FILTER (WHERE i.operation_type='create'),
+                       count(*) FILTER (WHERE i.operation_type='update'),
+                       count(*) FILTER (WHERE i.operation_type='no_change'),
+                       count(*) FILTER (WHERE i.operation_type='inventory_snapshot')
                 FROM perfect_catalog.import_plan AS p
                 LEFT JOIN perfect_catalog.import_plan_item AS i USING (import_plan_id)
                 LEFT JOIN perfect_catalog.brand_profile AS bp
@@ -953,13 +1025,50 @@ def inspect_plan(plan_id: uuid.UUID, config: DatabaseConfig, password: str) -> d
                 "item_count": row[7],
                 "brand_profile_code": row[8],
                 "brand_profile_name": row[9],
+                "create_count": row[10],
+                "update_count": row[11],
+                "no_change_count": row[12],
+                "inventory_snapshot_count": row[13],
             }
 
 
-def assert_apply_allowed(plan_id: uuid.UUID, config: DatabaseConfig, password: str) -> None:
-    plan = inspect_plan(plan_id, config, password)
-    if plan["plan_status"] != "approved":
-        raise PermissionError(
-            f"Apply rechazado: el plan está en {plan['plan_status']!r}, no en 'approved'."
-        )
-    raise NotImplementedError("Apply no está implementado ni autorizado en este bloque.")
+def list_plan_update_diffs(
+    plan_id: uuid.UUID, config: DatabaseConfig, password: str, *, limit: int = 50, offset: int = 0,
+) -> dict[str, Any]:
+    """Vista previa campo por campo de las operaciones 'update' del plan: qué cambia
+    exactamente y qué se conserva, antes de que el operador confirme aplicar nada. Reutiliza el
+    `field_diffs` que `build_product_diff` ya calculó al generar el plan; no vuelve a comparar."""
+    if not 1 <= limit <= 200:
+        raise ValueError("limit debe estar entre 1 y 200.")
+    if offset < 0:
+        raise ValueError("offset no puede ser negativo.")
+    with psycopg.connect(**config.connection_kwargs(password)) as connection:
+        with connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                """
+                SELECT i.import_plan_item_id, i.proposed_values,
+                       count(*) OVER () AS filtered_count
+                FROM perfect_catalog.import_plan_item AS i
+                WHERE i.import_plan_id=%s AND i.operation_type='update'
+                ORDER BY i.item_order
+                LIMIT %s OFFSET %s
+                """,
+                (plan_id, limit, offset),
+            )
+            rows = cursor.fetchall()
+    total = int(rows[0]["filtered_count"]) if rows else 0
+    items = []
+    for row in rows:
+        proposed = row["proposed_values"] or {}
+        changed_fields = [
+            {"field": diff["field"], "before": diff["before"], "incoming": diff["incoming"]}
+            for diff in proposed.get("field_diffs") or []
+            if diff.get("action") == "UPDATE"
+        ]
+        items.append({
+            "import_plan_item_id": str(row["import_plan_item_id"]),
+            "internal_reference_original": proposed.get("internal_reference_original"),
+            "name_original": proposed.get("name_original"),
+            "changed_fields": changed_fields,
+        })
+    return {"items": items, "filtered_count": total, "limit": limit, "offset": offset}

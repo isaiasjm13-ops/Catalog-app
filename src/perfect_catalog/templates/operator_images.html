@@ -56,7 +56,7 @@
   {% for candidate in candidates["items"] %}
   <article class="image-candidate-card">
     <div class="candidate-file">
-      <div class="candidate-placeholder">IMG</div>
+      <img class="candidate-placeholder" src="/operator/images/candidates/{{ candidate.image_product_candidate_id }}/preview" alt="Miniatura de {{ candidate.original_filename }}" loading="lazy">
       <span class="row-label">Archivo indexado</span>
       <h2>{{ candidate.original_filename }}</h2>
       <code>{{ candidate.content_sha256[:16] }}…</code>

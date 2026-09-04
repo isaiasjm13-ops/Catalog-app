@@ -27,6 +27,48 @@ class ImageMatchReviewTests(unittest.TestCase):
         self.assertEqual(candidates[0]["product_reference_id"], str(reference_id))
         self.assertEqual(len(candidates[0]["evidence_sha256"]), 64)
 
+    def test_suffixed_filename_matches_the_base_reference_as_a_variant(self) -> None:
+        entry_id, reference_id, product_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        entries = [{"image_archive_entry_id": entry_id, "content_sha256": "a" * 64, "lookup_key": "REF-1234-2"}]
+        references = [{
+            "product_reference_id": reference_id, "product_template_id": product_id,
+            "product_variant_id": None, "value_original": "REF-1234", "value_normalized": "REF-1234",
+        }]
+        candidates = exact_image_candidates(entries, references)
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["variant_index"], 2)
+        self.assertEqual(candidates[0]["product_reference_id"], str(reference_id))
+
+    def test_unsuffixed_filename_is_never_treated_as_a_variant(self) -> None:
+        entry_id, reference_id, product_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        entries = [{"image_archive_entry_id": entry_id, "content_sha256": "a" * 64, "lookup_key": "REF-1234"}]
+        references = [{
+            "product_reference_id": reference_id, "product_template_id": product_id,
+            "product_variant_id": None, "value_original": "REF-1234", "value_normalized": "REF-1234",
+        }]
+        candidates = exact_image_candidates(entries, references)
+        self.assertEqual(len(candidates), 1)
+        self.assertIsNone(candidates[0]["variant_index"])
+
+    def test_a_reference_that_literally_ends_in_a_suffix_still_matches_directly_first(self) -> None:
+        entry_id, reference_id, product_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        entries = [{"image_archive_entry_id": entry_id, "content_sha256": "a" * 64, "lookup_key": "REF-1234-2"}]
+        references = [{
+            "product_reference_id": reference_id, "product_template_id": product_id,
+            "product_variant_id": None, "value_original": "REF-1234-2", "value_normalized": "REF-1234-2",
+        }]
+        candidates = exact_image_candidates(entries, references)
+        self.assertEqual(len(candidates), 1)
+        self.assertIsNone(candidates[0]["variant_index"])
+
+    def test_a_dash_one_suffix_is_not_treated_as_a_variant(self) -> None:
+        entries = [{"image_archive_entry_id": uuid.uuid4(), "content_sha256": "a" * 64, "lookup_key": "REF-1234-1"}]
+        references = [{
+            "product_reference_id": uuid.uuid4(), "product_template_id": uuid.uuid4(),
+            "product_variant_id": None, "value_original": "REF-1234", "value_normalized": "REF-1234",
+        }]
+        self.assertEqual(exact_image_candidates(entries, references), [])
+
     def test_candidate_identity_and_evidence_are_deterministic(self) -> None:
         entry_id, reference_id, product_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
         entries = [{"image_archive_entry_id": entry_id, "content_sha256": "b" * 64, "lookup_key": "ABC-1"}]

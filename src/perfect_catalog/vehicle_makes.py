@@ -40,7 +40,7 @@ VEHICLE_MAKE_ALIASES: dict[str, str] = {
     "PEUGEOT": "Peugeot", "PORSCHE": "Porsche", "RENAULT": "Renault",
     "SAAB": "Saab", "SCANIA": "Scania", "SKODA": "Škoda", "ŠKODA": "Škoda",
     "VAUXHALL": "Vauxhall", "VOLVO": "Volvo", "VW": "Volkswagen",
-    "VOLKSWAGEN": "Volkswagen",
+    "V.W": "Volkswagen", "V.W.": "Volkswagen", "VOLKSWAGEN": "Volkswagen",
     # Americas
     "BUICK": "Buick", "CADILLAC": "Cadillac", "CHEV.": "Chevrolet",
     "CHEVROLET": "Chevrolet", "CHEVY": "Chevrolet", "CHRYSLER": "Chrysler",
@@ -49,8 +49,21 @@ VEHICLE_MAKE_ALIASES: dict[str, str] = {
     "KENWORTH": "Kenworth", "LINCOLN": "Lincoln", "MACK": "Mack",
     "PETERBILT": "Peterbilt", "RIVIAN": "Rivian", "TESLA": "Tesla",
     # India and other high-relevance markets
-    "ASHOK LEYLAND": "Ashok Leyland", "MAHINDRA": "Mahindra", "MARUTI": "Maruti Suzuki",
-    "MARUTI SUZUKI": "Maruti Suzuki", "PROTON": "Proton", "TATA": "Tata",
+    "ASHOK LEYLAND": "Ashok Leyland", "EICHER": "Eicher", "FORCE MOTORS": "Force Motors",
+    "HERO MOTOCORP": "Hero MotoCorp", "MAHINDRA": "Mahindra", "MARUTI": "Maruti Suzuki",
+    "MARUTI SUZUKI": "Maruti Suzuki", "PERODUA": "Perodua", "PROTON": "Proton", "TATA": "Tata",
+    # Camiones y buses pesados
+    "FUSO": "Fuso", "MITSUBISHI FUSO": "Fuso", "HIGER": "Higer", "SHACMAN": "Shacman",
+    "SINOTRUK": "Sinotruk", "UD TRUCKS": "UD Trucks", "WESTERN STAR": "Western Star",
+    "YUTONG": "Yutong",
+    # Autos, marcas nuevas de rápido crecimiento
+    "DENZA": "Denza", "LEAPMOTOR": "Leapmotor", "MG": "MG",
+    # Motocicletas
+    "AKT": "AKT", "APRILIA": "Aprilia", "BAJAJ": "Bajaj", "BENELLI": "Benelli",
+    "DUCATI": "Ducati", "HARLEY-DAVIDSON": "Harley-Davidson", "HARLEY DAVIDSON": "Harley-Davidson",
+    "ITALIKA": "Italika", "KAWASAKI": "Kawasaki", "KTM": "KTM", "LONCIN": "Loncin",
+    "PIAGGIO": "Piaggio", "ROYAL ENFIELD": "Royal Enfield", "TVS": "TVS", "VESPA": "Vespa",
+    "YAMAHA": "Yamaha", "ZONGSHEN": "Zongshen",
 }
 
 VEHICLE_MAKES = tuple(sorted(set(VEHICLE_MAKE_ALIASES.values()), key=str.casefold))

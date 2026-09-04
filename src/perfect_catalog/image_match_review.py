@@ -9,16 +9,18 @@ from psycopg.rows import dict_row
 
 from .canonical import canonical_sha256
 from .config import DatabaseConfig
-from .image_archive_index import normalize_image_key
+from .image_archive_index import normalize_image_key, split_variant_suffix
 from .intake_promotion import _actor, _reason
 
-MATCH_ALGORITHM = "exact-approved-reference-v1"
+MATCH_ALGORITHM = "exact-approved-reference-v2"
 MATCH_NAMESPACE = uuid.UUID("31173b46-b264-4bf7-91ef-fbbd62ace671")
 
 
 def exact_image_candidates(
     entries: list[dict[str, Any]], references: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
+    """Empareja por nombre de archivo exacto. `REF-1234.jpg` es la foto principal; un sufijo
+    `-N` (`REF-1234-2.jpg`) es una foto adicional de la misma referencia, no otro producto."""
     references_by_key: dict[str, list[dict[str, Any]]] = {}
     for reference in references:
         key = normalize_image_key(str(reference["value_original"]))
@@ -26,7 +28,15 @@ def exact_image_candidates(
             references_by_key.setdefault(key, []).append(reference)
     candidates: list[dict[str, Any]] = []
     for entry in entries:
-        for reference in references_by_key.get(str(entry["lookup_key"]), []):
+        lookup_key = str(entry["lookup_key"])
+        matches = references_by_key.get(lookup_key)
+        variant_index: int | None = None
+        if not matches:
+            base_key, suffix = split_variant_suffix(lookup_key)
+            if suffix is not None:
+                matches = references_by_key.get(base_key)
+                variant_index = suffix
+        for reference in matches or []:
             evidence = {
                 "algorithm": MATCH_ALGORITHM,
                 "image_archive_entry_id": str(entry["image_archive_entry_id"]),
@@ -36,6 +46,7 @@ def exact_image_candidates(
                 "value_normalized": str(reference["value_normalized"]),
                 "product_template_id": str(reference["product_template_id"]),
                 "product_variant_id": str(reference["product_variant_id"]) if reference.get("product_variant_id") else None,
+                "variant_index": variant_index,
             }
             candidate_id = uuid.uuid5(
                 MATCH_NAMESPACE,
@@ -93,14 +104,15 @@ def generate_image_candidates(
                     INSERT INTO perfect_catalog.image_product_candidate (
                         image_product_candidate_id, image_archive_entry_id,
                         product_reference_id, product_template_id, product_variant_id,
-                        algorithm, confidence, evidence_sha256, generated_by, reason, generated_at
-                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        algorithm, confidence, evidence_sha256, generated_by, reason, generated_at,
+                        variant_index
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON CONFLICT (image_archive_entry_id, product_reference_id) DO NOTHING
                     """,
                     (candidate["image_product_candidate_id"], candidate["image_archive_entry_id"],
                      candidate["product_reference_id"], candidate["product_template_id"],
                      candidate["product_variant_id"], MATCH_ALGORITHM, candidate["confidence"],
-                     candidate["evidence_sha256"], actor, reason, now),
+                     candidate["evidence_sha256"], actor, reason, now, candidate["variant_index"]),
                 )
                 inserted += cursor.rowcount
         return {"status": "generated", "candidate_count": len(candidates), "inserted_count": inserted}
@@ -116,15 +128,20 @@ def list_image_candidates(
         with connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
                 """
-                SELECT c.image_product_candidate_id, c.evidence_sha256, c.confidence,
+                SELECT c.image_product_candidate_id, c.evidence_sha256, c.confidence, c.variant_index,
                        e.original_filename, e.member_path, e.lookup_key, e.content_sha256,
                        r.value_original AS reference, p.name_original AS product_name,
                        c.product_template_id, c.product_variant_id,
                        d.decision, d.decided_by, d.decided_at,
-                       m.approved_image_materialization_id, m.storage_relpath,
+                       COALESCE(m.approved_image_materialization_id, v.approved_image_variant_id) AS approved_image_materialization_id,
+                       COALESCE(m.storage_relpath, v.storage_relpath) AS storage_relpath,
                        count(*) OVER () AS filtered_count,
                        count(*) FILTER (WHERE d.image_product_decision_id IS NULL) OVER () AS pending_count
-                       , count(*) FILTER (WHERE d.decision='approved' AND m.approved_image_materialization_id IS NULL) OVER () AS approved_unmaterialized_count
+                       , count(*) FILTER (
+                           WHERE d.decision='approved'
+                             AND ((c.variant_index IS NULL AND m.approved_image_materialization_id IS NULL)
+                                  OR (c.variant_index IS NOT NULL AND v.approved_image_variant_id IS NULL))
+                         ) OVER () AS approved_unmaterialized_count
                 FROM perfect_catalog.image_product_candidate AS c
                 JOIN perfect_catalog.image_archive_entry AS e ON e.image_archive_entry_id=c.image_archive_entry_id
                 JOIN perfect_catalog.image_archive_index AS i ON i.image_archive_index_id=e.image_archive_index_id
@@ -133,6 +150,7 @@ def list_image_candidates(
                 JOIN perfect_catalog.product_template AS p ON p.product_template_id=c.product_template_id
                 LEFT JOIN perfect_catalog.image_product_decision AS d ON d.image_product_candidate_id=c.image_product_candidate_id
                 LEFT JOIN perfect_catalog.approved_image_materialization AS m ON m.image_product_candidate_id=c.image_product_candidate_id
+                LEFT JOIN perfect_catalog.approved_image_variant AS v ON v.image_product_candidate_id=c.image_product_candidate_id
                 WHERE s.company_id=%s
                 ORDER BY c.generated_at DESC, c.image_product_candidate_id
                 LIMIT %s OFFSET %s

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import uuid
+from collections import OrderedDict
 from datetime import UTC, datetime
 from typing import Any
 
@@ -14,7 +16,7 @@ from psycopg.types.json import Jsonb
 from .application import _load_plan, _load_plan_items, verify_plan_integrity
 from .canonical import canonical_sha256, json_compatible, normalize_name
 from .config import DatabaseConfig
-from .importer import BRAND, NAMESPACE
+from .importer import NAMESPACE
 from .releases import (
     RELEASE_HASH_ALGORITHM,
     SNAPSHOT_SCHEMA_VERSION,
@@ -129,6 +131,7 @@ def snapshot_from_record(record: dict[str, Any]) -> dict[str, Any]:
         "image_storage_relpath": record.get("approved_image_relpath"),
         "image_sha256": record.get("approved_image_sha256"),
         "image_media_type": record.get("approved_image_media_type"),
+        "variant_images": record.get("approved_variant_images") or [],
         "brand": _require_text(record["brand_name"], "brand"),
         "vehicle_makes": vehicle_makes,
         "vehicle_make": vehicle_makes[0] if len(vehicle_makes) == 1 else None,
@@ -208,7 +211,7 @@ def _resolve_plan_brand(connection: Connection[Any], plan: dict[str, Any]) -> tu
                       vi.logo_storage_relpath AS revision_logo_relpath,
                       vi.logo_sha256 AS revision_logo_sha256,
                       vi.logo_media_type AS revision_logo_media_type,
-                      company.display_name AS company_display_name,
+                      COALESCE(company.display_name, c.display_name) AS company_display_name,
                       company.primary_color AS company_primary_color,
                       company.secondary_color AS company_secondary_color,
                       company.ink_color AS company_ink_color, company.paper_color AS company_paper_color,
@@ -217,6 +220,7 @@ def _resolve_plan_brand(connection: Connection[Any], plan: dict[str, Any]) -> tu
                       company.logo_media_type AS company_logo_media_type
                FROM perfect_catalog.brand AS b
                JOIN perfect_catalog.brand_profile AS bp USING (brand_profile_id)
+               JOIN perfect_catalog.company AS c ON c.company_id=b.company_id
                LEFT JOIN LATERAL (SELECT * FROM perfect_catalog.visual_identity_revision
                  WHERE scope='brand' AND brand_profile_id=bp.brand_profile_id
                  ORDER BY created_at DESC, visual_identity_revision_id DESC LIMIT 1) AS vi ON true
@@ -338,6 +342,7 @@ def _load_release_records(
                    approved_image.storage_relpath AS approved_image_relpath,
                    approved_image.content_sha256 AS approved_image_sha256,
                    approved_image.media_type AS approved_image_media_type,
+                   COALESCE(variant_images.images, '[]'::jsonb) AS approved_variant_images,
                    COALESCE(xref.cross_references, '[]'::jsonb) AS cross_references,
                    COALESCE(xref.unresolved_count, 0) AS unresolved_reference_count,
                    COALESCE(app.application_details, '[]'::jsonb) AS application_details,
@@ -377,6 +382,17 @@ def _load_release_records(
                 ORDER BY m.materialized_at, m.approved_image_materialization_id
                 LIMIT 1
             ) AS approved_image ON true
+            LEFT JOIN LATERAL (
+                SELECT jsonb_agg(jsonb_build_object(
+                           'storage_relpath', v.storage_relpath,
+                           'sha256', v.content_sha256,
+                           'media_type', v.media_type,
+                           'variant_index', v.variant_index
+                       ) ORDER BY v.variant_index) AS images
+                FROM perfect_catalog.approved_image_variant AS v
+                WHERE v.product_template_id=t.product_template_id
+                  AND v.product_variant_id IS NOT DISTINCT FROM t.product_variant_id
+            ) AS variant_images ON true
             LEFT JOIN LATERAL (
                 SELECT jsonb_agg(jsonb_build_object(
                            'reference_type', r.reference_type,
@@ -608,13 +624,17 @@ def _build_release_in_connection(
     actor: str,
     reason: str,
     *,
-    brand_name: str = BRAND,
+    brand_name: str,
 ) -> dict[str, Any]:
     version = _require_version(version)
     actor = _require_text(actor, "actor")
     reason = _require_text(reason, "reason")
     plan = _load_applied_plan(connection, plan_id, expected_fingerprint)
     brand, brand_visual = _resolve_plan_brand(connection, plan)
+    if normalize_name(brand_name) != brand["normalized_name"]:
+        raise PermissionError(
+            "La marca indicada no corresponde a la marca real del plan aplicado."
+        )
     records = _load_release_records(connection, brand["brand_id"])
     brand_visual["vehicle_makes"] = _vehicle_make_visual_profiles(connection, records)
     items = _release_items(records)
@@ -763,7 +783,7 @@ def build_release(
     config: DatabaseConfig,
     password: str,
     *,
-    brand_name: str = BRAND,
+    brand_name: str,
 ) -> dict[str, Any]:
     with psycopg.connect(**config.connection_kwargs(password)) as connection:
         connection.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
@@ -809,15 +829,59 @@ def inspect_release(
         }
 
 
+_PUBLISHED_RELEASE_CACHE: "OrderedDict[uuid.UUID, tuple[dict[str, Any], list[dict[str, Any]]]]" = OrderedDict()
+_PUBLISHED_RELEASE_CACHE_LOCK = threading.Lock()
+_PUBLISHED_RELEASE_CACHE_MAX_ENTRIES = 8
+
+
+def _current_release_status(connection: Connection[Any], release_id: uuid.UUID) -> str | None:
+    row = connection.execute(
+        "SELECT status FROM perfect_catalog.catalog_release WHERE catalog_release_id=%s",
+        (release_id,),
+    ).fetchone()
+    return str(row[0]) if row else None
+
+
+def _cache_published_release(
+    release_id: uuid.UUID, release: dict[str, Any], items: list[dict[str, Any]]
+) -> None:
+    with _PUBLISHED_RELEASE_CACHE_LOCK:
+        _PUBLISHED_RELEASE_CACHE[release_id] = (release, items)
+        _PUBLISHED_RELEASE_CACHE.move_to_end(release_id)
+        while len(_PUBLISHED_RELEASE_CACHE) > _PUBLISHED_RELEASE_CACHE_MAX_ENTRIES:
+            _PUBLISHED_RELEASE_CACHE.popitem(last=False)
+
+
 def load_published_release(
     release_id: uuid.UUID, config: DatabaseConfig, password: str
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Carga un release publicado y vuelve a verificar su contenido antes de exportarlo."""
+    """Carga un release publicado y vuelve a verificar su contenido antes de exportarlo.
+
+    El contenido verificado (items y hashes) se cachea en memoria de proceso por release_id:
+    un release publicado nunca cambia su snapshot_sha256 una vez construido, así que recalcular
+    el hash de cada item en cada exportación/vista previa/tab de categoría es trabajo repetido
+    e inútil a partir de la segunda llamada. Solo el estado (publicado/archivado) sí puede
+    cambiar después, así que se vuelve a consultar en cada llamada aunque el contenido esté en
+    caché, para seguir rechazando un release archivado igual que antes.
+    """
+    with _PUBLISHED_RELEASE_CACHE_LOCK:
+        cached = _PUBLISHED_RELEASE_CACHE.get(release_id)
+        if cached is not None:
+            _PUBLISHED_RELEASE_CACHE.move_to_end(release_id)
+    if cached is not None:
+        with psycopg.connect(**config.connection_kwargs(password)) as connection:
+            current_status = _current_release_status(connection, release_id)
+        if current_status != "published":
+            with _PUBLISHED_RELEASE_CACHE_LOCK:
+                _PUBLISHED_RELEASE_CACHE.pop(release_id, None)
+            raise PermissionError("Solo se puede exportar un release publicado.")
+        return cached
     with psycopg.connect(**config.connection_kwargs(password)) as connection:
         release, items = _load_release(connection, release_id, lock=False)
         _verify_release(release, items)
     if release["status"] != "published":
         raise PermissionError("Solo se puede exportar un release publicado.")
+    _cache_published_release(release_id, release, items)
     return release, items
 
 
@@ -836,6 +900,7 @@ def list_catalog_releases(
                        r.definition->'visual_profile' AS visual_profile,
                        r.snapshot_sha256, r.created_at, r.created_by,
                        r.published_at, r.published_by,
+                       r.archived_at, r.archived_by,
                        count(i.catalog_release_item_id) AS item_count,
                        count(i.catalog_release_item_id) FILTER (
                          WHERE NULLIF(i.snapshot_data->>'image_storage_relpath', '') IS NOT NULL

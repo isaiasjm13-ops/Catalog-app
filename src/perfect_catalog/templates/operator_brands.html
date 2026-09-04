@@ -7,15 +7,15 @@
 </section>
 {% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
 <section class="transition-panel brand-profile-builder">
-  <h2>Identidad madre · Perfect Trading</h2>
+  <h2>Identidad corporativa · {{ session.company_name }}</h2>
   <p>Este logo aparece en la portada de todos los catálogos. Cada cambio crea una revisión nueva y conserva la anterior.</p>
   {% set company = identities.company %}
   {% if company %}<img class="identity-logo-preview" src="/operator/brands/identity/{{ company.visual_identity_revision_id }}/logo" alt="Logo actual de {{ company.display_name }}">{% endif %}
   <form method="post" enctype="multipart/form-data" action="/operator/brands/identity">
     <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><input type="hidden" name="scope" value="company"><input type="hidden" name="brand_profile_id" value=""><input type="hidden" name="vehicle_make_id" value="">
-    <label><span>Nombre de empresa</span><input name="display_name" value="{{ company.display_name if company else 'Perfect Trading International' }}" maxlength="120" required></label>
+    <label><span>Nombre de empresa</span><input name="display_name" value="{{ company.display_name if company else session.company_name }}" maxlength="120" required></label>
     <div class="brand-color-row"><label><span>Principal</span><input type="color" name="primary_color" value="{{ company.primary_color if company else '#086650' }}"></label><label><span>Secundario</span><input type="color" name="secondary_color" value="{{ company.secondary_color if company else '#C7DF54' }}"></label><label><span>Texto</span><input type="color" name="ink_color" value="{{ company.ink_color if company else '#17211D' }}"></label><label><span>Fondo</span><input type="color" name="paper_color" value="{{ company.paper_color if company else '#FFFFFF' }}"></label></div>
-    <label><span>Logo Perfect</span><input type="file" name="logo" accept=".svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg" {% if not company %}required{% endif %}><small>{% if company %}Opcional: déjalo vacío para conservar el logo actual. {% endif %}PNG o JPG recomendado para verlo también en PDF y PowerPoint; SVG conserva el vector en HTML e InDesign.</small></label>
+    <label><span>Logo de {{ session.company_name }}</span><input type="file" name="logo" accept=".svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg" {% if not company %}required{% endif %}><small>{% if company %}Opcional: déjalo vacío para conservar el logo actual. {% endif %}PNG o JPG recomendado para verlo también en PDF y PowerPoint; SVG conserva el vector en HTML e InDesign.</small></label>
     <label><span>Motivo auditable</span><textarea name="reason" minlength="4" maxlength="500" required></textarea></label>
     <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo logo y colores para las portadas de todos los catálogos.</span></label><button class="primary-button">Guardar identidad madre</button>
   </form>
@@ -40,16 +40,50 @@
 {% else %}<p>No hay perfiles de marca. Aplica la migración 0013.</p>{% endfor %}
 </section>
 <section class="transition-panel brand-profile-builder">
+  <h2>Vincular marca con su perfil visual</h2>
+  <p>Un dry-run solo puede aprobarse cuando su marca tiene un perfil vinculado. Las marcas nuevas (por ejemplo, al dar de alta una Company) no quedan vinculadas automáticamente: elige aquí el perfil correcto para cada una.</p>
+  {% for entry in brands %}
+    <article class="brand-profile-card">
+      <small>{{ entry.code }}</small><h2>{{ entry.name }}</h2>
+      {% if entry.brand_profile_id %}
+        <p>Vinculada a <strong>{{ entry.linked_profile_name }}</strong> ({{ entry.linked_profile_code }}).</p>
+      {% else %}
+        <p>Sin perfil vinculado todavía. Los dry-run de esta marca no podrán aprobarse hasta vincularla.</p>
+      {% endif %}
+      <details class="materialize-action"><summary>{{ 'Cambiar perfil vinculado' if entry.brand_profile_id else 'Vincular perfil' }}</summary>
+        {% if profiles %}
+        <form method="post" action="/operator/brands/link">
+          <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+          <input type="hidden" name="brand_id" value="{{ entry.brand_id }}">
+          <input type="hidden" name="expected_previous_brand_profile_id" value="{{ entry.brand_profile_id or '' }}">
+          <label><span>Perfil de marca</span>
+            <select name="brand_profile_id" required>
+              {% for profile in profiles %}<option value="{{ profile.brand_profile_id }}" {% if profile.brand_profile_id == entry.brand_profile_id %}selected{% endif %}>{{ profile.display_name }} · {{ profile.code }}</option>{% endfor %}
+            </select>
+          </label>
+          <label><span>Motivo auditable</span><textarea name="reason" minlength="4" maxlength="500" required placeholder="Vínculo aprobado para habilitar importación"></textarea></label>
+          <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo este vínculo entre {{ entry.name }} y el perfil elegido.</span></label>
+          <button class="secondary-button" type="submit">Guardar vínculo</button>
+        </form>
+        {% else %}
+        <p class="draft-note">Todavía no hay ningún perfil de marca en esta Company. Crea uno primero en la sección de abajo (código, nombre y colores) y luego vuelve aquí para vincularlo.</p>
+        {% endif %}
+      </details>
+    </article>
+  {% else %}<p>No hay marcas registradas para esta Company todavía.</p>{% endfor %}
+</section>
+<section class="transition-panel brand-profile-builder">
   <h2>Añadir una marca</h2>
-  <p>El código queda fijo para conservar trazabilidad. Tras crear la marca, podrás subir su logo y ajustar sus colores desde su propia tarjeta.</p>
+  <p>El código queda fijo para conservar trazabilidad. Este logo es solo para sugerir colores aquí mismo; súbelo de forma auditada desde la tarjeta de la marca una vez creada.</p>
   <form method="post" action="/operator/brands">
     <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
     <div class="brand-form-row"><label><span>Código</span><input name="code" minlength="2" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9_-]+" placeholder="PDM" required></label><label><span>Nombre público</span><input name="display_name" maxlength="120" placeholder="PDM" required></label></div>
     <label><span>Eslogan opcional</span><input name="tagline" maxlength="180" placeholder="Calidad para cada camino"></label>
+    <label><span>Logo para sugerir colores (opcional, no se guarda aquí)</span><input type="file" accept=".svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg"><small>Se usa solo en tu navegador para proponer principal/secundario; no se sube al confirmar este formulario.</small></label>
     <div class="brand-color-row">
-      <label><span>Principal</span><input type="color" name="primary_color" value="#C60012"></label>
-      <label><span>Secundario</span><input type="color" name="secondary_color" value="#202327"></label>
-      <label><span>Texto</span><input type="color" name="ink_color" value="#16191D"></label>
+      <label><span>Principal</span><input type="color" name="primary_color" value="#1F2937"></label>
+      <label><span>Secundario</span><input type="color" name="secondary_color" value="#374151"></label>
+      <label><span>Texto</span><input type="color" name="ink_color" value="#111827"></label>
       <label><span>Fondo</span><input type="color" name="paper_color" value="#FFFFFF"></label>
     </div>
     <label><span>URL pública para QR (opcional)</span><input type="url" name="public_base_url" maxlength="500" placeholder="https://catalogo.ejemplo.com"></label>

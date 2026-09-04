@@ -7,16 +7,19 @@ import uuid
 from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
-from unittest.mock import patch
+
+from unittest import mock
 
 from perfect_catalog.canonical import canonical_json, canonical_sha256, normalize_reference
 from perfect_catalog.config import DatabaseConfig
+from perfect_catalog.import_context import is_company_brand_allowed
 from perfect_catalog.importer import (
     EXPECTED_HEADERS,
     analyze_headers,
     approval_fingerprint,
-    assert_apply_allowed,
+    build_product_diff,
     future_product_id,
+    list_plan_update_diffs,
     plan_item_hash,
     plan_hash,
     prepare_rows,
@@ -46,6 +49,14 @@ def synthetic_row(**overrides: object) -> list[object]:
 
 
 class CanonicalTests(unittest.TestCase):
+    def test_company_brand_policy_is_centralized(self) -> None:
+        self.assertTrue(is_company_brand_allowed("KMC", "A1"))
+        self.assertFalse(is_company_brand_allowed("KMC", "NATSUKI"))
+        self.assertFalse(is_company_brand_allowed("PERFECT", "NATSUKI"))
+        self.assertTrue(is_company_brand_allowed("PERFECT", "MASAKI"))
+        self.assertTrue(is_company_brand_allowed("NATSUKI", "NATSUKI"))
+        self.assertFalse(is_company_brand_allowed("NATSUKI", "MASAKI"))
+        self.assertFalse(is_company_brand_allowed("MASAKI", "MASAKI"))
     def test_hash_is_stable_for_key_order(self) -> None:
         self.assertEqual(canonical_sha256({"b": 2, "a": 1}), canonical_sha256({"a": 1, "b": 2}))
 
@@ -114,6 +125,21 @@ class CanonicalTests(unittest.TestCase):
 
 
 class RowPreparationTests(unittest.TestCase):
+    def test_existing_product_diff_keeps_empty_values(self) -> None:
+        diffs = build_product_diff(
+            {
+                "name_original": "Viejo", "name_normalized": "VIEJO",
+                "category_path": "Motor", "variant_count_observed": 1,
+            },
+            {
+                "name_original": "Nuevo", "name_normalized": "NUEVO",
+                "category_path": "", "variant_count_observed": 1,
+            },
+        )
+        actions = {item["field"]: item["action"] for item in diffs}
+        self.assertEqual(actions["name_original"], "UPDATE")
+        self.assertEqual(actions["category_path"], "KEEP_EXISTING")
+        self.assertEqual(actions["variant_count_observed"], "NO_CHANGE")
     def test_headers_and_row_count_are_preserved(self) -> None:
         headers = validate_headers(EXPECTED_HEADERS)
         rows = prepare_rows("Synthetic", headers, [synthetic_row()], [2])
@@ -234,12 +260,63 @@ class RowPreparationTests(unittest.TestCase):
             validate_pilot_row_count(1_001, 1_000)
 
 
-class ApplyGateTests(unittest.TestCase):
-    @patch("perfect_catalog.importer.inspect_plan")
-    def test_unapproved_plan_is_rejected(self, mocked_inspect: object) -> None:
-        mocked_inspect.return_value = {"plan_status": "awaiting_review"}
-        with self.assertRaises(PermissionError):
-            assert_apply_allowed(uuid.uuid4(), DatabaseConfig(), "synthetic-secret")
+class PlanUpdateDiffPreviewTests(unittest.TestCase):
+    """El operador debe ver qué cambia campo por campo antes de aplicar el plan, no solo un
+    conteo. `list_plan_update_diffs` reutiliza el `field_diffs` ya calculado al generar el
+    plan (`build_product_diff`), filtrado a los campos que realmente van a cambiar."""
+
+    def _rows(self, *proposed_values_list: dict) -> list[dict]:
+        rows = []
+        for index, proposed in enumerate(proposed_values_list, start=1):
+            rows.append({
+                "import_plan_item_id": uuid.uuid5(uuid.NAMESPACE_URL, str(index)),
+                "proposed_values": proposed, "filtered_count": len(proposed_values_list),
+            })
+        return rows
+
+    def _query(self, rows: list[dict], **kwargs):
+        cursor = mock.Mock()
+        cursor.fetchall.return_value = rows
+        cursor_context = mock.Mock()
+        cursor_context.__enter__ = mock.Mock(return_value=cursor)
+        cursor_context.__exit__ = mock.Mock(return_value=False)
+        connection = mock.Mock()
+        connection.cursor.return_value = cursor_context
+        connection_context = mock.Mock()
+        connection_context.__enter__ = mock.Mock(return_value=connection)
+        connection_context.__exit__ = mock.Mock(return_value=False)
+        with mock.patch("perfect_catalog.importer.psycopg.connect", return_value=connection_context):
+            return list_plan_update_diffs(uuid.uuid4(), DatabaseConfig(), "secret", **kwargs)
+
+    def test_only_fields_that_actually_change_are_shown(self) -> None:
+        rows = self._rows({
+            "internal_reference_original": "NK-001", "name_original": "Empaque nuevo",
+            "field_diffs": [
+                {"field": "name_original", "before": "Empaque viejo", "incoming": "Empaque nuevo", "action": "UPDATE"},
+                {"field": "category_path", "before": "Motor", "incoming": "Motor", "action": "NO_CHANGE"},
+                {"field": "variant_count_observed", "before": 2, "incoming": None, "action": "KEEP_EXISTING"},
+            ],
+        })
+        result = self._query(rows)
+        self.assertEqual(result["filtered_count"], 1)
+        item = result["items"][0]
+        self.assertEqual(item["internal_reference_original"], "NK-001")
+        self.assertEqual(len(item["changed_fields"]), 1)
+        self.assertEqual(item["changed_fields"][0], {
+            "field": "name_original", "before": "Empaque viejo", "incoming": "Empaque nuevo",
+        })
+
+    def test_empty_plan_returns_zero_without_erroring(self) -> None:
+        result = self._query([])
+        self.assertEqual(result, {"items": [], "filtered_count": 0, "limit": 50, "offset": 0})
+
+    def test_rejects_out_of_range_pagination(self) -> None:
+        with self.assertRaises(ValueError):
+            self._query([], limit=0)
+        with self.assertRaises(ValueError):
+            self._query([], limit=500)
+        with self.assertRaises(ValueError):
+            self._query([], offset=-1)
 
 
 if __name__ == "__main__":

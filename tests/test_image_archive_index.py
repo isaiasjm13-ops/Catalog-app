@@ -6,12 +6,21 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from perfect_catalog.image_archive_index import IMAGE_INDEX_ALGORITHM, inspect_image_archive, normalize_image_key
+from perfect_catalog.image_archive_index import (
+    IMAGE_INDEX_ALGORITHM, inspect_image_archive, normalize_image_key, split_variant_suffix,
+)
 
 
 class ImageArchiveIndexTests(unittest.TestCase):
     def test_normalization_is_stable_but_does_not_claim_a_product_match(self) -> None:
         self.assertEqual(normalize_image_key("ÁBC 001-final.JPG"), "ABC-001-FINAL")
+
+    def test_variant_suffix_is_split_from_the_base_reference(self) -> None:
+        self.assertEqual(split_variant_suffix("REF-1234-2"), ("REF-1234", 2))
+        self.assertEqual(split_variant_suffix("REF-1234-10"), ("REF-1234", 10))
+        self.assertEqual(split_variant_suffix("REF-1234"), ("REF-1234", None))
+        self.assertEqual(split_variant_suffix("REF-1234-1"), ("REF-1234-1", None))
+        self.assertEqual(split_variant_suffix("REF-1234-0"), ("REF-1234-0", None))
 
     def test_index_hashes_streams_and_marks_collisions_without_extracting(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -19,5 +19,19 @@
   <div class="empty-state"><h2>No hay empresas activas</h2><p>Ejecuta ACTUALIZAR-SISTEMA.cmd y vuelve a intentarlo.</p></div>
 {% endfor %}
 </section>
+<section class="transition-panel brand-profile-builder">
+  <h2>Añadir empresa</h2>
+  <p>Una empresa es el propietario del catálogo. Masaki y Exact Cars deben crearse como marcas dentro de Perfect, no aquí. Natsuki ya existe como empresa propia y no necesita crearse de nuevo.</p>
+  <form method="post" action="/operator/company/create">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+    <div class="brand-form-row"><label><span>Código</span><input name="code" minlength="2" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9_-]+" required></label><label><span>Nombre de empresa</span><input name="display_name" maxlength="120" required></label></div>
+    <label><span>Motivo auditable</span><textarea name="reason" minlength="4" maxlength="500" required></textarea></label>
+    <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo que es una empresa independiente, no una marca de producto.</span></label>
+    <button class="primary-button">Crear empresa</button>
+  </form>
+</section>
+{% set inactive_companies = companies | rejectattr('is_active') | list %}
+{% if inactive_companies %}<section class="transition-panel"><h2>Empresas desactivadas</h2><p>Se conservan para no romper ingresos ni catálogos históricos.</p>{% for company in inactive_companies %}<article class="company-card"><small>{{ company.code }}</small><h3>{{ company.display_name }}</h3><form method="post" action="/operator/company/{{ company.company_id }}/state"><input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><input type="hidden" name="active" value="true"><label><span>Motivo</span><input name="reason" minlength="4" maxlength="500" required></label><label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Reactivar empresa</span></label><button class="secondary-button">Reactivar</button></form></article>{% endfor %}</section>{% endif %}
+<section class="transition-panel"><h2>Administrar empresas activas</h2><p>“Eliminar” desactiva la empresa y oculta su operación nueva; el historial permanece íntegro.</p>{% for company in companies if company.is_active and (not session.company_id or session.company_id|string != company.company_id|string) %}<article class="company-card"><strong>{{ company.display_name }}</strong><form method="post" action="/operator/company/{{ company.company_id }}/state"><input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><input type="hidden" name="active" value="false"><label><span>Motivo</span><input name="reason" minlength="4" maxlength="500" required></label><label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Desactivar sin borrar el historial</span></label><button class="secondary-button">Desactivar</button></form></article>{% endfor %}</section>
 <p class="safety-note">Los ingresos nuevos quedan vinculados a la empresa activa. Los registros históricos sin una empresa verificable permanecen ocultos hasta una reasignación auditada.</p>
 {% endblock %}

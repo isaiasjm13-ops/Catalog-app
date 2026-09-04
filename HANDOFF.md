@@ -1,5 +1,359 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-09-04 (cont. 5): resto de la lista de mejoras ("haz todo")
+
+- **Migración 0026 corregida**: el archivo ya aplicaba todo su DDL pero le faltaba insertar su
+  propia fila en `schema_migration`; se corrigió (ver bloque de más abajo, "Corrección
+  posterior") y se hizo cada sentencia re-ejecutable con `IF NOT EXISTS`/`DROP ... IF EXISTS`
+  para el caso de reintento con el esquema ya aplicado.
+- **Aviso cuando no hay perfil de marca que vincular**: en Marcas, si la Company todavía no
+  tiene ningún `brand_profile`, el desplegable de "Vincular perfil" salía vacío sin explicación
+  (así lo reportó el usuario con una marca real, EXACTCARS). Ahora muestra un aviso claro
+  indicando crear uno primero en "Añadir una marca".
+- **Registro vehicular**: se agregó Perodua (130 marcas / 156 alias en total).
+- **Historial de exportaciones sin recorrer todo el disco cada vez**: `list_operator_catalog_exports`
+  ahora lee un índice de solo-anexar (`_export_index.jsonl`) que cada exportación real
+  (`create_operator_catalog_export`) actualiza en el momento; solo la primera vez, si el índice
+  no existe todavía, se reconstruye recorriendo el árbol completo una única vez. Límite
+  conocido: una exportación escrita directamente por el CLI en la misma carpeta que usa la
+  consola no queda indexada hasta que se borre el índice y se reconstruya.
+- **Un solo lugar para el chequeo CSRF+origen**: nueva función `_csrf_rejection()` en
+  `operator_api.py`, que reemplaza ~25 copias casi idénticas del mismo bloque de validación
+  repetidas en rutas POST distintas. Comportamiento idéntico (se verificó que la suite completa
+  sigue en verde); solo cambia que ahora hay un único lugar para mantenerlo.
+- **Miniatura real en la revisión de imágenes**: la tarjeta de cada candidato de imagen mostraba
+  un placeholder de texto "IMG"; ahora muestra la foto real, leída de solo lectura directamente
+  del ZIP en cuarentena (verificada por SHA-256/CRC igual que al materializar, pero sin copiar
+  ni aprobar nada) y reducida a una miniatura de 320px. Nueva ruta
+  `GET /operator/images/candidates/{id}/preview`.
+- **Vista previa de cambios campo por campo antes de aplicar el plan**: la inspección del
+  dry-run ya mostraba conteos agregados (nuevos/actualizan/sin cambios) pero no qué campo
+  cambiaba en cada producto que "actualiza algo existente". Ahora hay un panel plegable que
+  reutiliza el `field_diffs` que `build_product_diff` ya calculaba al generar el plan (no se
+  recalcula nada nuevo), mostrando solo los campos que realmente cambian, antes/después.
+- **Mensajes de error menos técnicos**: cuatro `RuntimeError` internos en el flujo de aplicar un
+  plan (`application.py`) usaban jerga interna que un operador no técnico vería tal cual si
+  algo salía mal (ej. "El UPDATE controlado no devolvió evidencia de before/after.", "...después
+  del insert idempotente."). Se reescribieron para explicar que es un problema interno y sugerir
+  contactar soporte, en vez de exponer mecánica de base de datos. Son casos que no deberían
+  ocurrir en operación normal (invariantes internos), así que no había nada que un operador
+  pudiera "arreglar" con la redacción anterior tampoco.
+- Verificación: 365 pruebas correctas, 6 integraciones PostgreSQL omitidas sin credenciales.
+- **No incluido en este bloque, sin pedirlo explícitamente**: commit a git (regla dura: solo se
+  hace si se pide de forma explícita).
+
+## Bloque 2026-09-04 (cont. 4): fotos variantes por producto en el HTML autónomo
+
+- Pedido del usuario: en el HTML autónomo, la tarjeta muestra la foto principal; al tocarla se
+  abre la ficha y ahí deben verse TODAS las fotos del producto, no solo una. Antes de este
+  bloque no existía soporte para más de una foto por producto en ninguna parte del sistema —
+  confirmado con una investigación completa del pipeline de imágenes antes de tocar nada.
+- **Convención de archivo**: `REF-1234.jpg` sigue siendo la foto principal (sin cambios);
+  `REF-1234-2.jpg`, `REF-1234-3.jpg`, etc. son fotos adicionales de la misma referencia — esta
+  convención ya estaba anotada como pendiente desde el bloque de "Modo simple" del 2 de
+  septiembre y es exactamente lo que se implementó ahora. El sufijo se limita a 1-2 dígitos
+  (2 a 99) a propósito: una referencia real que termine en varios dígitos (`REF-1234`) nunca se
+  confunde con un índice de variante porque siempre se intenta la coincidencia exacta completa
+  primero; el sufijo es solo un respaldo cuando esa coincidencia exacta no encuentra nada.
+- **Migración `0026_product_photo_variants.sql`** (aditiva, no toca la tabla de la foto
+  principal): agrega `variant_index` opcional a `image_product_candidate` y crea
+  `approved_image_variant` — mismo patrón append-only que `approved_image_materialization`,
+  pero permite varias filas por producto (una por índice de variante) en vez de una sola. La
+  foto principal sigue viviendo exactamente donde vivía; nada de lo ya construido y probado se
+  tocó ni se migró.
+- **Coincidencia y materialización**: `image_match_review.py` ahora reconoce el sufijo y lo
+  guarda en el candidato (algoritmo subido a `exact-approved-reference-v2`, aceptando también
+  `v1` para no invalidar candidatos históricos). `materialize_approved_image()` decide sola —
+  sin que ningún llamador tenga que saberlo — si el candidato es la foto principal o una
+  variante, y publica en la tabla correcta; así "Modo simple" (que aprueba y materializa todo
+  en lote automáticamente) funciona sin cambios adicionales en su flujo.
+- **Release y exportación**: el snapshot del release ahora incluye `variant_images` (arreglo
+  ordenado, aditivo — no se subió `snapshot_schema_version` porque un campo nuevo opcional no
+  rompe releases ya publicados). `_package_images` empaqueta también las variantes; el HTML
+  digital y el autónomo arman una galería real: la tarjeta muestra la foto principal con un
+  aviso "N fotos", y al abrir la ficha aparece una fila de miniaturas para cambiar de foto sin
+  cerrar la vista. **Solo el HTML se tocó** — PDF, PPTX, InDesign y las vistas previas de la
+  consola del operador siguen mostrando exclusivamente la foto principal, por decisión de
+  alcance (así lo pidió el usuario y evita rediseñar formatos de página fija).
+- Verificación: 354 pruebas correctas, 6 integraciones PostgreSQL omitidas sin credenciales.
+- Pendiente: aplicar la migración 0026 (junto con las 0021-0025 ya pendientes) contra la base
+  real; subir una foto de prueba con sufijo `-2` a través de Modo simple y confirmar visualmente
+  la galería en un HTML autónomo generado de verdad.
+
+**Corrección posterior (mismo día):** el usuario corrió `ACTUALIZAR-SISTEMA.cmd` contra la base
+real y 0026 falló en la validación final del ledger ("faltan entradas 0017-0026"). Causa real:
+el archivo de migración aplicó todo su DDL (tabla, columnas, índices, trigger — eso ya quedó
+permanentemente en la base, sin ningún problema) pero se me olvidó el `INSERT INTO
+perfect_catalog.schema_migration` final que sí tienen todas las demás migraciones desde la
+0017. Se corrigió el archivo para (a) insertar su propia fila de ledger y (b) usar guardas
+`IF NOT EXISTS`/`DROP CONSTRAINT IF EXISTS` en cada sentencia, porque al volver a correr el
+updater con el esquema ya aplicado pero sin ledger, `apply_pending_migrations.sql` vuelve a
+ejecutar el archivo completo (ruta "SCHEMA_AHEAD_OF_LEDGER") y sin esas guardas habría fallado
+de nuevo intentando recrear objetos que ya existen. Se agregó `test_records_its_own_ledger_entry`
+y `test_every_ddl_statement_can_safely_rerun_after_a_partial_apply` a
+`tests/test_product_photo_variants_migration.py` para que este tipo de error no vuelva a pasar
+inadvertido. Pendiente: el usuario debe volver a correr `ACTUALIZAR-SISTEMA.cmd`; esta vez debe
+completar sin error ya que el esquema ya existe y solo falta escribir la fila del ledger.
+
+## Bloque 2026-09-04 (cont. 3): explorar por categoría, rendimiento de releases y registro vehicular ampliado
+
+- **Nueva pestaña "Explorar por categoría"** en Catálogos (`/operator/catalogs/{release_id}/browse`):
+  navegación de solo lectura del release publicado completo (no una muestra), en pestañas reales
+  por categoría o por marca vehicular (con conteo por pestaña), paginada dentro de cada una.
+  Reutiliza el mismo motor de miniaturas ya existente en la vista previa de composición. Nueva
+  función `browse_catalog_release` (`catalog_export_job.py`), gateway y ruta siguiendo el mismo
+  patrón que la vista previa InDesign existente.
+- **Caché en memoria del release publicado** (`publication.py::load_published_release`): el
+  contenido verificado (items + hashes) se cachea por `release_id` porque un release publicado
+  nunca cambia de contenido una vez construido — recalcular el hash de miles de productos en
+  cada exportación/vista previa/pestaña era trabajo repetido e inútil a partir de la segunda
+  llamada. El **estado** (publicado/archivado) sí se revuelve a consultar en cada llamada aunque
+  el contenido esté en caché, para seguir rechazando un release archivado igual que antes —
+  probado explícitamente con un test que archiva un release entre dos llamadas.
+- **Segunda caché** (`catalog_export_job.py::_cached_export_rows`) para el resultado ya
+  revalidado de `export_rows_from_release`, usada por `browse_catalog_release` y por el
+  servidor de miniaturas (`resolve_catalog_preview_image`) — sin esta segunda caché, cada
+  miniatura individual de la pestaña nueva habría vuelto a revalidar el release completo.
+- **Tope de tamaño para el HTML autónomo con fotos incrustadas** (200 MiB de fotos
+  seleccionadas): antes no existía ningún límite y a 25,000+ productos con fotos podía intentar
+  generar un HTML de varios GB. Ahora se rechaza con un mensaje claro que sugiere el ZIP digital.
+- **Registro vehicular ampliado** (`vehicle_makes.py`): se agregó `V.W`/`V.W.` como alias de
+  Volkswagen (reportado por el usuario), más camiones pesados (Fuso, UD Trucks, Western Star,
+  Shacman, Sinotruk, Higer, Yutong), autos nuevos (MG, Leapmotor, Denza) y motocicletas (Yamaha,
+  Kawasaki, KTM, Royal Enfield, Harley-Davidson, Ducati, Vespa, Piaggio, Aprilia, Italika, AKT,
+  Bajaj, TVS, Eicher, Zongshen, Loncin, Benelli, Force Motors, Hero MotoCorp) — 129 marcas / 155
+  alias en total. `Force Motors`/`Hero MotoCorp` solo aceptan el nombre completo, no la palabra
+  suelta ("force"/"hero"), siguiendo la misma regla de no-ambigüedad que ya excluye RAM/SEAT/MAN.
+- **Limpieza de código identificada y aprobada por el usuario:**
+  - Eliminada `assert_apply_allowed` (`importer.py`): función muerta que siempre lanzaba
+    `NotImplementedError`; el guard real es `assert_applicable_items` (`application.py`).
+  - `_optimized_raster` ahora acepta una caché opcional por llamada de exportación: si la misma
+    foto se usa en varios productos del mismo PDF/PPTX/HTML, ya no se re-decodifica ni
+    re-comprime una vez por producto.
+  - Unificada en `group_values()` (`catalog_exports.py`) la lógica de "expandir en abanico
+    cuando se agrupa por marca vehicular", que antes estaba copiada de forma independiente en
+    `_groups`, `_indesign_rows` y `build_catalog_preview` (y en la nueva `browse_catalog_release`).
+  - **Bug real encontrado de paso:** `list_operator_catalog_exports` ordenaba el historial de
+    exportaciones por el texto del UUID de carpeta (aleatorio), no por fecha real — "más
+    reciente primero" no reflejaba la realidad. Se corrigió para ordenar por la fecha real de
+    modificación del manifiesto. **Pendiente, no resuelto todavía:** el listado sigue teniendo
+    que recorrer todo el árbol histórico de exportaciones en cada consulta — evitar eso de
+    verdad requiere un índice liviano o una política de retención/limpieza (borra archivos, no
+    registros de auditoría), ninguna de las dos implementada aún porque implica borrar datos o
+    agregar infraestructura nueva; requiere decisión explícita antes de tocarlo.
+- Verificación: 340 pruebas correctas, 6 integraciones PostgreSQL omitidas sin credenciales.
+
+## Bloque 2026-09-04 (cont. 2): generaliza los hardcodes de NATSUKI y retira el modo Excel directo
+
+- El usuario notó que buena parte del código seguía asumiendo NATSUKI como "la" marca por defecto
+  aunque el sistema ya es multiempresa/multimarca. Auditoría con 2 agentes Explore + lectura
+  directa confirmó los puntos concretos; el usuario decidió (vía preguntas dirigidas) arreglar el
+  visor en vivo para cualquier marca en vez de retirarlo, eliminar del todo el modo Excel-directo,
+  usar gris neutro como color por defecto de una marca nueva, y dejar el menú amplio de mejoras
+  posibles solo como referencia sin implementar.
+- **PDF genérico:** `generate_catalog_pdf` (`catalog_exports.py`) ya no aplica Barlow
+  Condensed/DM Sans de Natsuki a cualquier marca. Nueva `_catalog_pdf_fonts()` usa las fuentes
+  reales de Natsuki solo si el logo activo es el suyo (mismo gate que `_logo_path`); cualquier otra
+  marca recibe Helvetica estándar de ReportLab, ya que no hay `.ttf` bundleados para KMC/PDM/etc.
+  Los PDF de Natsuki no cambian visualmente.
+- **Visor en vivo generalizado:** `ReleaseCatalogRepository` (`web.py`) ya no tiene `"NATSUKI"`
+  como marca por defecto — `brand` pasa a ser obligatorio, y el repositorio expone
+  `brand_name`/`brand_code` reales leídos del release. La plantilla del visor y la ficha de
+  producto imprimible ya no dicen "Perfect Trading / Natsuki" ni "Producto Natsuki" fijo; usan el
+  nombre real de la marca servida. `INICIAR-CATALOGO-PUBLICADO.cmd` ya no abre siempre NATSUKI:
+  ahora delega en `db/bootstrap/start_published_catalog.ps1`, que primero lista qué marcas tienen
+  un release publicado y pregunta cuál abrir (mismo patrón de contraseña oculta que no se guarda).
+- **Modo Excel-directo retirado por completo** (mismo riesgo que `INICIAR-SERVER.cmd`, ya borrado
+  antes: evadía cuarentena, dry-run y aprobación). Se eliminaron `CatalogRepository`,
+  `ExcelCatalogRepository`, `AutoExcelCatalogRepository` y sus helpers de `web.py` (cero llamadores
+  reales), los flags `--source`/`--source-dir` de `api.py`, y `scripts/run_catalog_web.py` entero.
+  `--brand` es ahora el único camino y es obligatorio.
+- **Colores neutros por defecto:** el formulario "Añadir una marca" ya no precarga los colores
+  exactos de Natsuki (`#C60012`/`#202327`/`#16191D`); ahora arranca en gris neutro
+  (`#1F2937`/`#374151`/`#111827`) que no coincide con ninguna marca real. El operador sigue
+  eligiendo el color real antes de guardar.
+- **Otros hardcodes de bajo riesgo corregidos de paso:** `CONTRACT_VERSION` renombrado de
+  `"natsuki-empaques-v0.2"` a `"perfect-catalog-v0.2"` (valor opaco comparado por igualdad, sin
+  cambio de comportamiento); placeholder de versión en Catálogos cambiado de `"2026.08-natsuki"` a
+  `"2026.08"`; el parámetro `brand_code`/`brand_name` con default `"NATSUKI"` se quitó de
+  `promote_intake_to_dry_run`, `_promote_intake_to_dry_run_locked`, el protocolo `promote_intake`
+  y `build_release`/`_build_release_in_connection` — todo caller real ya lo pasaba explícito.
+- **Bug real encontrado de paso:** al quitar el default de `_build_release_in_connection`, se vio
+  que el parámetro `brand_name` (ya requerido en el formulario "Construir versión" de Catálogos,
+  pensado como confirmación tipo "escribe la marca exacta del plan") nunca se validaba contra nada
+  — se aceptaba y se descartaba en silencio. Se agregó la comprobación real: si la marca escrita no
+  coincide con la marca resuelta del plan aplicado, se rechaza con `PermissionError`, igual que las
+  demás confirmaciones "expected_*" del proyecto.
+- Verificación: 325 pruebas correctas, 6 integraciones PostgreSQL omitidas sin credenciales.
+- Pendiente: correr `ACTUALIZAR-SISTEMA.cmd` contra la base real (sigue pendiente desde el bloque
+  de NATSUKI-Company de abajo); generar un PDF de una marca sin fuentes propias para confirmar
+  visualmente Helvetica; abrir el visor en vivo para una marca distinta de NATSUKI una vez tenga
+  release publicado. El menú amplio de mejoras (calidad de exportación, revisión de imágenes, cola
+  de revisión, cobertura de pruebas, rendimiento a escala, etc.) se mostró al usuario como
+  referencia y queda sin implementar hasta que lo pida explícitamente.
+
+## Bloque 2026-09-04 (cont.): NATSUKI vuelve a ser Company propia (revierte parte de 0021)
+
+- Decisión explícita del usuario, confirmada dos veces: NATSUKI vuelve a ser una **Company
+  independiente**, no una marca de Perfect. MASAKI y EXACTCARS quedan exactamente como estaban
+  (marcas de Perfect) — el usuario lo confirmó por separado.
+- Auditoría real vía `AUDITAR-EMPRESAS-MARCAS.cmd` (nueva herramienta de solo lectura, mismo
+  patrón que `PREPARAR-MULTIEMPRESA.cmd`) antes de escribir nada: confirmó que el Company legacy
+  de NATSUKI (`ee7c7e0c-398f-5e35-9d79-c97d761f8672`) seguía existiendo, solo desactivado por 0021
+  ("Company legacy conservada por referencias historicas"), con 896 productos activos bajo su
+  Brand. A1 ya estaba correctamente bajo KMC — no hacía falta tocarlo.
+- Migración forward-only `0025_natsuki_company_restored.sql`: **reactiva** el Company legacy (no
+  crea uno nuevo, conserva su UUID e historial), mueve `brand.company_id` y
+  `brand_profile.company_id` de NATSUKI de vuelta a esa Company, y resincroniza
+  `import_plan.company_id` de sus planes — mismo mecanismo que usó 0021 en la dirección opuesta.
+  No toca MASAKI ni EXACTCARS.
+- `is_company_brand_allowed()` (`import_context.py`) actualizado: NATSUKI ahora es Company válida
+  (solo admite su propia Brand NATSUKI, igual que KMC solo admite A1); ya no está bloqueada como
+  antes. La copia de "Añadir empresa" en la consola se corrigió para no decir que Natsuki debe
+  crearse como marca.
+- Verificación: 321 pruebas correctas, 6 integraciones PostgreSQL omitidas sin credenciales.
+  Pendiente: aplicar 0025 vía `ACTUALIZAR-SISTEMA.cmd` contra la base real y confirmar que NATSUKI
+  vuelve a aparecer como Company seleccionable con sus 896 productos intactos.
+
+## Bloque 2026-09-04 (cont.): acento de color por Company activa en la consola web
+
+- La consola del operador (nav, botones, marca) era siempre verde fijo sin importar qué Company
+  estuviera activa — solo el catálogo exportado reflejaba colores de marca/empresa. Ahora, si la
+  Company activa tiene una identidad corporativa cargada (Marcas → Identidad corporativa), la
+  consola adopta su color principal/secundario como acento (`--forest`, `--forest-dark` calculado,
+  `--lime`). Ink/fondo/tarjetas se mantienen neutros a propósito para no arriesgar legibilidad.
+- Implementado como hoja de estilos externa (`GET /operator/theme.css`, mismo origen) en vez de
+  `<style>` inline, para no debilitar `style-src 'self'` del CSP existente. Los colores se calculan
+  una vez al iniciar sesión o cambiar de Company (mismo patrón de cache que `company_name`); si se
+  edita la identidad corporativa mientras la sesión sigue abierta, hace falta volver a seleccionar
+  la Company para verla reflejada — limitación conocida, igual a la de `company_name`.
+- Sin identidad corporativa cargada, la hoja responde vacía y la consola se ve igual que siempre
+  (verde por defecto). No se validó contraste WCAG del color secundario de Company contra el fondo
+  del anillo de foco (`--lime` se usa para `focus-visible`); si una empresa carga un secundario muy
+  claro podría verse poco legible ahí — mismo tipo de riesgo que ya existe para marcas de producto.
+- Verificación: 315 pruebas correctas, 6 integraciones PostgreSQL omitidas sin credenciales.
+
+## Bloque 2026-09-04: fix de exportación, atajo HTML rápido y copiar referencia
+
+- Corregido bug real en producción: `create_operator_catalog_export` fallaba con
+  `[WinError 5] Acceso denegado` al mover el directorio temporal de exportación a su destino
+  final — típico choque con el antivirus escaneando archivos recién escritos en Windows. Se agregó
+  `_replace_with_retry` (hasta 5 intentos con espera creciente) alrededor del único `replace()`
+  involucrado; si el bloqueo persiste tras agotar los intentos, el error real se sigue mostrando.
+- **Botón "HTML autónomo ya"** en cada release publicado: genera solo el HTML autónomo con
+  valores por defecto (categoría, 2 columnas, todo visible) en un solo clic, sin pasar por el
+  formulario completo de exportación. PDF/PPTX/InDesign quedan en "Configurar exportación" como
+  antes. Reutiliza `gateway.export_catalog` sin tocar su lógica.
+- La inspección del dry-run (`/operator/import-plans/{id}`) ahora desglosa **nuevos / actualizan
+  algo existente / sin cambios** en vez de solo un total de operaciones — la clasificación ya
+  existía desde el bloque del 2 de septiembre, pero no se mostraba. Si un Excel repetido no agrega
+  ni actualiza nada, aparece un aviso explícito.
+- El HTML autónomo (y el ligero) suman un **botón de copiar referencia** por ficha: copia al
+  portapapeles con `navigator.clipboard`, con reserva a `execCommand('copy')` vía textarea oculto
+  para navegadores/contextos donde el API async no esté disponible (sigue funcionando 100% offline
+  desde `file://`). Sin integración de WhatsApp — decisión explícita del usuario.
+- Verificación: 312 pruebas correctas, 6 integraciones PostgreSQL omitidas sin credenciales.
+  Pendiente: confirmar en un release real que el botón rápido y el desglose se ven bien en
+  navegador, y que el reintento realmente resuelve el WinError 5 la próxima vez que ocurra.
+
+### Pendiente de la conversación sobre "catálogos rápidos"
+
+El usuario quiere priorizar temporalmente el HTML autónomo sobre PDF/PPTX/InDesign y seguir
+simplificando la interfaz. Ideas ya evaluadas y no elegidas todavía (no descartadas, solo no
+priorizadas): recordar la última configuración de exportación por marca, atajo directo
+"Actualizar catálogo de [Marca]" desde Catálogos, vista de impresión dedicada del HTML, orden
+por nombre/referencia además de filtrar. Retomar si el usuario pide más mejoras en esta línea.
+
+## Bloque 2026-09-02 (cont.): modo simple, sugerencia de color por logo y archivado de releases
+
+- Nueva pantalla **Modo simple** (`/operator/simple`): un solo formulario (Excel + carpeta de fotos
+  vía selector de carpeta del navegador + marca + motivo) encadena, con una sola confirmación,
+  ingreso a cuarentena de ambos archivos, dry-run, preparación (aprobación+aplicación) del plan e
+  indexado/vinculación automática de fotos cuyo nombre de archivo coincide exactamente con una
+  referencia ya aprobada. No publica nada: identidades nuevas y publicación de release siguen
+  siendo pasos humanos separados. Reutiliza integralmente el motor existente (intake, dry-run,
+  `apply_controlled_product_update` vía 0022, `exact-approved-reference-v1`); no se tocó SQL.
+- El emparejamiento exacto sigue siendo por nombre de archivo completo (`REF-1234.jpg` ==
+  referencia `REF-1234`); no existe todavía soporte para variantes con sufijo (`REF-1234-2.jpg`)
+  como segunda foto del mismo producto — quedaría pendiente si se necesita más adelante.
+- La pantalla **Marcas** ahora ofrece extraer 2 colores dominantes de un logo directamente en el
+  navegador (canvas, sin subir el archivo) al crear un perfil, con confirmación explícita antes de
+  aplicarlos a los selectores de color.
+- Nueva acción **Archivar versión** en Catálogos: expone `archive_release` (existía en
+  `publication.py`/CLI pero no en la consola web) para releases publicados. No borra nada; solo
+  cambia `status` a `archived` de forma auditada y reversible en su historial. Responde el pedido
+  de "no hay opción para eliminar" sin romper el principio append-only del proyecto.
+- Se retiró `INICIAR-SERVER.cmd` (visor XLSX del piloto, evadía cuarentena/dry-run/aprobación).
+- Modo simple admite además una carpeta local del servidor como alternativa a subir por el
+  navegador (`local_images_path`, sin confinar a una raíz fija — decisión explícita del usuario
+  frente a la alternativa más segura de restringir a una carpeta base; el proceso lee cualquier
+  ruta de Windows a la que tenga acceso). Solo filtra por extensión de imagen admitida; el resto
+  de la carpeta (Thumbs.db, sidecars) se ignora en silencio.
+- Archivado auditado de ingresos viejos (migración `0024_intake_submission_archiving.sql`):
+  `intake_submission` (0007) es completamente append-only y eso no se tocó. El estado "archivado"
+  se registra en una tabla de eventos separada (`intake_submission_archive_event`, mismo patrón que
+  `image_product_decision`); el último evento por ingreso determina si está activo o archivado.
+  Nueva pantalla en Ingresos: filtro Activos/Archivados/Todos y botón archivar/restaurar por fila,
+  ambos reversibles y sin borrar bytes ni evidencia SHA-256.
+- Verificación: 308 pruebas correctas, 6 integraciones PostgreSQL omitidas sin credenciales. Ningún
+  paso de este bloque corrió contra un Postgres real; falta esa verificación antes de producción.
+
+### Decisiones del usuario en este bloque
+
+- Limpieza de ingresos/Excels viejos: **archivar/ocultar, nunca borrar bytes** — implementado
+  arriba (0024), mismo patrón que Company/Brand/release.
+- Marca de agua de destinatario/fecha en el HTML autónomo: **no por ahora**.
+- Carpeta local de imágenes: **ruta libre de Windows sin confinamiento** (ver arriba) — el usuario
+  priorizó flexibilidad sobre el patrón de confinamiento que ya usa `intake_root` en el resto del
+  sistema; quedó documentado como decisión consciente, no como omisión.
+
+### Pendiente explícito para la próxima sesión
+
+1. Ejecutar `ACTUALIZAR-SISTEMA.cmd` (aplica 0021-0024) y probar en vivo: vincular Brand↔Perfil,
+   modo simple completo (subida por navegador y por carpeta local), archivar un release real, y
+   archivar/restaurar un ingreso real.
+2. Ningún pedido explícito de Isa quedó sin atender al cierre de este bloque.
+
+## Bloque 2026-09-02: auditoría del bloque multiempresa y vínculo Brand-Perfil (0023)
+
+- Auditoría del bloque "importador multiempresa" (trabajado en Codex, continuado en Claude Code):
+  el `scope.filters` que graba `import_batch` usaba las constantes fijas `BRAND`/`"empaque"` en vez
+  del `brand_code`/`family` reales del dry-run, dejando auditoría incorrecta para cualquier Company
+  distinta de NATSUKI. Corregido en `importer.py`.
+- Hallazgo crítico: ninguna migración ni pantalla vincula `brand.brand_profile_id` para Companies
+  nuevas (KMC/A1, PDM); solo NATSUKI quedó vinculada por un `UPDATE` puntual en `0014`. El paso que
+  antes resolvía esto en `approve_and_apply_plan` (buscar el perfil por código en el momento de
+  aprobar) fue retirado en el mismo bloque de Codex sin reemplazo, dejando cualquier dry-run de una
+  Company nueva con un plan que nunca puede aprobarse.
+- Migración forward-only `0023_brand_profile_linking.sql` agrega vínculo auditado y explícito
+  Brand → Brand Profile (`brand_profile_link_event`, append-only, con control de concurrencia
+  optimista sobre el vínculo previo). Nueva pantalla en **Marcas**: lista las Brands de la Company
+  activa y su estado de vínculo, con formulario de vincular/re-vincular con motivo y confirmación.
+  `perfect_catalog_app` gana `UPDATE (brand_profile_id, updated_at)` sobre `brand`, antes sin permiso
+  alguno de escritura ahí salvo INSERT.
+- Se retiró `INICIAR-SERVER.cmd`: abría `perfect-catalog-api` en modo `--source-dir`, leyendo Excel
+  directamente sin cuarentena, dry-run ni aprobación — una vía lateral que evadía todo el pipeline
+  de auditoría. `INICIAR-CATALOGO-PUBLICADO.cmd` y el HTML autónomo cubren los casos de uso reales.
+- Verificado en código (no requiere cambios): los colores del HTML autónomo ya derivan del perfil de
+  marca del producto (`_theme()` en `catalog_exports.py`), no de un tema fijo; la Company solo firma
+  el pie. Vigente desde v1.23/v1.39.
+- Verificación: 295 pruebas correctas, 6 integraciones PostgreSQL omitidas sin credenciales. El
+  vínculo Brand-Perfil en vivo (0023 aplicada, formulario end-to-end) sigue sin probarse contra un
+  Postgres real, igual que el resto del bloque 0021-0022.
+
+## Bloque 2026-09-01: importador multiempresa, fase inicial
+
+- El dry-run valida Company activa y Brand activa perteneciente a ella antes de resolver referencias.
+- La resolución usa `source_system_id + brand_id + referencia interna normalizada`.
+- Se añadieron los estados efectivos `CREATE`, `NO_CHANGE` y `UPDATE`, con `field_diffs` y
+  `KEEP_EXISTING` para entradas vacías; NATSUKI/empaques queda como perfil piloto compatible.
+- `NO_CHANGE` no escribe datos empresariales. `UPDATE` se clasifica, pero el apply lo bloquea antes
+  de escribir porque el trigger actual de `product_template` protege los datos de catálogo.
+- No se tocaron migraciones en esta fase ni se alteró PostgreSQL. Resolver el bloqueo de UPDATE
+  requiere una decisión posterior de esquema, no una edición de 0017-0021.
+- Tests focalizados: 89 correctos. Falta ejecutar la suite completa y decidir la migración posterior
+  necesaria para UPDATE antes de habilitarlo.
+
 ## Bloque 2026-08-31: filtros móviles y estado offline del HTML
 
 - El HTML ligero y el autónomo incorporan filtros combinables por categoría, marca de producto y

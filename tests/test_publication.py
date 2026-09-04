@@ -4,11 +4,14 @@ import unittest
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
+from unittest import mock
 
+from perfect_catalog import publication as publication_module
 from perfect_catalog.cli import build_parser
 from perfect_catalog.publication import (
     _require_sha256,
     _require_version,
+    load_published_release,
     snapshot_from_record,
 )
 from perfect_catalog.brand_profiles import visual_profile
@@ -71,6 +74,17 @@ class PublicationContractTests(unittest.TestCase):
         self.assertEqual(snapshot["additional_references"], ["ALT-99"])
         self.assertEqual(snapshot["applications"], ["Toyota Corolla 2010–2015 · delantero · 1.8L"])
         self.assertEqual(snapshot["source_updated_at"], "2026-08-24T00:00:00+00:00")
+        self.assertEqual(snapshot["variant_images"], [])
+
+    def test_snapshot_carries_the_ordered_gallery_of_extra_photos(self) -> None:
+        record = publication_record()
+        record["approved_variant_images"] = [
+            {"storage_relpath": "objects/aa/aaaa.jpg", "sha256": "a" * 64, "media_type": "image/jpeg", "variant_index": 2},
+            {"storage_relpath": "objects/bb/bbbb.jpg", "sha256": "b" * 64, "media_type": "image/jpeg", "variant_index": 3},
+        ]
+        snapshot = snapshot_from_record(record)
+        self.assertEqual([image["variant_index"] for image in snapshot["variant_images"]], [2, 3])
+        self.assertEqual(snapshot["variant_images"][0]["storage_relpath"], "objects/aa/aaaa.jpg")
 
     def test_version_and_checksum_contracts_are_strict(self) -> None:
         self.assertEqual(_require_version("2026.08.24-r1"), "2026.08.24-r1")
@@ -89,7 +103,8 @@ class PublicationContractTests(unittest.TestCase):
         build = parser.parse_args(
             [
                 "build-release", plan_id, "--fingerprint", "a" * 64,
-                "--version", "v1", "--actor", "qa", "--reason", "revisado",
+                "--version", "v1", "--brand", "NATSUKI",
+                "--actor", "qa", "--reason", "revisado",
             ]
         )
         publish = parser.parse_args(
@@ -119,6 +134,57 @@ class PublicationContractTests(unittest.TestCase):
         self.assertEqual(normalized["minimum_font_size_pt"], "12.00")
         self.assertEqual(normalized["body_line_height"], "1.80")
         self.assertEqual(normalized["watermark_opacity"], "0.050")
+
+
+class LoadPublishedReleaseCacheTests(unittest.TestCase):
+    def setUp(self) -> None:
+        publication_module._PUBLISHED_RELEASE_CACHE.clear()
+
+    def _connection_context(self) -> mock.MagicMock:
+        connection = mock.MagicMock()
+        context = mock.MagicMock()
+        context.__enter__.return_value = connection
+        context.__exit__.return_value = False
+        return context
+
+    def test_second_call_reuses_cached_content_without_reverifying(self) -> None:
+        release_id = uuid.uuid4()
+        release = {"status": "published"}
+        items = [{"item_order": 1}]
+        config = mock.MagicMock()
+        config.connection_kwargs.return_value = {}
+        with (
+            mock.patch.object(publication_module.psycopg, "connect", return_value=self._connection_context()),
+            mock.patch.object(publication_module, "_load_release", return_value=(release, items)) as load_release,
+            mock.patch.object(publication_module, "_verify_release") as verify_release,
+            mock.patch.object(publication_module, "_current_release_status", return_value="published") as status_check,
+        ):
+            first = load_published_release(release_id, config, "secret")
+            second = load_published_release(release_id, config, "secret")
+        self.assertEqual(first, (release, items))
+        self.assertEqual(second, (release, items))
+        load_release.assert_called_once()
+        verify_release.assert_called_once()
+        status_check.assert_called_once()
+
+    def test_cache_hit_still_rejects_a_release_archived_after_caching(self) -> None:
+        release_id = uuid.uuid4()
+        release = {"status": "published"}
+        items = [{"item_order": 1}]
+        config = mock.MagicMock()
+        config.connection_kwargs.return_value = {}
+        with (
+            mock.patch.object(publication_module.psycopg, "connect", return_value=self._connection_context()),
+            mock.patch.object(publication_module, "_load_release", return_value=(release, items)) as load_release,
+            mock.patch.object(publication_module, "_verify_release"),
+            mock.patch.object(publication_module, "_current_release_status", return_value="archived"),
+        ):
+            load_published_release(release_id, config, "secret")
+            with self.assertRaises(PermissionError):
+                load_published_release(release_id, config, "secret")
+            self.assertNotIn(release_id, publication_module._PUBLISHED_RELEASE_CACHE)
+            load_published_release(release_id, config, "secret")
+        self.assertEqual(load_release.call_count, 2)
 
 
 if __name__ == "__main__":

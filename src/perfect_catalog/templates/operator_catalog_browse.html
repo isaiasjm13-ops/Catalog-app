@@ -1,0 +1,55 @@
+{% extends "operator_base.html" %}
+{% block title %}Explorar · {{ browse.release.version }}{% endblock %}
+{% block content %}
+<nav class="breadcrumbs"><a href="/operator/catalogs">Catálogos</a><span>/</span><span>Explorar {{ browse.release.version }}</span></nav>
+<section class="preview-hero">
+  <div>
+    <span class="kicker">Navegación de solo lectura</span>
+    <h1>Explorar catálogo</h1>
+    <p>{{ browse.total_count }} productos publicados en esta versión, organizados por {{ 'categoría' if browse.group_by == 'category_path' else 'marca vehicular' }}.</p>
+  </div>
+  <dl>
+    <div><dt>Versión</dt><dd>{{ browse.release.version }}</dd></div>
+    <div><dt>Productos</dt><dd>{{ browse.total_count }}</dd></div>
+    <div><dt>Checksum</dt><dd><code>{{ browse.release.snapshot_sha256[:16] }}…</code></dd></div>
+  </dl>
+</section>
+
+<div class="browse-dimension-switch">
+  <a class="{{ 'active' if browse.group_by == 'category_path' else '' }}" href="/operator/catalogs/{{ browse.release.release_id }}/browse?group_by=category_path">Por categoría</a>
+  <a class="{{ 'active' if browse.group_by == 'vehicle_make' else '' }}" href="/operator/catalogs/{{ browse.release.release_id }}/browse?group_by=vehicle_make">Por marca vehicular</a>
+</div>
+
+<nav class="browse-tabs" aria-label="Categorías del catálogo">
+  {% for group in browse.groups %}
+  <a class="{{ 'active' if group.label == browse.active_group else '' }}" href="/operator/catalogs/{{ browse.release.release_id }}/browse?group_by={{ browse.group_by }}&amp;group={{ group.label|urlencode }}">{{ group.label }}<small>{{ group.count }}</small></a>
+  {% endfor %}
+</nav>
+
+<section class="browse-panel">
+  <div class="browse-panel-header">
+    <h2>{{ browse.active_group }}</h2>
+    <small>{{ browse.group_count }} productos · página {{ browse.page }} de {{ browse.total_pages }}</small>
+  </div>
+  <div class="preview-products columns-3">
+    {% for product in browse.products %}
+    <article>
+      {% if product.get('image_storage_relpath') %}
+      <div class="preview-image has-image"><img src="/operator/catalogs/{{ browse.release.release_id }}/preview/images/{{ product.browse_item }}" alt="Imagen aprobada de {{ product.internal_reference_original or product.name_original }}" loading="lazy"></div>
+      {% else %}
+      <div class="preview-image"><span>Imagen</span><small>pendiente de asociación</small></div>
+      {% endif %}
+      <code>{{ product.internal_reference_original or 'Sin referencia' }}</code>
+      <h3>{{ product.name_original or 'Sin nombre' }}</h3>
+      <p class="preview-meta">{{ product.get('piece_type') or product.get('category_path') or 'Sin categoría' }}</p>
+      {% if product.get('vehicle_makes') %}<p><b>Marca vehicular:</b> {{ product.get('vehicle_makes')|join(', ') }}</p>{% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  <nav class="pagination" aria-label="Páginas de la categoría">
+    {% if browse.page > 1 %}<a href="/operator/catalogs/{{ browse.release.release_id }}/browse?group_by={{ browse.group_by }}&amp;group={{ browse.active_group|urlencode }}&amp;page={{ browse.page - 1 }}">← Anterior</a>{% else %}<span class="disabled">Anterior</span>{% endif %}
+    <strong>Página {{ browse.page }} de {{ browse.total_pages }}</strong>
+    {% if browse.page < browse.total_pages %}<a href="/operator/catalogs/{{ browse.release.release_id }}/browse?group_by={{ browse.group_by }}&amp;group={{ browse.active_group|urlencode }}&amp;page={{ browse.page + 1 }}">Siguiente →</a>{% else %}<span class="disabled">Siguiente</span>{% endif %}
+  </nav>
+</section>
+{% endblock %}

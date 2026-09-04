@@ -46,6 +46,7 @@ INTAKE_KINDS = {
     },
 }
 INTAKE_STATUSES = frozenset({"all", "quarantined", "rejected"})
+INTAKE_ARCHIVE_FILTERS = frozenset({"active", "archived", "all"})
 MAX_UPLOAD_REQUEST_BYTES = max(
     int(config["max_bytes"]) for config in INTAKE_KINDS.values()
 ) + 64 * 1024
@@ -96,8 +97,14 @@ class IntakePersistence(Protocol):
         *,
         kind: str = "all",
         status: str = "all",
+        archived: str = "active",
         limit: int = 50,
         offset: int = 0,
+        company_id: uuid.UUID | None = None,
+    ) -> dict[str, Any]: ...
+
+    def archive_intake_submission(
+        self, submission_id: uuid.UUID, archived: bool, actor: str, reason: str,
         company_id: uuid.UUID | None = None,
     ) -> dict[str, Any]: ...
 
@@ -153,19 +160,22 @@ def _require_reason(reason: str) -> str:
 
 
 def _require_list_filters(
-    kind: str, status: str, limit: int, offset: int
-) -> tuple[str, str]:
+    kind: str, status: str, limit: int, offset: int, archived: str = "active",
+) -> tuple[str, str, str]:
     if not 1 <= limit <= 500:
         raise ValueError("limit debe estar entre 1 y 500.")
     if offset < 0:
         raise ValueError("offset no puede ser negativo.")
     kind = str(kind or "all").strip().lower()
     status = str(status or "all").strip().lower()
+    archived = str(archived or "active").strip().lower()
     if kind != "all" and kind not in INTAKE_KINDS:
         raise ValueError("Filtro de tipo de ingreso inválido.")
     if status not in INTAKE_STATUSES:
         raise ValueError("Filtro de estado de ingreso inválido.")
-    return kind, status
+    if archived not in INTAKE_ARCHIVE_FILTERS:
+        raise ValueError("Filtro de archivado inválido.")
+    return kind, status, archived
 
 
 def _archive_member_name(raw_name: str) -> PurePosixPath:
@@ -371,13 +381,27 @@ class SecureIntakeService:
         *,
         kind: str = "all",
         status: str = "all",
+        archived: str = "active",
         limit: int = 50,
         offset: int = 0,
         company_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
-        kind, status = _require_list_filters(kind, status, limit, offset)
+        kind, status, archived = _require_list_filters(kind, status, limit, offset, archived)
         return self.persistence.intake_submissions(
-            kind=kind, status=status, limit=limit, offset=offset, company_id=company_id
+            kind=kind, status=status, archived=archived, limit=limit, offset=offset,
+            company_id=company_id,
+        )
+
+    def archive(
+        self, submission_id: uuid.UUID, archived: bool, actor: str, reason: str,
+        *, company_id: uuid.UUID | None = None,
+    ) -> dict[str, Any]:
+        actor = str(actor or "").strip()
+        if not actor or len(actor) > 120:
+            raise ValueError("El operador no es valido.")
+        reason = _require_reason(reason)
+        return self.persistence.archive_intake_submission(
+            submission_id, archived, actor, reason, company_id=company_id,
         )
 
     def submit(
@@ -571,11 +595,12 @@ def _list_intake_submissions_in_connection(
     *,
     kind: str = "all",
     status: str = "all",
+    archived: str = "active",
     limit: int = 50,
     offset: int = 0,
     company_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
-    kind, status = _require_list_filters(kind, status, limit, offset)
+    kind, status, archived = _require_list_filters(kind, status, limit, offset, archived)
     clauses: list[str] = []
     params: list[Any] = []
     if kind != "all":
@@ -587,6 +612,10 @@ def _list_intake_submissions_in_connection(
     if company_id is not None:
         clauses.append("s.company_id=%s")
         params.append(company_id)
+    if archived == "active":
+        clauses.append("COALESCE(arch.archived, false) = false")
+    elif archived == "archived":
+        clauses.append("COALESCE(arch.archived, false) = true")
     where_sql = "WHERE " + " AND ".join(clauses) if clauses else ""
     query = f"""
         SELECT s.intake_submission_id, s.company_id, s.intake_asset_id, s.intake_kind,
@@ -597,12 +626,21 @@ def _list_intake_submissions_in_connection(
                p.intake_promotion_id, p.import_plan_id, p.promoted_at, p.promoted_by,
                x.image_archive_index_id, x.index_sha256 AS image_index_sha256,
                x.image_count, x.ambiguous_count, x.indexed_at, x.indexed_by,
+               COALESCE(arch.archived, false) AS archived,
+               arch.actor AS archived_by, arch.created_at AS archived_at,
                count(*) OVER () AS filtered_count
         FROM perfect_catalog.intake_submission AS s
         LEFT JOIN perfect_catalog.intake_promotion AS p
           ON p.intake_submission_id=s.intake_submission_id
         LEFT JOIN perfect_catalog.image_archive_index AS x
           ON x.intake_submission_id=s.intake_submission_id
+        LEFT JOIN LATERAL (
+          SELECT e.archived, e.actor, e.created_at
+          FROM perfect_catalog.intake_submission_archive_event AS e
+          WHERE e.intake_submission_id=s.intake_submission_id
+          ORDER BY e.created_at DESC, e.intake_submission_archive_event_id DESC
+          LIMIT 1
+        ) AS arch ON true
         {where_sql}
         ORDER BY s.submitted_at DESC, s.intake_submission_id DESC
         LIMIT %s OFFSET %s
@@ -616,10 +654,18 @@ def _list_intake_submissions_in_connection(
             for row in rows[1:]:
                 row.pop("filtered_count", None)
         else:
-            count_sql = (
-                "SELECT count(*) AS filtered_count "
-                f"FROM perfect_catalog.intake_submission AS s {where_sql}"
-            )
+            count_sql = f"""
+                SELECT count(*) AS filtered_count
+                FROM perfect_catalog.intake_submission AS s
+                LEFT JOIN LATERAL (
+                  SELECT e.archived
+                  FROM perfect_catalog.intake_submission_archive_event AS e
+                  WHERE e.intake_submission_id=s.intake_submission_id
+                  ORDER BY e.created_at DESC, e.intake_submission_archive_event_id DESC
+                  LIMIT 1
+                ) AS arch ON true
+                {where_sql}
+            """
             cursor.execute(count_sql, params)
             filtered_count = int(cursor.fetchone()["filtered_count"])
     return {
@@ -627,6 +673,7 @@ def _list_intake_submissions_in_connection(
         "filtered_count": filtered_count,
         "kind": kind,
         "status": status,
+        "archived": archived,
         "limit": limit,
         "offset": offset,
     }
@@ -638,6 +685,7 @@ def list_intake_submissions(
     *,
     kind: str = "all",
     status: str = "all",
+    archived: str = "active",
     limit: int = 50,
     offset: int = 0,
     company_id: uuid.UUID | None = None,
@@ -647,7 +695,53 @@ def list_intake_submissions(
             connection,
             kind=kind,
             status=status,
+            archived=archived,
             limit=limit,
             offset=offset,
             company_id=company_id,
         )
+
+
+def archive_intake_submission(
+    config: DatabaseConfig,
+    password: str,
+    submission_id: uuid.UUID,
+    archived: bool,
+    actor: str,
+    reason: str,
+    *,
+    company_id: uuid.UUID | None = None,
+) -> dict[str, Any]:
+    actor = str(actor or "").strip()
+    if not actor or len(actor) > 120:
+        raise ValueError("El actor de ingreso no es válido.")
+    reason = _require_reason(reason)
+    with psycopg.connect(**config.connection_kwargs(password), row_factory=dict_row) as connection:
+        connection.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 5))", (str(submission_id),))
+        submission = connection.execute(
+            "SELECT intake_submission_id, company_id FROM perfect_catalog.intake_submission WHERE intake_submission_id=%s",
+            (submission_id,),
+        ).fetchone()
+        if submission is None:
+            raise ValueError("No existe el ingreso solicitado.")
+        if company_id is not None and submission["company_id"] != company_id:
+            raise PermissionError("El ingreso no pertenece a la Company activa.")
+        current = connection.execute(
+            """SELECT archived FROM perfect_catalog.intake_submission_archive_event
+               WHERE intake_submission_id=%s
+               ORDER BY created_at DESC, intake_submission_archive_event_id DESC LIMIT 1""",
+            (submission_id,),
+        ).fetchone()
+        current_archived = bool(current["archived"]) if current is not None else False
+        if current_archived == archived:
+            return {
+                "status": "already_archived" if archived else "already_active",
+                "submission_id": str(submission_id),
+            }
+        connection.execute(
+            """INSERT INTO perfect_catalog.intake_submission_archive_event (
+                   intake_submission_archive_event_id, intake_submission_id, archived, actor, reason
+               ) VALUES (%s,%s,%s,%s,%s)""",
+            (uuid.uuid4(), submission_id, archived, actor, reason),
+        )
+    return {"status": "archived" if archived else "unarchived", "submission_id": str(submission_id)}

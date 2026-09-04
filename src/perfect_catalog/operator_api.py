@@ -9,10 +9,12 @@ import logging
 import re
 import secrets
 import sys
+import tempfile
 import threading
 import time
 import uuid
 import webbrowser
+import zipfile
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from importlib.resources import files
@@ -45,6 +47,7 @@ from .catalog_export_job import (
     resolve_catalog_download,
 )
 from .intake import (
+    IMAGE_EXTENSIONS,
     INTAKE_KINDS,
     MAX_UPLOAD_REQUEST_BYTES,
     SecureIntakeService,
@@ -54,7 +57,7 @@ from .importer import DEFAULT_MAX_PILOT_ROWS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
-OPERATOR_VERSION = "1.39.1"
+OPERATOR_VERSION = "1.41.0"
 LOGGER = logging.getLogger(__name__)
 SESSION_COOKIE = "pc_operator_session"
 LOGIN_COOKIE = "pc_operator_login"
@@ -64,12 +67,84 @@ MAX_REASON_LENGTH = 500
 SESSION_TTL_SECONDS = 60 * 60
 LOGIN_CHALLENGE_TTL_SECONDS = 10 * 60
 PBKDF2_ITERATIONS = 310_000
+MAX_SIMPLE_IMAGE_FILES = 2000
+MAX_SIMPLE_IMAGE_BYTES = 2 * 1024 * 1024 * 1024
+MAX_SIMPLE_ODOO_BYTES = 128 * 1024 * 1024
+MAX_SIMPLE_REQUEST_BYTES = MAX_SIMPLE_IMAGE_BYTES + MAX_SIMPLE_ODOO_BYTES + 8 * 1024 * 1024
+
+
+def _safe_zip_member_name(filename: str | None, seen: set[str]) -> str | None:
+    """Sanea el nombre relativo que entrega el selector de carpeta y evita colisiones."""
+    raw = str(filename or "").replace("\\", "/")
+    parts = [part for part in raw.split("/") if part not in ("", ".", "..")]
+    if not parts:
+        return None
+    member = "/".join(parts)
+    candidate = member
+    suffix = 1
+    while candidate in seen:
+        stem, dot, ext = member.rpartition(".")
+        candidate = f"{stem}-{suffix}.{ext}" if dot else f"{member}-{suffix}"
+        suffix += 1
+    seen.add(candidate)
+    return candidate
+
+
+def _write_images_archive(uploads: list[UploadFile], destination: Path) -> int:
+    """Empaqueta las fotos sueltas de una carpeta en un único ZIP determinista."""
+    written = 0
+    seen: set[str] = set()
+    with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:
+        for upload in uploads:
+            member = _safe_zip_member_name(upload.filename, seen)
+            if member is None:
+                continue
+            upload.file.seek(0)
+            with archive.open(member, "w") as target:
+                while True:
+                    chunk = upload.file.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    target.write(chunk)
+            written += 1
+    return written
+
+
+def _write_local_images_archive(directory: Path, destination: Path, *, max_files: int) -> int:
+    """Empaqueta las fotos de una carpeta local del servidor en un único ZIP determinista.
+
+    Sin confinamiento a una raíz fija: el operador puede indicar cualquier ruta absoluta
+    de Windows leíble por el proceso del servidor. Solo se filtran por extensión de imagen
+    admitida; todo lo demás (Thumbs.db, sidecars, subcarpetas ajenas) se ignora en silencio.
+    """
+    written = 0
+    seen: set[str] = set()
+    with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(directory.rglob("*")):
+            if written >= max_files:
+                raise ValueError(f"La carpeta supera el límite de {max_files:,} fotos por lote.")
+            if not path.is_file() or path.suffix.lower() not in IMAGE_EXTENSIONS:
+                continue
+            relative = path.relative_to(directory).as_posix()
+            member = _safe_zip_member_name(relative, seen)
+            if member is None:
+                continue
+            with path.open("rb") as source, archive.open(member, "w") as target:
+                while True:
+                    chunk = source.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    target.write(chunk)
+            written += 1
+    return written
 
 
 class ReviewGateway(Protocol):
     def close(self) -> None: ...
 
     def companies(self) -> list[dict[str, Any]]: ...
+    def create_company(self, **kwargs: Any) -> dict[str, Any]: ...
+    def set_company_active(self, **kwargs: Any) -> dict[str, Any]: ...
 
     def authorize_company_resource(
         self, company_id: uuid.UUID, resource_type: str, resource_id: uuid.UUID,
@@ -81,6 +156,10 @@ class ReviewGateway(Protocol):
 
     def import_plan(self, plan_id: uuid.UUID) -> dict[str, Any]: ...
 
+    def import_plan_update_diffs(
+        self, plan_id: uuid.UUID, *, limit: int = 50, offset: int = 0,
+    ) -> dict[str, Any]: ...
+
     def approve_import_plan(
         self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
     ) -> dict[str, Any]: ...
@@ -91,7 +170,6 @@ class ReviewGateway(Protocol):
 
     def prepare_import_plan(
         self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
-        brand_code: str,
     ) -> dict[str, Any]: ...
 
     def page(
@@ -126,8 +204,14 @@ class ReviewGateway(Protocol):
         *,
         kind: str = "all",
         status: str = "all",
+        archived: str = "active",
         limit: int = 50,
         offset: int = 0,
+        company_id: uuid.UUID | None = None,
+    ) -> dict[str, Any]: ...
+
+    def archive_intake_submission(
+        self, submission_id: uuid.UUID, archived: bool, actor: str, reason: str,
         company_id: uuid.UUID | None = None,
     ) -> dict[str, Any]: ...
 
@@ -135,7 +219,7 @@ class ReviewGateway(Protocol):
 
     def promote_intake(
         self, submission_id: uuid.UUID, intake_root: Path, output_dir: Path,
-        actor: str, reason: str, max_rows: int,
+        actor: str, reason: str, max_rows: int, brand_code: str,
     ) -> dict[str, Any]: ...
 
     def index_image_archive(
@@ -167,6 +251,10 @@ class ReviewGateway(Protocol):
         company_id: uuid.UUID,
     ) -> dict[str, Any]: ...
 
+    def image_candidate_preview(
+        self, candidate_id: uuid.UUID, intake_root: Path, company_id: uuid.UUID,
+    ) -> bytes: ...
+
     def materialize_approved_images_bulk(
         self, expected_count: int, intake_root: Path, image_root: Path,
         actor: str, reason: str, company_id: uuid.UUID,
@@ -175,6 +263,10 @@ class ReviewGateway(Protocol):
     def catalog_releases(self, *, limit: int = 100, company_id: uuid.UUID | None = None) -> list[dict[str, Any]]: ...
 
     def brand_profiles(self, *, company_id: uuid.UUID) -> list[dict[str, Any]]: ...
+
+    def brands(self, *, company_id: uuid.UUID) -> list[dict[str, Any]]: ...
+
+    def link_brand_profile(self, **kwargs: Any) -> dict[str, Any]: ...
 
     def create_brand_profile(
         self, values: dict[str, str], actor: str, reason: str, company_id: uuid.UUID,
@@ -201,6 +293,10 @@ class ReviewGateway(Protocol):
         self, release_id: uuid.UUID, snapshot_sha256: str, actor: str, reason: str,
     ) -> dict[str, Any]: ...
 
+    def archive_catalog_release(
+        self, release_id: uuid.UUID, snapshot_sha256: str, actor: str, reason: str,
+    ) -> dict[str, Any]: ...
+
     def preview_catalog_release(
         self, release_id: uuid.UUID, *, group_by: str, group_by_secondary: str = "",
         filter_field: str = "all", filter_query: str = "", selected_references: str = "",
@@ -215,6 +311,24 @@ class ReviewGateway(Protocol):
         self, release_id: uuid.UUID, *, query: str = "", limit: int = 24, offset: int = 0,
     ) -> dict[str, Any]: ...
 
+    def browse_catalog_release(
+        self, release_id: uuid.UUID, *, group_by: str = "category_path",
+        group: str = "", page: int = 1, page_size: int = 48,
+    ) -> dict[str, Any]: ...
+
+
+def _darken_hex(color: str, factor: float = 0.72) -> str:
+    """Aproxima un tono mas oscuro del mismo color para estados hover/activos."""
+    value = str(color or "").lstrip("#")
+    if len(value) != 6:
+        return color
+    try:
+        channels = [int(value[index:index + 2], 16) for index in (0, 2, 4)]
+    except ValueError:
+        return color
+    darker = [max(0, min(255, round(channel * factor))) for channel in channels]
+    return "#" + "".join(f"{channel:02x}" for channel in darker)
+
 
 @dataclass(frozen=True)
 class OperatorSession:
@@ -225,6 +339,8 @@ class OperatorSession:
     company_id: uuid.UUID | None = None
     company_code: str | None = None
     company_name: str | None = None
+    company_primary_color: str | None = None
+    company_secondary_color: str | None = None
 
 
 class OperatorAuthenticator:
@@ -351,6 +467,7 @@ class OperatorAuthenticator:
     def select_company(
         self, signed_cookie: str | None, company_id: uuid.UUID,
         company_code: str, company_name: str,
+        *, primary_color: str | None = None, secondary_color: str | None = None,
     ) -> OperatorSession | None:
         session_id = self._unsign("session", signed_cookie)
         if session_id is None:
@@ -365,6 +482,7 @@ class OperatorAuthenticator:
                 csrf_token=current.csrf_token, expires_at=current.expires_at,
                 company_id=company_id, company_code=_require_text(company_code, "company_code"),
                 company_name=_require_text(company_name, "company_name"),
+                company_primary_color=primary_color, company_secondary_color=secondary_color,
             )
             self._sessions[session_id] = selected
             return selected
@@ -431,6 +549,17 @@ def _same_origin(request: Request) -> bool:
         and _origin_tuple(referer) == expected
         and fetch_site == "same-origin"
     )
+
+
+def _csrf_rejection(
+    request: Request, form: dict[str, str], session: OperatorSession,
+    environment: Environment,
+) -> HTMLResponse | None:
+    """Same-origin + CSRF token check shared by every state-changing POST route: returns the
+    rejection response to return immediately, or None when the request may proceed."""
+    if not _same_origin(request) or not hmac.compare_digest(str(form.get("csrf_token") or ""), session.csrf_token):
+        return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+    return None
 
 
 async def _parse_form(request: Request) -> dict[str, str]:
@@ -609,6 +738,37 @@ def create_operator_app(
             return []
         return await run_in_threadpool(method)
 
+    async def company_accent_colors(company_id: uuid.UUID) -> tuple[str | None, str | None]:
+        """Identidad corporativa opcional; ausente hasta que alguien la cargue en Marcas."""
+        try:
+            identities = await run_in_threadpool(gateway.visual_identities, company_id=company_id)
+            company = identities.get("company") if identities else None
+        except Exception:
+            LOGGER.exception("No se pudo leer la identidad corporativa para el acento de la consola.")
+            return None, None
+        if not company:
+            return None, None
+        return company.get("primary_color"), company.get("secondary_color")
+
+    @app.get("/operator/theme.css")
+    async def operator_theme_css(request: Request) -> Response:
+        """Hoja externa (no inline) con el acento de la Company activa; respeta style-src 'self'."""
+        session = current_session(request)
+        hex_pattern = re.compile(r"^#[0-9A-Fa-f]{6}$")
+        rules = ""
+        if session is not None:
+            primary = session.company_primary_color
+            secondary = session.company_secondary_color
+            declarations = []
+            if primary and hex_pattern.match(primary):
+                declarations.append(f"--forest:{primary}")
+                declarations.append(f"--forest-dark:{_darken_hex(primary)}")
+            if secondary and hex_pattern.match(secondary):
+                declarations.append(f"--lime:{secondary}")
+            if declarations:
+                rules = ":root{" + ";".join(declarations) + "}"
+        return Response(content=rules, media_type="text/css")
+
     @app.get("/", include_in_schema=False)
     def root() -> RedirectResponse:
         return RedirectResponse("/operator", status_code=303)
@@ -695,9 +855,12 @@ def create_operator_app(
             usable = [company for company in companies if company.get("is_active", True)]
             if len(usable) == 1:
                 company = usable[0]
+                company_id = _uuid(str(company["company_id"]), "company_id")
+                primary_color, secondary_color = await company_accent_colors(company_id)
                 authenticator.select_company(
-                    signed_session, _uuid(str(company["company_id"]), "company_id"),
+                    signed_session, company_id,
                     str(company["code"]), str(company["display_name"]),
+                    primary_color=primary_color, secondary_color=secondary_color,
                 )
             elif usable:
                 destination = "/operator/company"
@@ -745,10 +908,8 @@ def create_operator_app(
             form = await _parse_form(request)
             if set(form) != {"csrf_token", "company_id"}:
                 raise ValueError("El selector contiene campos ausentes o desconocidos.")
-            if not _same_origin(request) or not hmac.compare_digest(
-                form["csrf_token"], session.csrf_token
-            ):
-                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
             requested_id = _uuid(form["company_id"], "company_id")
             companies = await available_companies()
             selected = next(
@@ -758,14 +919,54 @@ def create_operator_app(
             )
             if selected is None:
                 raise PermissionError("La empresa no existe o no está activa.")
+            primary_color, secondary_color = await company_accent_colors(requested_id)
             if authenticator.select_company(
                 request.cookies.get(SESSION_COOKIE), requested_id,
                 str(selected["code"]), str(selected["display_name"]),
+                primary_color=primary_color, secondary_color=secondary_color,
             ) is None:
                 return RedirectResponse("/operator/login", status_code=303)
         except (ValueError, PermissionError) as exc:
             return _error(environment, 409, "Empresa no seleccionada", str(exc), session=session)
         return RedirectResponse("/operator", status_code=303)
+
+    @app.post("/operator/company/create")
+    async def create_company_route(request: Request) -> Response:
+        session = current_session(request)
+        if session is None: return RedirectResponse("/operator/login", status_code=303)
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "code", "display_name", "reason", "confirm"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
+            if form["confirm"] != "yes": raise ValueError("Debes confirmar el alta de la empresa.")
+            await run_in_threadpool(gateway.create_company, code=form["code"],
+                display_name=form["display_name"], actor=session.actor, reason=form["reason"])
+        except (ValueError, PermissionError, psycopg.Error) as exc:
+            return _error(environment, 409, "Empresa no creada", str(exc), session=session)
+        return RedirectResponse("/operator/company?result=created", status_code=303)
+
+    @app.post("/operator/company/{company_id}/state")
+    async def company_state_route(request: Request, company_id: str) -> Response:
+        session = current_session(request)
+        if session is None: return RedirectResponse("/operator/login", status_code=303)
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "active", "reason", "confirm"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
+            target_id = _uuid(company_id, "company_id")
+            active = form["active"] == "true"
+            if not active and target_id == session.company_id:
+                raise ValueError("Cambia primero a otra empresa antes de desactivar la empresa activa.")
+            if form["confirm"] != "yes": raise ValueError("Debes confirmar el cambio de estado.")
+            await run_in_threadpool(gateway.set_company_active, company_id=target_id,
+                active=active, actor=session.actor, reason=form["reason"])
+        except (ValueError, PermissionError, psycopg.Error) as exc:
+            return _error(environment, 409, "Empresa no actualizada", str(exc), session=session)
+        return RedirectResponse("/operator/company?result=state_changed", status_code=303)
 
     @app.post("/operator/logout")
     async def logout(request: Request) -> Response:
@@ -776,10 +977,8 @@ def create_operator_app(
             form = await _parse_form(request)
         except (ValueError, UnicodeDecodeError) as exc:
             return _error(environment, 400, "Formulario inválido", str(exc), session=session)
-        if not _same_origin(request) or not hmac.compare_digest(
-            form.get("csrf_token", ""), session.csrf_token
-        ):
-            return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+        if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+            return rejection
         authenticator.revoke(request.cookies.get(SESSION_COOKIE))
         response = RedirectResponse("/operator/login", status_code=303)
         response.delete_cookie(SESSION_COOKIE, path="/operator")
@@ -832,6 +1031,7 @@ def create_operator_app(
         request: Request,
         kind: str = "all",
         status: str = "all",
+        archived: str = "active",
         page: int = 1,
     ) -> Response:
         session_or_redirect = require_session(request)
@@ -845,9 +1045,13 @@ def create_operator_app(
                 intake_service.list,
                 kind=kind,
                 status=status,
+                archived=archived,
                 limit=limit,
                 offset=(page - 1) * limit,
                 company_id=session_or_redirect.company_id,
+            )
+            profiles = await run_in_threadpool(
+                gateway.brand_profiles, company_id=session_or_redirect.company_id,
             )
         except ValueError as exc:
             return _error(
@@ -886,8 +1090,12 @@ def create_operator_app(
             "already_promoted": "Este ingreso ya tenía un dry-run enlazado.",
             "indexed": "ZIP indexado sin extracción. Las asociaciones permanecen pendientes de revisión.",
             "already_indexed": "Este ZIP ya tenía un índice verificable; no se duplicó.",
+            "archived": "Ingreso archivado. Deja de aparecer en la lista activa; su evidencia permanece intacta.",
+            "already_archived": "Este ingreso ya estaba archivado.",
+            "unarchived": "Ingreso restaurado a la lista activa.",
+            "already_active": "Este ingreso ya estaba activo.",
         }.get(result)
-        query_args = {"kind": kind, "status": status}
+        query_args = {"kind": kind, "status": status, "archived": archived}
         previous_url = (
             f"/operator/intake?{urlencode({**query_args, 'page': page - 1})}"
             if page > 1
@@ -902,12 +1110,14 @@ def create_operator_app(
             environment,
             "operator_intake.html",
             submissions=submissions,
+            profiles=profiles,
             kinds=intake_kind_options(),
             kind_labels={
                 key: value["label"] for key, value in INTAKE_KINDS.items()
             },
             selected_kind=kind,
             selected_status=status,
+            selected_archived=archived,
             page=page,
             previous_url=previous_url,
             next_url=next_url,
@@ -947,6 +1157,8 @@ def create_operator_app(
             "already_built": "El borrador exacto ya existía; no se duplicó.",
             "published": "Release publicado. Ya está habilitado para exportación.",
             "already_published": "El release exacto ya estaba publicado.",
+            "archived": "Release archivado. Deja de aparecer como vigente; su contenido permanece intacto para auditoría.",
+            "already_archived": "El release exacto ya estaba archivado.",
             "preflight_recorded": "Preflight InDesign validado y asociado a la exportación exacta.",
         }.get(request.query_params.get("result"))
         preflight_by_export: dict[str, dict[str, Any]] = {}
@@ -978,6 +1190,9 @@ def create_operator_app(
             profiles = await run_in_threadpool(
                 gateway.brand_profiles, company_id=session_or_redirect.company_id,
             )
+            brands = await run_in_threadpool(
+                gateway.brands, company_id=session_or_redirect.company_id,
+            )
             identities = await run_in_threadpool(
                 gateway.visual_identities, company_id=session_or_redirect.company_id,
             )
@@ -987,11 +1202,46 @@ def create_operator_app(
                 "Ejecuta ACTUALIZAR-SISTEMA.cmd o revisa PostgreSQL.",
                 "brand_workspace_read_failed", exc, session=session_or_redirect,
             )
-        message = {"created": "Marca creada. Ya está disponible como perfil visual.", "identity_created": "Logo y colores guardados como una nueva revisión auditada."}.get(request.query_params.get("result"))
+        message = {
+            "created": "Marca creada. Ya está disponible como perfil visual.",
+            "identity_created": "Logo y colores guardados como una nueva revisión auditada.",
+            "linked": "Vínculo Brand-Perfil guardado. Ya puedes generar un dry-run para esta marca.",
+        }.get(request.query_params.get("result"))
         return _render(
-            environment, "operator_brands.html", profiles=profiles, identities=identities, message=message,
-            session=session_or_redirect, version=OPERATOR_VERSION,
+            environment, "operator_brands.html", profiles=profiles, brands=brands, identities=identities,
+            message=message, session=session_or_redirect, version=OPERATOR_VERSION,
         )
+
+    @app.post("/operator/brands/link")
+    async def link_brand_profile_route(request: Request) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            expected = {"csrf_token", "brand_id", "brand_profile_id", "expected_previous_brand_profile_id", "reason", "confirm"}
+            if set(form) != expected:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
+            if form["confirm"] != "yes":
+                raise ValueError("Debes confirmar el vínculo entre la marca y su perfil.")
+            reason = _require_text(form["reason"], "reason")
+            previous_raw = form["expected_previous_brand_profile_id"].strip()
+            await run_in_threadpool(
+                gateway.link_brand_profile,
+                brand_id=_uuid(form["brand_id"], "brand_id"),
+                brand_profile_id=_uuid(form["brand_profile_id"], "brand_profile_id"),
+                expected_previous_brand_profile_id=_uuid(previous_raw, "expected_previous_brand_profile_id") if previous_raw else None,
+                actor=session.actor,
+                reason=reason,
+            )
+        except (ValueError, PermissionError, psycopg.Error) as exc:
+            return _error(environment, 409, "Vínculo no guardado", str(exc), session=session)
+        except Exception as exc:
+            return _unexpected_error(environment, "Vínculo no guardado", "PostgreSQL no guardó el vínculo. Revisa la consola.", "brand_profile_link_failed", exc, session=session)
+        return RedirectResponse("/operator/brands?result=linked", status_code=303)
 
     @app.post("/operator/brands/identity")
     async def create_visual_identity_route(request: Request) -> Response:
@@ -1004,8 +1254,8 @@ def create_operator_app(
             async with request.form(max_files=1, max_fields=12, max_part_size=5 * 1024 * 1024 + 1) as form:
                 expected = {"csrf_token","scope","brand_profile_id","vehicle_make_id","display_name","primary_color","secondary_color","ink_color","paper_color","reason","confirm","logo"}
                 if set(form) not in (expected, expected - {"logo"}): raise ValueError("El formulario contiene campos ausentes o desconocidos.")
-                if not _same_origin(request) or not hmac.compare_digest(str(form["csrf_token"]), session.csrf_token):
-                    return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+                if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                    return rejection
                 if str(form["confirm"]) != "yes": raise ValueError("Debes confirmar la identidad visual.")
                 upload = form.get("logo")
                 if upload is not None and not isinstance(upload, UploadFile): raise ValueError("El logo no es un archivo válido.")
@@ -1057,8 +1307,8 @@ def create_operator_app(
             form = await _parse_form(request)
             if set(form) != profile_fields | {"csrf_token", "reason", "confirm"}:
                 raise ValueError("El formulario contiene campos ausentes o desconocidos.")
-            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
-                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
             if form["confirm"] != "yes":
                 raise ValueError("Debes confirmar la creacion del perfil de marca.")
             reason = _require_text(form["reason"], "reason")
@@ -1083,8 +1333,8 @@ def create_operator_app(
             form = await _parse_form(request)
             if set(form) != {"csrf_token", "plan_id", "fingerprint", "version", "brand", "reason", "confirm"}:
                 raise ValueError("El formulario contiene campos ausentes o desconocidos.")
-            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
-                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
             if form["confirm"] != "yes":
                 raise ValueError("Debes confirmar la construcción del borrador inmutable.")
             reason = _require_text(form["reason"], "reason")
@@ -1198,6 +1448,36 @@ def create_operator_app(
             version=OPERATOR_VERSION,
         )
 
+    @app.get("/operator/catalogs/{release_id}/browse", response_class=HTMLResponse)
+    async def browse_catalog_release_route(
+        request: Request, release_id: str, group_by: str = "category_path",
+        group: str = "", page: int = 1,
+    ) -> Response:
+        """Navegación de solo lectura del release publicado, en pestañas por categoría o marca
+        vehicular, para revisar el catálogo completo antes de exportarlo."""
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            if group_by not in {"category_path", "vehicle_make"}:
+                raise ValueError("Agrupación no permitida.")
+            if len(group) > 200:
+                raise ValueError("El nombre del grupo es demasiado largo.")
+            if page < 1:
+                raise ValueError("La página no es válida.")
+            browse = await run_in_threadpool(
+                gateway.browse_catalog_release,
+                _uuid(release_id, "release_id"), group_by=group_by, group=group, page=page,
+            )
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            return _error(environment, 400, "Catálogo no disponible", str(exc), session=session_or_redirect)
+        except Exception as exc:
+            return _unexpected_error(environment, "Catálogo no disponible", "No se pudo leer el release publicado.", "catalog_browse_failed", exc, session=session_or_redirect)
+        return _render(
+            environment, "operator_catalog_browse.html",
+            browse=browse, session=session_or_redirect, version=OPERATOR_VERSION,
+        )
+
     @app.get("/operator/catalogs/{release_id}/preview/images/{item_number}")
     async def catalog_preview_image_route(
         request: Request, release_id: str, item_number: int,
@@ -1228,8 +1508,8 @@ def create_operator_app(
             form = await _parse_form(request)
             if set(form) != {"csrf_token", "snapshot_sha256", "reason", "confirm"}:
                 raise ValueError("El formulario contiene campos ausentes o desconocidos.")
-            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
-                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
             if form["confirm"] != "yes":
                 raise ValueError("Debes confirmar la publicación del checksum exacto.")
             reason = _require_text(form["reason"], "reason")
@@ -1243,6 +1523,35 @@ def create_operator_app(
             return _error(environment, 409, "Release no publicado", str(exc), session=session)
         except Exception as exc:
             return _unexpected_error(environment, "Publicación no disponible", "No se publicó el release. Revisa la consola del servidor.", "catalog_publish_failed", exc, session=session)
+        return RedirectResponse(
+            f"/operator/catalogs?{urlencode({'result': str(result['status'])})}", status_code=303
+        )
+
+    @app.post("/operator/catalogs/{release_id}/archive")
+    async def archive_catalog_release_route(request: Request, release_id: str) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "snapshot_sha256", "reason", "confirm"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
+            if form["confirm"] != "yes":
+                raise ValueError("Debes confirmar el archivado del checksum exacto.")
+            reason = _require_text(form["reason"], "reason")
+            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
+                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
+            result = await run_in_threadpool(
+                gateway.archive_catalog_release,
+                _uuid(release_id, "release_id"), form["snapshot_sha256"], session.actor, reason,
+            )
+        except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
+            return _error(environment, 409, "Release no archivado", str(exc), session=session)
+        except Exception as exc:
+            return _unexpected_error(environment, "Archivado no disponible", "No se archivó el release. Revisa la consola del servidor.", "catalog_archive_failed", exc, session=session)
         return RedirectResponse(
             f"/operator/catalogs?{urlencode({'result': str(result['status'])})}", status_code=303
         )
@@ -1264,10 +1573,8 @@ def create_operator_app(
             }
             if set(form) != allowed_fields:
                 raise ValueError("El formulario contiene campos ausentes o desconocidos.")
-            if not _same_origin(request) or not hmac.compare_digest(
-                form.get("csrf_token", ""), session.csrf_token
-            ):
-                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
             if form["confirm"] != "yes":
                 raise ValueError("Debes confirmar la exportación del release publicado.")
             title = _require_text(form["title"], "title")
@@ -1340,6 +1647,48 @@ def create_operator_app(
             return _error(environment, 409, "Exportación no creada", str(exc), session=session)
         except Exception as exc:
             return _unexpected_error(environment, "Exportación no disponible", "No se generaron entregables. Revisa la consola del servidor operador.", "catalog_export_failed", exc, session=session)
+        return RedirectResponse("/operator/catalogs?result=created", status_code=303)
+
+    @app.post("/operator/catalogs/{release_id}/quick-html")
+    async def quick_html_export(request: Request, release_id: str) -> Response:
+        """Un botón: genera solo el HTML autónomo con valores por defecto ya probados.
+        PDF/PPTX/InDesign quedan disponibles en 'Configurar exportación' para quien los necesite."""
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "title", "subtitle", "confirm"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
+            if form["confirm"] != "yes":
+                raise ValueError("Debes confirmar la exportación del release publicado.")
+            title = _require_text(form["title"], "title")
+            subtitle = form["subtitle"].strip()
+            if len(title) > 120 or len(subtitle) > 180:
+                raise ValueError("Título o subtítulo demasiado largo.")
+            await run_in_threadpool(
+                gateway.export_catalog,
+                _uuid(release_id, "release_id"),
+                resolved_catalog_output,
+                formats=("html-standalone",),
+                image_root=resolved_image_output,
+                brand_asset_root=resolved_brand_assets,
+                export_config={
+                    "title": title, "subtitle": subtitle, "group_by": "category_path",
+                    "group_by_secondary": "", "filter_field": "all", "filter_query": "",
+                    "selected_references": "", "columns_per_row": 2,
+                    "template_profile": "T4", "theme": "forest",
+                    "show_category": True, "show_brand": True, "show_oem": True,
+                    "show_applications": True, "show_engine": True,
+                },
+            )
+        except (ValueError, RuntimeError, PermissionError, FileExistsError) as exc:
+            return _error(environment, 409, "Exportación no creada", str(exc), session=session)
+        except Exception as exc:
+            return _unexpected_error(environment, "Exportación no disponible", "No se generó el HTML autónomo. Revisa la consola del servidor operador.", "catalog_quick_export_failed", exc, session=session)
         return RedirectResponse("/operator/catalogs?result=created", status_code=303)
 
     @app.post("/operator/catalogs/{release_id}/exports/{export_id}/preflight")
@@ -1538,13 +1887,12 @@ def create_operator_app(
         session = session_or_redirect
         try:
             form = await _parse_form(request)
-            if set(form) != {"csrf_token", "reason", "confirm"}:
+            if set(form) != {"csrf_token", "brand_code", "reason", "confirm"}:
                 raise ValueError("El formulario contiene campos ausentes o desconocidos.")
-            if not _same_origin(request) or not hmac.compare_digest(
-                form.get("csrf_token", ""), session.csrf_token
-            ):
-                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
             reason = _require_text(form.get("reason", ""), "reason")
+            brand_code = _require_text(form.get("brand_code", ""), "brand_code")
             if not 4 <= len(reason) <= MAX_REASON_LENGTH:
                 raise ValueError("reason debe contener entre 4 y 500 caracteres.")
             if form.get("confirm") != "yes":
@@ -1558,6 +1906,7 @@ def create_operator_app(
                 session.actor,
                 reason,
                 DEFAULT_MAX_PILOT_ROWS,
+                brand_code,
             )
         except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
             return _error(environment, 409, "Promoción no aplicada", str(exc), session=session)
@@ -1587,8 +1936,8 @@ def create_operator_app(
             form = await _parse_form(request)
             if set(form) != {"csrf_token", "reason", "confirm"}:
                 raise ValueError("El formulario contiene campos ausentes o desconocidos.")
-            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
-                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
             reason = _require_text(form["reason"], "reason")
             if not 4 <= len(reason) <= MAX_REASON_LENGTH:
                 raise ValueError("reason debe contener entre 4 y 500 caracteres.")
@@ -1602,6 +1951,37 @@ def create_operator_app(
             return _error(environment, 409, "Índice no creado", str(exc), session=session)
         except Exception as exc:
             return _unexpected_error(environment, "Indexación no disponible", "No se creó el índice. Revisa la consola del servidor.", "image_index_failed", exc, session=session)
+        return RedirectResponse(
+            f"/operator/intake?{urlencode({'result': str(result['status'])})}", status_code=303
+        )
+
+    @app.post("/operator/intake/{submission_id}/archive")
+    async def archive_intake_submission_route(request: Request, submission_id: str) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "archived", "reason", "confirm"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
+            reason = _require_text(form["reason"], "reason")
+            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
+                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
+            archived = form["archived"] == "true"
+            if form["confirm"] != ("archive" if archived else "restore"):
+                raise ValueError("La confirmación explícita no coincide con la acción elegida.")
+            result = await run_in_threadpool(
+                intake_service.archive,
+                _uuid(submission_id, "submission_id"), archived, session.actor, reason,
+                company_id=session.company_id,
+            )
+        except (ValueError, PermissionError) as exc:
+            return _error(environment, 409, "Ingreso no actualizado", str(exc), session=session)
+        except Exception as exc:
+            return _unexpected_error(environment, "Archivado no disponible", "No se guardó el cambio. Revisa la consola del servidor.", "intake_archive_failed", exc, session=session)
         return RedirectResponse(
             f"/operator/intake?{urlencode({'result': str(result['status'])})}", status_code=303
         )
@@ -1654,8 +2034,8 @@ def create_operator_app(
             form = await _parse_form(request)
             if set(form) != {"csrf_token", "reason", "confirm"}:
                 raise ValueError("El formulario contiene campos ausentes o desconocidos.")
-            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
-                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
             reason = _require_text(form["reason"], "reason")
             if not 4 <= len(reason) <= MAX_REASON_LENGTH:
                 raise ValueError("reason debe contener entre 4 y 500 caracteres.")
@@ -1681,8 +2061,8 @@ def create_operator_app(
             form = await _parse_form(request)
             if set(form) != {"csrf_token", "evidence_sha256", "decision", "reason", "confirm"}:
                 raise ValueError("El formulario contiene campos ausentes o desconocidos.")
-            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
-                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
             reason = _require_text(form["reason"], "reason")
             if not 4 <= len(reason) <= MAX_REASON_LENGTH:
                 raise ValueError("reason debe contener entre 4 y 500 caracteres.")
@@ -1716,8 +2096,8 @@ def create_operator_app(
             form = await _parse_form(request)
             if set(form) != {"csrf_token", "expected_count", "decision", "reason", "confirm"}:
                 raise ValueError("El formulario contiene campos ausentes o desconocidos.")
-            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
-                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
             reason = _require_text(form["reason"], "reason")
             if not 4 <= len(reason) <= MAX_REASON_LENGTH:
                 raise ValueError("reason debe contener entre 4 y 500 caracteres.")
@@ -1754,8 +2134,8 @@ def create_operator_app(
             required = {"csrf_token", "pending_count", "approved_count", "reason", "confirm"}
             if set(form) != required:
                 raise ValueError("El formulario contiene campos ausentes o desconocidos.")
-            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
-                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
             if form["confirm"] != "yes":
                 raise ValueError("Debes confirmar la preparación de las coincidencias exactas.")
             reason = _require_text(form["reason"], "reason")
@@ -1794,8 +2174,8 @@ def create_operator_app(
             form = await _parse_form(request)
             if set(form) != {"csrf_token", "evidence_sha256", "reason", "confirm"}:
                 raise ValueError("El formulario contiene campos ausentes o desconocidos.")
-            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
-                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
             reason = _require_text(form["reason"], "reason")
             if not 4 <= len(reason) <= MAX_REASON_LENGTH:
                 raise ValueError("reason debe contener entre 4 y 500 caracteres.")
@@ -1814,6 +2194,21 @@ def create_operator_app(
             f"/operator/images?{urlencode({'result': str(result['status'])})}", status_code=303
         )
 
+    @app.get("/operator/images/candidates/{candidate_id}/preview")
+    async def image_candidate_preview_route(request: Request, candidate_id: str) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            content = await run_in_threadpool(
+                gateway.image_candidate_preview,
+                _uuid(candidate_id, "candidate_id"), resolved_intake_root, session.company_id,
+            )
+        except (ValueError, RuntimeError, PermissionError, OSError):
+            return Response(status_code=404)
+        return Response(content=content, media_type="image/jpeg")
+
     @app.post("/operator/images/candidates/bulk-materialize")
     async def materialize_approved_images_bulk_route(request: Request) -> Response:
         session_or_redirect = require_session(request)
@@ -1824,8 +2219,8 @@ def create_operator_app(
             form = await _parse_form(request)
             if set(form) != {"csrf_token", "expected_count", "reason", "confirm"}:
                 raise ValueError("El formulario contiene campos ausentes o desconocidos.")
-            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
-                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
             if form["confirm"] != "yes":
                 raise ValueError("Debes confirmar la materialización del lote exacto.")
             reason = _require_text(form["reason"], "reason")
@@ -1843,6 +2238,158 @@ def create_operator_app(
             LOGGER.exception("Fallo al materializar lote de imágenes; diagnostico=%s", diagnostic_id)
             return _error(environment, 503, "Materialización no disponible", f"No se materializó el lote. Diagnóstico: {diagnostic_id}.", session=session)
         return RedirectResponse(f"/operator/images?{urlencode({'result': str(result['status'])})}", status_code=303)
+
+    @app.get("/operator/simple", response_class=HTMLResponse)
+    async def simple_mode_page(request: Request) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            profiles = await run_in_threadpool(
+                gateway.brand_profiles, company_id=session_or_redirect.company_id,
+            )
+        except Exception as exc:
+            return _unexpected_error(
+                environment, "Modo simple no disponible",
+                "Ejecuta ACTUALIZAR-SISTEMA.cmd o revisa PostgreSQL.",
+                "simple_mode_read_failed", exc, session=session_or_redirect,
+            )
+        error_message = request.query_params.get("error")
+        return _render(
+            environment, "operator_simple.html", profiles=profiles, error_message=error_message,
+            session=session_or_redirect, version=OPERATOR_VERSION,
+        )
+
+    @app.post("/operator/simple")
+    async def simple_mode_submit(request: Request) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        if not _same_origin(request):
+            return _error(environment, 403, "Solicitud rechazada", "El origen de la carga no coincide.", session=session)
+        content_type = request.headers.get("content-type", "")
+        if not content_type.lower().startswith("multipart/form-data;"):
+            return _error(environment, 415, "Formulario inválido", "La carga debe usar multipart/form-data.", session=session)
+        try:
+            content_length = int(request.headers.get("content-length", ""))
+        except ValueError:
+            return _error(environment, 411, "Longitud requerida", "La carga debe declarar un tamaño válido.", session=session)
+        if content_length <= 0 or content_length > MAX_SIMPLE_REQUEST_BYTES:
+            return _error(environment, 413, "Carga demasiado grande", "La solicitud supera el límite del modo simple (excel + fotos).", session=session)
+        zip_path: Path | None = None
+        try:
+            async with request.form(
+                max_files=MAX_SIMPLE_IMAGE_FILES + 2, max_fields=8, max_part_size=MAX_FORM_BYTES,
+            ) as form:
+                if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                    return rejection
+                if form.get("confirm") != "yes":
+                    raise ValueError("Debes confirmar el modo simple antes de continuar.")
+                reason = _require_text(str(form.get("reason") or ""), "reason")
+                if not 4 <= len(reason) <= MAX_REASON_LENGTH:
+                    raise ValueError("reason debe contener entre 4 y 500 caracteres.")
+                brand_code = _require_text(str(form.get("brand_code") or ""), "brand_code")
+                odoo_upload = form.get("odoo_file")
+                if not isinstance(odoo_upload, UploadFile) or not odoo_upload.filename:
+                    raise ValueError("Selecciona el Excel de productos.")
+                image_uploads = [item for item in form.getlist("images") if isinstance(item, UploadFile) and item.filename]
+                local_images_path = str(form.get("local_images_path") or "").strip()
+                if image_uploads and local_images_path:
+                    raise ValueError("Usa la carpeta subida por el navegador o la ruta local del servidor, no ambas.")
+                if not image_uploads and not local_images_path:
+                    raise ValueError("Selecciona la carpeta de fotos o indica una ruta local del servidor.")
+                if len(image_uploads) > MAX_SIMPLE_IMAGE_FILES:
+                    raise ValueError(f"La carpeta supera el límite de {MAX_SIMPLE_IMAGE_FILES:,} fotos por lote.")
+
+                odoo_submission = await run_in_threadpool(
+                    intake_service.submit, odoo_upload.file, filename=odoo_upload.filename,
+                    claimed_media_type=odoo_upload.content_type, kind="odoo_data",
+                    actor=session.actor, reason=reason, company_id=session.company_id,
+                )
+
+                with tempfile.NamedTemporaryFile(
+                    dir=resolved_intake_root, prefix="simple-images-", suffix=".zip", delete=False,
+                ) as handle:
+                    zip_path = Path(handle.name)
+                if local_images_path:
+                    local_directory = Path(local_images_path)
+                    if not local_directory.is_dir():
+                        raise ValueError(f"La ruta {local_images_path!r} no existe o no es una carpeta accesible por el servidor.")
+                    written = await run_in_threadpool(
+                        _write_local_images_archive, local_directory, zip_path, max_files=MAX_SIMPLE_IMAGE_FILES,
+                    )
+                else:
+                    written = await run_in_threadpool(_write_images_archive, image_uploads, zip_path)
+                if written == 0:
+                    raise ValueError("Ninguna foto de la carpeta pudo empaquetarse.")
+                with zip_path.open("rb") as zip_stream:
+                    image_submission = await run_in_threadpool(
+                        intake_service.submit, zip_stream, filename="fotos-modo-simple.zip",
+                        claimed_media_type="application/zip", kind="image_archive",
+                        actor=session.actor, reason=reason, company_id=session.company_id,
+                    )
+
+                promotion = await run_in_threadpool(
+                    gateway.promote_intake, uuid.UUID(odoo_submission["intake_submission_id"]),
+                    resolved_intake_root, resolved_promotion_output, session.actor, reason,
+                    DEFAULT_MAX_PILOT_ROWS, brand_code,
+                )
+                dry_run = promotion["dry_run"]
+                plan_id = uuid.UUID(dry_run["plan_id"])
+                await run_in_threadpool(
+                    gateway.prepare_import_plan, plan_id, dry_run["approval_fingerprint_sha256"],
+                    session.actor, reason,
+                )
+
+                index_result = await run_in_threadpool(
+                    gateway.index_image_archive, uuid.UUID(image_submission["intake_submission_id"]),
+                    resolved_intake_root, session.actor, reason,
+                )
+                await run_in_threadpool(
+                    gateway.generate_image_candidates,
+                    uuid.UUID(index_result["image_archive_index_id"]), session.actor, reason,
+                    session.company_id,
+                )
+                counts = await run_in_threadpool(
+                    gateway.image_candidates, limit=1, offset=0, company_id=session.company_id,
+                )
+                pending = int(counts["pending_count"])
+                approved_unmaterialized = int(counts["approved_unmaterialized_count"])
+                total = pending + approved_unmaterialized
+                matched_now = 0
+                if 0 < total <= 500:
+                    if pending:
+                        await run_in_threadpool(
+                            gateway.decide_image_candidates_bulk, pending, "approved",
+                            session.actor, reason, session.company_id,
+                        )
+                    await run_in_threadpool(
+                        gateway.materialize_approved_images_bulk, total,
+                        resolved_intake_root, resolved_image_output, session.actor, reason,
+                        session.company_id,
+                    )
+                    matched_now = total
+        except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
+            return _error(environment, 409, "Modo simple no completado", str(exc), session=session)
+        except Exception as exc:
+            diagnostic_id = secrets.token_hex(4)
+            LOGGER.error(
+                "simple_mode_failed diagnostic_id=%s error_type=%s sqlstate=%s",
+                diagnostic_id, type(exc).__name__, getattr(exc, "sqlstate", None),
+            )
+            return _error(
+                environment, 503, "Modo simple no disponible",
+                f"No se completó el proceso automático. Diagnóstico {diagnostic_id}; revisa esa referencia en la consola.",
+                session=session,
+            )
+        finally:
+            if zip_path is not None and zip_path.exists():
+                zip_path.unlink()
+        return RedirectResponse(
+            f"/operator/plans/{plan_id}?{urlencode({'result': 'simple_mode', 'matched': matched_now})}",
+            status_code=303,
+        )
 
     @app.get("/operator/plans/{plan_id}", response_class=HTMLResponse)
     async def review_queue(
@@ -1875,6 +2422,7 @@ def create_operator_app(
                 state=state,
                 limit=limit,
                 offset=(page - 1) * limit,
+                company_id=session_or_redirect.company_id,
             )
         except (ValueError, RuntimeError, PermissionError) as exc:
             return _error(environment, 400, "No se pudo abrir la cola", str(exc), session=session_or_redirect)
@@ -1892,14 +2440,28 @@ def create_operator_app(
             else None
         )
         result = request.query_params.get("result")
-        message = {
-            "approved": "Producto aprobado y auditado.",
-            "rejected": "Producto rechazado y conservado para corrección.",
-            "already_approved": "La aprobación ya existía con la misma evidencia.",
-            "already_rejected": "El rechazo ya existía con la misma evidencia.",
-            "bulk_approved": "Lote pendiente aprobado y auditado identidad por identidad.",
-            "bulk_rejected": "Lote pendiente rechazado y auditado identidad por identidad.",
-        }.get(result)
+        if result == "simple_mode":
+            matched_raw = request.query_params.get("matched", "0")
+            matched_count = int(matched_raw) if matched_raw.isdigit() else 0
+            photo_phrase = "1 foto vinculada" if matched_count == 1 else f"{matched_count} fotos vinculadas"
+            message = (
+                f"Modo simple: excel procesado, {photo_phrase} automáticamente "
+                "a productos ya aprobados. Revisa aquí las identidades nuevas; las fotos de "
+                "productos nuevos se vincularán solas cuando los apruebes (vuelve a Imágenes después)."
+                if matched_count
+                else "Modo simple: excel procesado. Todavía no hay fotos vinculadas porque los "
+                "productos son nuevos; revisa las identidades y luego entra a Imágenes para "
+                "vincular las fotos automáticamente."
+            )
+        else:
+            message = {
+                "approved": "Producto aprobado y auditado.",
+                "rejected": "Producto rechazado y conservado para corrección.",
+                "already_approved": "La aprobación ya existía con la misma evidencia.",
+                "already_rejected": "El rechazo ya existía con la misma evidencia.",
+                "bulk_approved": "Lote pendiente aprobado y auditado identidad por identidad.",
+                "bulk_rejected": "Lote pendiente rechazado y auditado identidad por identidad.",
+            }.get(result)
         return _render(
             environment,
             "operator_queue.html",
@@ -1926,6 +2488,12 @@ def create_operator_app(
             profiles = await run_in_threadpool(
                 gateway.brand_profiles, company_id=session_or_redirect.company_id,
             )
+            update_diffs = (
+                await run_in_threadpool(
+                    gateway.import_plan_update_diffs, _uuid(plan_id, "plan_id"), limit=50,
+                )
+                if plan["update_count"] else {"items": [], "filtered_count": 0, "limit": 50, "offset": 0}
+            )
         except ValueError as exc:
             return _error(environment, 404, "Plan no encontrado", str(exc), session=session_or_redirect)
         except Exception:
@@ -1945,7 +2513,7 @@ def create_operator_app(
         }.get(result)
         return _render(
             environment, "operator_import_plan.html", plan=plan, profiles=profiles, message=message,
-            session=session_or_redirect, version=OPERATOR_VERSION,
+            update_diffs=update_diffs, session=session_or_redirect, version=OPERATOR_VERSION,
         )
 
     async def _import_plan_transition(
@@ -1958,12 +2526,10 @@ def create_operator_app(
         try:
             form = await _parse_form(request)
             expected_fields = {"csrf_token", "fingerprint", "reason", "confirm"}
-            if transition == "prepare":
-                expected_fields.add("brand_code")
             if set(form) != expected_fields:
                 raise ValueError("El formulario contiene campos ausentes o desconocidos.")
-            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
-                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
             reason = _require_text(form["reason"], "reason")
             if not 4 <= len(reason) <= MAX_REASON_LENGTH:
                 raise ValueError("reason debe contener entre 4 y 500 caracteres.")
@@ -1976,8 +2542,6 @@ def create_operator_app(
                 else gateway.apply_import_plan
             )
             args = [parsed_plan_id, form["fingerprint"], session.actor, reason]
-            if transition == "prepare":
-                args.append(_require_text(form["brand_code"], "brand_code"))
             result = await run_in_threadpool(action, *args)
         except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
             return _error(environment, 409, "Operación no aplicada", str(exc), session=session)
@@ -2008,10 +2572,8 @@ def create_operator_app(
         session = session_or_redirect
         try:
             form = await _parse_form(request)
-            if not _same_origin(request) or not hmac.compare_digest(
-                form.get("csrf_token", ""), session.csrf_token
-            ):
-                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
             reason = _require_text(form.get("reason", ""), "reason")
             if len(reason) < 4:
                 raise ValueError("reason debe contener al menos 4 caracteres.")
@@ -2051,8 +2613,8 @@ def create_operator_app(
             form = await _parse_form(request)
             if set(form) != {"csrf_token", "fingerprint", "query", "expected_count", "decision", "reason", "confirm"}:
                 raise ValueError("El formulario contiene campos ausentes o desconocidos.")
-            if not _same_origin(request) or not hmac.compare_digest(form["csrf_token"], session.csrf_token):
-                return _error(environment, 403, "Solicitud rechazada", "La evidencia CSRF no coincide.", session=session)
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
             decision = form["decision"]
             if decision not in {"approve", "reject"} or form["confirm"] != decision:
                 raise ValueError("Debes confirmar exactamente la decisión del lote.")

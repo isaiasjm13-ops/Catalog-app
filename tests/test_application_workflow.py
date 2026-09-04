@@ -11,6 +11,7 @@ from unittest.mock import Mock, patch
 from perfect_catalog.application import (
     _apply_create_item,
     _apply_plan_in_connection,
+    _apply_update_item,
     _insert_vehicle_applications,
     assert_applicable_items,
     verify_plan_integrity,
@@ -149,11 +150,10 @@ class PlanIntegrityTests(unittest.TestCase):
         plan["approval_fingerprint_sha256"] = fingerprint
         verify_plan_integrity(plan, items, fingerprint)
 
-    def test_unsupported_update_is_rejected_before_writes(self) -> None:
+    def test_update_is_classified_as_applicable_for_controlled_0022_path(self) -> None:
         plan, items, _ = make_plan()
         items[0]["operation_type"] = "update"
-        with self.assertRaisesRegex(NotImplementedError, "update"):
-            assert_applicable_items(items)
+        assert_applicable_items(items[:1])
 
     def test_snapshot_for_uncreated_product_is_rejected(self) -> None:
         _, items, _ = make_plan()
@@ -270,6 +270,39 @@ class CrossReferenceMaterializationTests(unittest.TestCase):
         self.assertEqual(candidate_call.args[1][5:9], (
             "oem", "44310-0K020", "44310-0K020", 0.94,
         ))
+
+
+class ControlledUpdateTests(unittest.TestCase):
+    def test_update_uses_controlled_function_and_audits_result(self) -> None:
+        plan, items, fingerprint = make_plan()
+        plan["source_system_id"] = uuid.uuid4()
+        plan["import_batch_id"] = uuid.uuid4()
+        item = items[0]
+        item["operation_type"] = "update"
+        item["resolved_product_template_id"] = item["planned_product_template_id"]
+        item["proposed_values"] = {
+            "name_original": "Updated product",
+            "name_normalized": "UPDATED PRODUCT",
+            "category_path": "Filters",
+            "variant_count_observed": 1,
+            "field_diffs": [{"field": "name_original", "action": "UPDATE"}],
+        }
+        result = {
+            "product_template_id": str(item["planned_product_template_id"]),
+            "before": {"name_original": "Old product"},
+            "after": {"name_original": "Updated product"},
+        }
+        cursor_result = Mock(); cursor_result.fetchone.return_value = (result,)
+        connection = Mock(); connection.execute.return_value = cursor_result
+        with patch("perfect_catalog.application._insert_audit_event") as audit:
+            _apply_update_item(
+                connection, plan, item, fingerprint, "reviewer", "approved source update", uuid.uuid4()
+            )
+        sql = str(connection.execute.call_args_list[0].args[0])
+        self.assertIn("apply_controlled_product_update", sql)
+        audit.assert_called_once()
+        self.assertEqual(audit.call_args.kwargs["before_data"]["name_original"], "Old product")
+        self.assertEqual(audit.call_args.kwargs["after_data"]["name_original"], "Updated product")
 
 
 if __name__ == "__main__":

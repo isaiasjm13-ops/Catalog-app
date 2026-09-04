@@ -70,6 +70,7 @@ def promote_intake_to_dry_run(
     *,
     actor: str,
     reason: str,
+    brand_code: str,
     max_rows: int = DEFAULT_MAX_PILOT_ROWS,
 ) -> dict[str, Any]:
     lock_kwargs = config.connection_kwargs(password)
@@ -80,7 +81,7 @@ def promote_intake_to_dry_run(
         try:
             return _promote_intake_to_dry_run_locked(
                 submission_id, intake_root, config, password, output_dir,
-                actor=actor, reason=reason, max_rows=max_rows,
+                actor=actor, reason=reason, brand_code=brand_code, max_rows=max_rows,
             )
         finally:
             lock_connection.execute(
@@ -97,6 +98,7 @@ def _promote_intake_to_dry_run_locked(
     *,
     actor: str,
     reason: str,
+    brand_code: str,
     max_rows: int = DEFAULT_MAX_PILOT_ROWS,
 ) -> dict[str, Any]:
     actor, reason = _actor(actor), _reason(reason)
@@ -165,6 +167,7 @@ def _promote_intake_to_dry_run_locked(
             dry_run = run_dry_run(
                 processing_path, config, password, output_dir, max_rows,
                 company_id=submission["company_id"],
+                brand_code=brand_code,
             )
             if dry_run["source_sha256_before"] != submission["sha256"] or not dry_run["source_unchanged"]:
                 raise RuntimeError("El dry-run no conserva la identidad del objeto promovido.")

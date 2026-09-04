@@ -146,8 +146,8 @@ contar/identificar registros y aprobar el mapping Company/Brand con el usuario.
 - Backup lógico verificable de `perfect_catalog_dev`.
 - Inspeccionar versión real, permisos, filas por marca/categoría/producto/release e identidades.
 - Crear propuesta de ledger de migraciones con checksum; no ejecutar aún.
-- Acordar mapping inicial: Perfect Company->Perfect; KMC->A1; Natsuki->Natsuki; Masaki->Masaki;
-  PDM->lista OEM confirmada.
+- Mapping corregido posteriormente por confirmación del usuario: Perfect Trading -> Perfect,
+  Natsuki, Masaki y Exact Cars; KMC -> A1; PDM -> lista OEM confirmada.
 - Rollback: ninguno porque es sólo lectura/documentación.
 
 ### Fase 1 - Company y pertenencia de Brand
@@ -230,6 +230,7 @@ Antes de editar estructura deben cumplirse estas condiciones:
 - Roles de aplicación/readonly conservan SELECT; el owner mantiene administración total.
 
 La evidencia confirmó un backfill pequeño. El usuario resolvió el bloqueo comercial el 2026-08-31:
-**EXACTCARS pertenece a Perfect Company**; NATSUKI pertenece a Natsuki Company. Las migraciones
+**Registro histórico (sustituido por la decisión posterior):** EXACTCARS pertenece a Perfect
+Trading; NATSUKI y MASAKI también son marcas de Perfect Trading, no Companies. Las migraciones
 0017-0018 quedaron preparadas con ledger/checksum y mapping explícito, pendientes de aplicación y
 validación antes de iniciar identidad y contexto multiempresa.

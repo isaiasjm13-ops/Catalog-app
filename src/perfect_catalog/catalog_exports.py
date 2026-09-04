@@ -51,6 +51,15 @@ def _register_natsuki_fonts() -> None:
             pdfmetrics.registerFont(TTFont(name, str(font_root.joinpath(filename))))
 
 
+def _catalog_pdf_fonts(config: dict[str, Any]) -> tuple[str, str, str]:
+    """Fuentes reales de Natsuki solo para Natsuki (mismo gate que _logo_path); Helvetica
+    estándar de ReportLab para cualquier otra marca, ya que no hay .ttf bundleados para ellas."""
+    if str(_visual(config).get("logo_asset_key") or "") == "brands/natsuki/logo.svg":
+        _register_natsuki_fonts()
+        return NATSUKI_TITLE_FONT, NATSUKI_BODY_FONT, NATSUKI_BODY_BOLD_FONT
+    return "Helvetica-Bold", "Helvetica", "Helvetica-Bold"
+
+
 def _theme(config: dict[str, Any]) -> dict[str, str]:
     profile = config.get("visual_profile") or {}
     if profile:
@@ -65,8 +74,8 @@ def _visual(config: dict[str, Any]) -> dict[str, Any]:
 def _company_theme(config: dict[str, Any]) -> dict[str, str]:
     company = _visual(config).get("company") or {}
     return {
-        "primary": str(company.get("primary_color") or "#086650"),
-        "secondary": str(company.get("secondary_color") or "#C7DF54"),
+        "primary": str(company.get("primary_color") or "#4B5563"),
+        "secondary": str(company.get("secondary_color") or "#D1D5DB"),
         "ink": str(company.get("ink_color") or "#17211D"),
         "paper": str(company.get("paper_color") or "#FFFFFF"),
     }
@@ -74,7 +83,7 @@ def _company_theme(config: dict[str, Any]) -> dict[str, str]:
 
 def _company_name(config: dict[str, Any]) -> str:
     company = _visual(config).get("company") or {}
-    return str(company.get("display_name") or "Perfect Trading International")
+    return str(company.get("display_name") or "Empresa del catálogo")
 
 
 def _logo_path(
@@ -133,19 +142,24 @@ def export_rows_from_release(release: dict[str, Any], items: Iterable[dict[str, 
     return rows
 
 
+def group_values(row: dict[str, Any], field: str, *, empty_label: str) -> list[Any]:
+    """Valores de agrupación de una fila para `field`; una marca vehicular expande el producto
+    en abanico cuando aplica a varias marcas. Único punto de esta regla: cualquier vista que
+    agrupe por marca vehicular (edición digital, InDesign, vista previa, exploración por
+    categoría) debe expandir siempre igual, o un producto podría aparecer en una y no en otra."""
+    if field == "vehicle_make":
+        return row.get("vehicle_makes") or ["Sin marca vehicular"]
+    return [row.get(field) or empty_label]
+
+
 def _groups(
     rows: list[dict[str, Any]], key: str, secondary_key: str | None = None
 ) -> list[tuple[str, list[dict[str, Any]]]]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
-        primary_values = (
-            row.get("vehicle_makes") or ["Sin marca vehicular"]
-            if key == "vehicle_make" else [row.get(key) or "Sin categoría"]
-        )
+        primary_values = group_values(row, key, empty_label="Sin categoría")
         secondary_values = (
-            row.get("vehicle_makes") or ["Sin marca vehicular"]
-            if secondary_key == "vehicle_make" else [row.get(secondary_key) or "Sin subgrupo"]
-            if secondary_key else [""]
+            group_values(row, secondary_key, empty_label="Sin subgrupo") if secondary_key else [""]
         )
         for primary in primary_values:
             for secondary in secondary_values:
@@ -169,14 +183,43 @@ def _detail(row: dict[str, Any]) -> str:
     return "<br/>".join(parts)
 
 
-def _safe_bundle_image(row: dict[str, Any], bundle_dir: Path | None) -> Path | None:
-    if bundle_dir is None or not row.get("image_path"):
+def _safe_bundle_path(bundle_dir: Path | None, filename: str | None) -> Path | None:
+    if bundle_dir is None or not filename:
         return None
     root = bundle_dir.resolve()
-    candidate = (root / str(row["image_path"])).resolve()
+    candidate = (root / str(filename)).resolve()
     if not candidate.is_relative_to(root) or not candidate.is_file():
         return None
     return candidate
+
+
+def _safe_bundle_image(row: dict[str, Any], bundle_dir: Path | None) -> Path | None:
+    return _safe_bundle_path(bundle_dir, row.get("image_path"))
+
+
+def _row_gallery_sources(
+    row: dict[str, Any], bundle_dir: Path | None, embed_images: bool,
+    raster_cache: dict[tuple[str, int, int, int], bytes] | None,
+) -> list[str]:
+    """Primary photo first, then extra "variant" photos (`REF-1234-2.jpg` etc.), as sources
+    ready to drop into an <img src>: filenames when the bundle ships alongside the HTML, data
+    URIs when the standalone HTML embeds everything. A missing/unsafe primary still fails hard
+    (unchanged behavior); a missing/unsafe variant is silently skipped instead of aborting the
+    whole export, since it is an enhancement, not a required field."""
+    filenames = ([row["image_path"]] if row.get("image_path") else []) + list(row.get("variant_image_paths") or [])
+    sources: list[str] = []
+    for index, filename in enumerate(filenames):
+        if not embed_images:
+            sources.append(str(filename))
+            continue
+        image_path = _safe_bundle_path(bundle_dir, str(filename))
+        if image_path is None:
+            if index == 0:
+                raise FileNotFoundError(f"No se puede incrustar la imagen segura {filename!r}.")
+            continue
+        optimized = _optimized_raster(image_path, 1200, 900, quality=82, cache=raster_cache)
+        sources.append("data:image/jpeg;base64," + base64.b64encode(optimized.read()).decode("ascii"))
+    return sources
 
 
 def _contained_size(
@@ -191,8 +234,19 @@ def _contained_size(
 
 def _optimized_raster(
     image_path: Path, max_width_px: int, max_height_px: int, *, quality: int = 84,
+    cache: dict[tuple[str, int, int, int], bytes] | None = None,
 ) -> io.BytesIO:
-    """Creates a bounded display copy while leaving the approved original untouched."""
+    """Creates a bounded display copy while leaving the approved original untouched.
+
+    `cache` is optional and scoped to a single caller-owned dict: the same source image is
+    often reused by several product rows within one export, and re-decoding/re-encoding it
+    at the exact same size is wasted work. Pass a fresh dict per top-level export call — never
+    a module-level cache — since `image_path` is only unique within that one export's bundle
+    directory, not across exports.
+    """
+    key = (str(image_path.resolve()), max_width_px, max_height_px, quality) if cache is not None else None
+    if key is not None and key in cache:
+        return io.BytesIO(cache[key])
     with PILImage.open(image_path) as source:
         image = ImageOps.exif_transpose(source)
         image.thumbnail((max_width_px, max_height_px), PILImage.Resampling.LANCZOS)
@@ -208,12 +262,16 @@ def _optimized_raster(
         output = io.BytesIO()
         image.save(output, format="JPEG", quality=quality, optimize=True, progressive=True)
     output.seek(0)
+    if key is not None:
+        cache[key] = output.getvalue()
+        output.seek(0)
     return output
 
 
 def _pdf_cell(
     row: dict[str, Any], styles: Any, bundle_dir: Path | None,
     palette: dict[str, str], columns: int,
+    raster_cache: dict[tuple[str, int, int, int], bytes] | None = None,
 ) -> list[Any]:
     contents: list[Any] = []
     image_path = _safe_bundle_image(row, bundle_dir)
@@ -225,6 +283,7 @@ def _pdf_cell(
                 image_path,
                 max(1, round(available_width / 72 * 200)),
                 max(1, round(available_height / 72 * 200)),
+                cache=raster_cache,
             )
             width, height = ImageReader(optimized).getSize()
             scale = min(available_width / width, (4.4 if columns == 1 else 3.2) * cm / height)
@@ -263,44 +322,44 @@ def generate_catalog_pdf(
     palette = _theme(config)
     company_palette = _company_theme(config)
     company_name = _company_name(config)
-    _register_natsuki_fonts()
+    title_font, body_font, body_bold_font = _catalog_pdf_fonts(config)
     styles = getSampleStyleSheet()
     cover_title_style = ParagraphStyle(
         "PerfectCatalogCoverTitle", parent=styles["Title"],
-        textColor=colors.HexColor(palette["ink"]), fontName=NATSUKI_TITLE_FONT,
+        textColor=colors.HexColor(palette["ink"]), fontName=title_font,
         fontSize=38, leading=41, alignment=0, spaceAfter=14,
     )
     cover_subtitle_style = ParagraphStyle(
         "PerfectCatalogCoverSubtitle", parent=styles["Heading2"],
-        textColor=colors.HexColor(palette["ink"]), fontName=NATSUKI_BODY_FONT,
+        textColor=colors.HexColor(palette["ink"]), fontName=body_font,
         fontSize=15, leading=20, alignment=0,
     )
     section_style = ParagraphStyle(
         "PerfectCatalogSection", parent=styles["Heading1"],
-        textColor=colors.HexColor(palette["ink"]), fontName=NATSUKI_TITLE_FONT,
+        textColor=colors.HexColor(palette["ink"]), fontName=title_font,
         fontSize=23, leading=27, spaceAfter=4,
     )
     styles.add(ParagraphStyle(
         "CatalogEyebrow", parent=styles["Normal"], textColor=colors.HexColor(palette["primary"]),
-        fontName=NATSUKI_BODY_BOLD_FONT, fontSize=12, leading=21.6, spaceAfter=10,
+        fontName=body_bold_font, fontSize=12, leading=21.6, spaceAfter=10,
     ))
     styles.add(ParagraphStyle(
         "CatalogReference", parent=styles["Normal"], textColor=colors.HexColor(palette["primary"]),
-        fontName=NATSUKI_BODY_BOLD_FONT, fontSize=12, leading=21.6, spaceAfter=5,
+        fontName=body_bold_font, fontSize=12, leading=21.6, spaceAfter=5,
     ))
     styles.add(ParagraphStyle(
         "CatalogProductTitle", parent=styles["Heading3"], textColor=colors.HexColor(palette["ink"]),
-        fontName=NATSUKI_TITLE_FONT, fontSize=14,
+        fontName=title_font, fontSize=14,
         leading=22, spaceAfter=8,
     ))
     styles.add(ParagraphStyle(
         "CatalogMeta", parent=styles["BodyText"], textColor=colors.HexColor("#56645e"),
-        fontName=NATSUKI_BODY_FONT, fontSize=12,
+        fontName=body_font, fontSize=12,
         leading=21.6,
     ))
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
-        buffer, pagesize=A4, title=title, author="Perfect Trading",
+        buffer, pagesize=A4, title=title, author=company_name,
         subject="Catálogo verificable de productos",
         leftMargin=1.35*cm, rightMargin=1.35*cm, topMargin=1.55*cm, bottomMargin=1.35*cm,
     )
@@ -317,16 +376,17 @@ def generate_catalog_pdf(
         ("RIGHTPADDING", (0, 0), (-1, -1), 8), ("TOPPADDING", (0, 0), (-1, -1), 8),
     ]))
     story: list[Any] = [
-        Spacer(1, 4.4 * cm), Paragraph("PERFECT TRADING · CATÁLOGO", styles["CatalogEyebrow"]),
+        Spacer(1, 4.4 * cm), Paragraph(escape(company_name.upper()) + " · CATÁLOGO", styles["CatalogEyebrow"]),
         Paragraph(escape(title), cover_title_style),
         Paragraph(escape(str(config.get("subtitle") or "Selección técnica de productos")), cover_subtitle_style),
         Spacer(1, 2.2 * cm), cover_meta, PageBreak(),
     ]
+    raster_cache: dict[tuple[str, int, int, int], bytes] = {}
     for section_index, (section, section_rows) in enumerate(_groups(
         rows, str(config.get("group_by") or "category_path"),
         str(config["group_by_secondary"]) if config.get("group_by_secondary") else None,
     )):
-        cells = [_pdf_cell(row, styles, bundle_dir, palette, columns) for row in section_rows]
+        cells = [_pdf_cell(row, styles, bundle_dir, palette, columns, raster_cache) for row in section_rows]
         chunks = [cells[index:index + page_capacity] for index in range(0, len(cells), page_capacity)]
         for chunk_index, chunk in enumerate(chunks):
             if section_index or chunk_index:
@@ -362,10 +422,10 @@ def generate_catalog_pdf(
     def decorate_cover(canvas: Any, document: Any) -> None:
         canvas.saveState()
         canvas.setTitle(title)
-        canvas.setAuthor("Perfect Trading International")
+        canvas.setAuthor(company_name)
         canvas.setCreator("Perfect Catalog")
         canvas.setSubject("Catálogo verificable de productos")
-        canvas.setKeywords("catálogo, autopartes, Perfect Trading, productos")
+        canvas.setKeywords(f"catálogo, autopartes, {company_name}, productos")
         canvas.bookmarkPage("portada")
         canvas.addOutlineEntry(title, "portada", level=0, closed=False)
         canvas.setFillColor(colors.HexColor(palette["paper"]))
@@ -393,7 +453,7 @@ def generate_catalog_pdf(
         canvas.setLineWidth(2)
         canvas.line(1.2 * cm, A4[1] - .8 * cm, A4[0] - 1.2 * cm, A4[1] - .8 * cm)
         canvas.setFillColor(colors.HexColor(palette["ink"]))
-        canvas.setFont(NATSUKI_BODY_FONT, MINIMUM_CATALOG_FONT_SIZE)
+        canvas.setFont(body_font, MINIMUM_CATALOG_FONT_SIZE)
         canvas.drawString(1.35 * cm, A4[1] - 1.15 * cm, title[:70])
         proof = " · ".join(value for value in (version, checksum[:16]) if value)
         canvas.drawString(1.2 * cm, .3 * cm, proof)
@@ -402,7 +462,7 @@ def generate_catalog_pdf(
         canvas.setLineWidth(1.2)
         canvas.line(1.2 * cm, .75 * cm, A4[0] - 1.2 * cm, .75 * cm)
         canvas.setFillColor(colors.HexColor(company_palette["primary"]))
-        canvas.setFont(NATSUKI_BODY_BOLD_FONT, MINIMUM_CATALOG_FONT_SIZE)
+        canvas.setFont(body_bold_font, MINIMUM_CATALOG_FONT_SIZE)
         canvas.drawString(1.2 * cm, .84 * cm, company_name[:70])
         logo = _logo_path(config, bundle_dir, raster_only=True)
         if logo and _visual(config).get("corner_logo_enabled", True):
@@ -444,6 +504,7 @@ def generate_catalog_pptx(
             or _logo_path(config, bundle_dir, raster_only=True))
     if logo and _visual(config).get("corner_logo_enabled", True):
         cover.shapes.add_picture(str(logo), Inches(9.2), Inches(.35), width=Inches(3.5))
+    raster_cache: dict[tuple[str, int, int, int], bytes] = {}
     for section, section_rows in _groups(
         rows, str(config.get("group_by") or "category_path"),
         str(config["group_by_secondary"]) if config.get("group_by_secondary") else None,
@@ -472,7 +533,7 @@ def generate_catalog_pptx(
                 image_path = _safe_bundle_image(row, bundle_dir)
                 if image_path:
                     try:
-                        optimized = _optimized_raster(image_path, 300, 240)
+                        optimized = _optimized_raster(image_path, 300, 240, cache=raster_cache)
                         source_width, source_height = ImageReader(optimized).getSize()
                         image_width, image_height = _contained_size(
                             source_width, source_height, 1.0, .8,
@@ -541,6 +602,7 @@ def generate_catalog_html(
     subtitle = escape(str(config.get("subtitle") or ""))
     sections: list[str] = []
     vehicle_visuals = (_visual(config).get("vehicle_makes") or {})
+    raster_cache: dict[tuple[str, int, int, int], bytes] = {}
 
     def search_text(row: dict[str, Any]) -> str:
         """Índice explícito del visor; no depende de que un dato esté visible en la ficha."""
@@ -603,30 +665,24 @@ def generate_catalog_html(
         cards: list[str] = []
         for card_index, row in enumerate(section_rows, 1):
             image = ""
-            if row.get("image_path"):
-                source = str(row["image_path"])
-                if embed_images:
-                    image_path = _safe_bundle_image(row, bundle_dir)
-                    if image_path is None:
-                        raise FileNotFoundError(
-                            f"No se puede incrustar la imagen segura {source!r}."
-                        )
-                    optimized = _optimized_raster(
-                        image_path, 1200, 900, quality=82,
-                    )
-                    source = (
-                        "data:image/jpeg;base64,"
-                        + base64.b64encode(optimized.read()).decode("ascii")
-                    )
+            gallery_sources = _row_gallery_sources(row, bundle_dir, embed_images, raster_cache)
+            if gallery_sources:
                 image_alt = escape(
                     str(row.get("internal_reference_original") or row.get("name_original") or "Producto"),
                     quote=True,
                 )
-                image_source = escape(source, quote=True)
+                image_source = escape(gallery_sources[0], quote=True)
+                has_gallery = len(gallery_sources) > 1
+                # The gallery attribute repeats every embedded photo's full data URI, so it is
+                # only emitted when there is actually more than one photo to browse — otherwise
+                # it would silently double the size of every single-photo standalone HTML.
+                gallery_attr = f' data-gallery="{escape("|".join(gallery_sources), quote=True)}"' if has_gallery else ""
+                gallery_hint = f'<span class="gallery-hint" aria-hidden="true">{len(gallery_sources)} fotos</span>' if has_gallery else ""
                 image = (
-                    f'<button class="photo" type="button" aria-label="Ver ficha completa de {image_alt}">'
+                    f'<button class="photo" type="button" aria-label="Ver ficha completa de {image_alt}"{gallery_attr}>'
                     f'<img src="{image_source}" alt="{image_alt}" loading="lazy" decoding="async">'
-                    '<span class="zoom-hint" aria-hidden="true">Ver ficha</span></button>'
+                    + gallery_hint
+                    + '<span class="zoom-hint" aria-hidden="true">Ver ficha</span></button>'
                 )
             applications = escape("; ".join(map(str, row.get("applications") or [])))
             engines = escape(", ".join(map(str, row.get("engine_types") or [])))
@@ -644,12 +700,19 @@ def generate_catalog_html(
                 + (f'<div><dt>Aplicaciones</dt><dd>{applications}</dd></div>' if applications and show_applications else "")
                 + (f'<div><dt>Motor</dt><dd>{engines}</dd></div>' if engines and show_engine else "")
             )
+            raw_reference = row.get("internal_reference_original")
+            reference_display = escape(str(raw_reference or "Sin referencia"))
+            reference_markup = (
+                f'<button class="ref-copy" type="button" data-ref="{escape(str(raw_reference), quote=True)}">'
+                f'<code>{reference_display}</code><span class="copy-hint" aria-hidden="true">Copiar</span></button>'
+                if raw_reference else f'<code>{reference_display}</code>'
+            )
             cards.append(
                 f'<article class="product" data-search="{escape(search_text(row), quote=True)}" '
                 f'data-category="{escape(str(row.get("category_path") or ""), quote=True)}" '
                 f'data-brand="{escape(str(row.get("brand") or ""), quote=True)}" '
                 f'data-vehicle="{escape("|".join(row_vehicle_makes(row)), quote=True)}">' + image
-                + f'<code>{escape(str(row.get("internal_reference_original") or "Sin referencia"))}</code>'
+                + reference_markup
                 + f'<h3>{escape(str(row.get("name_original") or "Sin nombre"))}</h3>'
                 + (f'<p class="meta">{visible_category}{" · " if visible_category and visible_brand else ""}{visible_brand}</p>' if visible_category or visible_brand else "")
                 + (f'<dl class="specifications">{specifications}</dl>' if specifications else "") + "</article>"
@@ -696,10 +759,11 @@ def generate_catalog_html(
 :root{{--secondary:{palette['secondary']};--company-primary:{company_palette['primary']};--company-secondary:{company_palette['secondary']}}}.hero:before{{border-color:var(--secondary)!important;opacity:.45!important}}
 :root{{--ink:{palette['ink']};--forest:{palette['primary']};--paper:{palette['paper']};--card:{palette['card']};--line:#d9d5c9;--muted:#65716b}}*{{box-sizing:border-box}}html{{scroll-behavior:smooth}}body{{margin:0;color:var(--ink);background:var(--paper);font:15px/1.55 Arial,sans-serif}}main{{max-width:1280px;margin:auto;padding:clamp(24px,5vw,72px)}}.hero{{position:relative;min-height:48vh;display:grid;align-content:end;padding:8vw clamp(0px,2vw,28px) 4vw;border-bottom:4px solid var(--ink)}}.hero:before{{content:"";position:absolute;top:12%;right:2%;width:clamp(90px,14vw,190px);aspect-ratio:1;border:1px solid var(--forest);border-radius:50%;opacity:.22}}.hero small{{color:var(--forest);font-weight:800;letter-spacing:.16em;text-transform:uppercase}}h1{{position:relative;max-width:900px;margin:.2em 0;font:500 clamp(44px,8vw,104px)/.9 Georgia,serif;letter-spacing:-.035em}}.hero p{{max-width:700px;font-size:18px}}.contents{{display:flex;gap:8px;padding:20px 0;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:thin}}.contents a{{min-height:44px;display:inline-flex;gap:9px;align-items:center;flex:0 0 auto;padding:8px 13px;border:1px solid var(--line);border-radius:999px;color:var(--ink);background:var(--card);text-decoration:none}}.contents a:hover,.contents a:focus-visible{{border-color:var(--forest)}}.contents span{{color:var(--forest);font-weight:800}}section{{scroll-margin-top:18px;padding:clamp(38px,6vw,72px) 0}}section>header{{display:flex;justify-content:space-between;gap:20px;align-items:end;border-bottom:1px solid var(--line)}}h2{{margin:.25em 0;font:500 clamp(27px,4vw,48px) Georgia,serif;letter-spacing:-.02em}}section>header span{{padding-bottom:1.2em;color:var(--muted)}}.products{{display:grid;grid-template-columns:repeat({columns},minmax(0,1fr));gap:20px;padding-top:24px}}.product{{min-width:0;padding:20px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(20,42,34,.06);overflow:hidden}}.photo{{height:210px;margin:-20px -20px 20px;padding:10px;background:#f8f8f5;display:grid;place-items:center;overflow:hidden;border-bottom:1px solid var(--line)}}.photo img{{display:block;width:100%;height:100%;object-fit:contain;object-position:center center}}code{{color:var(--forest);font-weight:800;letter-spacing:.035em}}h3{{margin:.5em 0;font:500 22px/1.15 Georgia,serif}}.meta{{color:var(--muted);font-size:13px}}.specifications{{display:grid;gap:8px;margin:15px 0 0}}.specifications div{{display:grid;grid-template-columns:minmax(92px,.34fr) 1fr;gap:10px;padding-top:8px;border-top:1px solid var(--line)}}.specifications dt{{color:var(--forest);font-weight:800}}.specifications dd{{margin:0;overflow-wrap:anywhere}}.proof{{padding:28px 0;border-top:1px solid var(--line);overflow-wrap:anywhere;color:var(--muted);font-size:12px}}@media(max-width:760px){{html{{scroll-behavior:auto}}.products{{grid-template-columns:1fr}}.hero{{min-height:38vh}}section>header{{align-items:start;flex-direction:column;gap:0}}section>header span{{padding-bottom:1em}}}}@media(prefers-reduced-motion:reduce){{html{{scroll-behavior:auto}}}}@media print{{@page{{size:A4;margin:12mm}}body{{background:#fff}}main{{max-width:none;padding:0}}.hero{{min-height:245mm;break-after:page}}.contents{{display:none}}section{{break-before:page;padding:0}}.product{{break-inside:avoid;box-shadow:none}}.products{{gap:6mm}}}}
 /* Visor ampliado sin JavaScript: mantiene el catálogo autónomo y portable. */
-.photo{{position:relative;width:calc(100% + 40px);border:0;color:var(--ink);font:inherit;text-decoration:none;cursor:zoom-in}}.zoom-hint{{position:absolute;right:12px;bottom:12px;padding:6px 10px;border-radius:999px;color:#fff;background:rgba(17,30,25,.78);font-size:12px;font-weight:800;opacity:0;transform:translateY(4px);transition:.18s ease}}.photo:hover .zoom-hint,.photo:focus-visible .zoom-hint{{opacity:1;transform:none}}.photo-viewer{{width:min(94vw,1400px);height:min(92vh,1000px);padding:16px;border:0;border-radius:16px;background:var(--card);box-shadow:0 24px 80px rgba(0,0,0,.45)}}.photo-viewer::backdrop{{background:rgba(8,15,12,.9)}}.photo-viewer[open]{{display:grid;grid-template-columns:1fr auto;grid-template-rows:minmax(0,1fr) auto;gap:12px}}.photo-viewer img{{grid-column:1/-1;width:100%;height:100%;min-height:0;object-fit:contain;object-position:center;background:#f8f8f5}}.photo-viewer p{{align-self:center;margin:0;overflow-wrap:anywhere}}.photo-viewer form{{align-self:center}}.photo-viewer-close{{min-height:44px;padding:10px 16px;border:1px solid var(--line);border-radius:999px;color:var(--ink);background:var(--card);font:inherit;font-weight:800}}@media(max-width:760px){{.zoom-hint{{opacity:1;transform:none}}}}@media(prefers-reduced-motion:reduce){{.zoom-hint{{transition:none}}}}@media print{{.photo-viewer{{display:none!important}}}}
+.photo{{position:relative;width:calc(100% + 40px);border:0;color:var(--ink);font:inherit;text-decoration:none;cursor:zoom-in}}.zoom-hint{{position:absolute;right:12px;bottom:12px;padding:6px 10px;border-radius:999px;color:#fff;background:rgba(17,30,25,.78);font-size:12px;font-weight:800;opacity:0;transform:translateY(4px);transition:.18s ease}}.gallery-hint{{position:absolute;left:12px;bottom:12px;padding:6px 10px;border-radius:999px;color:#fff;background:rgba(17,30,25,.78);font-size:12px;font-weight:800}}.photo:hover .zoom-hint,.photo:focus-visible .zoom-hint{{opacity:1;transform:none}}.photo-viewer{{position:relative;width:min(94vw,1400px);height:min(92vh,1000px);padding:16px;border:0;border-radius:16px;background:var(--card);box-shadow:0 24px 80px rgba(0,0,0,.45)}}.photo-viewer::backdrop{{background:rgba(8,15,12,.9)}}.photo-viewer[open]{{display:grid;grid-template-columns:1fr auto;grid-template-rows:minmax(0,1fr) auto;gap:12px}}.photo-viewer img{{grid-column:1/-1;width:100%;height:100%;min-height:0;object-fit:contain;object-position:center;background:#f8f8f5}}.photo-viewer p{{align-self:center;margin:0;overflow-wrap:anywhere}}.photo-viewer form{{align-self:center}}.photo-viewer-close{{min-height:44px;padding:10px 16px;border:1px solid var(--line);border-radius:999px;color:var(--ink);background:var(--card);font:inherit;font-weight:800}}.photo-viewer-gallery{{position:absolute;left:28px;bottom:28px;right:28px;display:flex;gap:8px;overflow-x:auto;padding:10px;border-radius:12px;background:linear-gradient(to top,rgba(8,15,12,.72),rgba(8,15,12,0))}}.photo-viewer-thumb{{all:unset;cursor:pointer;flex:0 0 auto;width:56px;height:56px;border:2px solid rgba(255,255,255,.55);border-radius:8px;overflow:hidden;background:#f8f8f5}}.photo-viewer-thumb img{{display:block;width:100%;height:100%;object-fit:cover}}.photo-viewer-thumb.active{{border-color:#fff}}@media(max-width:760px){{.zoom-hint{{opacity:1;transform:none}}}}@media(prefers-reduced-motion:reduce){{.zoom-hint{{transition:none}}}}@media print{{.photo-viewer{{display:none!important}}}}
 .catalog-search{{position:sticky;top:0;z-index:20;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;padding:14px 0;background:color-mix(in srgb,var(--paper) 94%,transparent);backdrop-filter:blur(12px)}}.catalog-search label{{grid-column:1/-1;color:var(--forest);font-weight:800}}.catalog-search input{{width:100%;min-height:48px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit}}.catalog-search input:focus{{outline:3px solid color-mix(in srgb,var(--forest) 24%,transparent);border-color:var(--forest)}}.catalog-search button{{min-height:48px;padding:10px 16px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit;font-weight:800}}.search-status{{grid-column:1/-1;margin:0;color:var(--muted)}}[hidden]{{display:none!important}}@media(max-width:760px){{.catalog-search{{margin-inline:-10px;padding:12px 10px}}}}@media print{{.catalog-search{{display:none}}}}
 .vehicle-make-logo{{display:inline-block;width:auto;height:1.05em;max-width:3.2em;margin-left:.3em;object-fit:contain;vertical-align:-.08em}}.corporate-signature{{display:flex;justify-content:space-between;gap:20px;align-items:center;padding:18px 0;border-top:3px solid var(--company-primary);box-shadow:inset 0 1px 0 var(--company-secondary);color:var(--company-primary);font-weight:800}}.corporate-signature small{{color:var(--muted);font-weight:400}}
 </style></head><body><main><header class="hero"><small>Perfect Trading · edición {version}</small><h1>{title}</h1><p>{subtitle}</p></header><form class="catalog-search" role="search" onsubmit="return false"><label for="catalog-query">Buscar en este catálogo</label><input id="catalog-query" type="search" inputmode="search" autocomplete="off" placeholder="Referencia, pieza, vehículo, motor u OEM"><button id="catalog-clear" type="button" hidden>Limpiar</button><p id="catalog-status" class="search-status" role="status" aria-live="polite">{len(rows)} productos disponibles</p></form><nav class="contents" aria-label="Secciones del catálogo">{''.join(navigation)}</nav>{''.join(sections)}<footer class="proof">Release SHA-256: {checksum}</footer></main><dialog class="photo-viewer" id="photo-viewer"><img alt=""><p></p><form method="dialog"><button class="photo-viewer-close" value="close">Cerrar</button></form></dialog><script>(()=>{{const q=document.querySelector('#catalog-query'),clear=document.querySelector('#catalog-clear'),status=document.querySelector('#catalog-status'),cards=[...document.querySelectorAll('.product')],sections=[...document.querySelectorAll('main>section')],viewer=document.querySelector('#photo-viewer'),viewerImage=viewer.querySelector('img'),viewerCaption=viewer.querySelector('p'),fold=value=>value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es');for(const card of cards)card.dataset.search=fold(card.textContent);function filter(){{const term=fold(q.value.trim());let visible=0;for(const card of cards){{const match=!term||card.dataset.search.includes(term);card.hidden=!match;if(match)visible++}}for(const section of sections)section.hidden=![...section.querySelectorAll('.product')].some(card=>!card.hidden);clear.hidden=!term;status.textContent=term?`${{visible}} de ${{cards.length}} productos encontrados`:`${{cards.length}} productos disponibles`}}q.addEventListener('input',filter);clear.addEventListener('click',()=>{{q.value='';filter();q.focus()}});for(const trigger of document.querySelectorAll('.photo'))trigger.addEventListener('click',()=>{{const source=trigger.querySelector('img');viewerImage.src=source.currentSrc||source.src;viewerImage.alt=source.alt;viewerCaption.textContent=source.alt;viewer.showModal()}});viewer.addEventListener('click',event=>{{if(event.target===viewer)viewer.close()}})}})();</script></body></html>"""
+    html = html.replace("Perfect Trading · edición", f"{company_name} · edición", 1)
     html = html.replace(
         f'<footer class="proof">Release SHA-256: {checksum}</footer>',
         f'<footer class="proof corporate-signature"><span>{company_name}</span>'
@@ -727,14 +791,18 @@ def generate_catalog_html(
     html = html.replace("</style>", brand_css + "</style>", 1)
     detail_css = """.photo-viewer-details{min-width:0;align-self:start;padding:4px 8px 8px}.photo-viewer-details code{display:block;margin-bottom:4px;font-size:16px}.photo-viewer-details h3{margin:.15em 0;font-size:clamp(24px,4vw,38px)}.photo-viewer-details .meta{margin:.2em 0 12px;font-weight:700}.photo-viewer-details .specifications{margin-top:10px}@media(min-width:820px){.photo-viewer[open]{grid-template-columns:minmax(0,1.45fr) minmax(300px,.55fr);grid-template-rows:minmax(0,1fr) auto}.photo-viewer img{grid-column:1;grid-row:1/-1}.photo-viewer-details{grid-column:2;grid-row:1}.photo-viewer form{grid-column:2;grid-row:2}}@media(max-width:819px){.photo-viewer[open]{grid-template-columns:1fr;grid-template-rows:minmax(42vh,1fr) auto auto}.photo-viewer img{grid-column:1;grid-row:1}.photo-viewer-details{grid-column:1;grid-row:2;max-height:34vh;overflow:auto}.photo-viewer form{grid-column:1;grid-row:3}}"""
     html = html.replace("</style>", detail_css + "</style>", 1)
-    detail_script = """<script>(()=>{const viewer=document.querySelector('#photo-viewer'),caption=viewer.querySelector('p'),details=document.createElement('div');details.className='photo-viewer-details';details.setAttribute('aria-live','polite');caption.replaceWith(details);for(const trigger of document.querySelectorAll('.photo'))trigger.addEventListener('click',()=>{const card=trigger.closest('.product');details.replaceChildren(...[...card.children].filter(node=>!node.classList.contains('photo')).map(node=>node.cloneNode(true)))})})();</script>"""
+    detail_script = """<script>(()=>{const viewer=document.querySelector('#photo-viewer'),caption=viewer.querySelector('p'),details=document.createElement('div'),mainImage=viewer.querySelector('img'),gallery=document.createElement('div');details.className='photo-viewer-details';details.setAttribute('aria-live','polite');caption.replaceWith(details);gallery.className='photo-viewer-gallery';gallery.hidden=true;mainImage.insertAdjacentElement('afterend',gallery);for(const trigger of document.querySelectorAll('.photo'))trigger.addEventListener('click',()=>{const card=trigger.closest('.product');details.replaceChildren(...[...card.children].filter(node=>!node.classList.contains('photo')).map(node=>node.cloneNode(true)));const sources=(trigger.dataset.gallery||'').split('|').filter(Boolean);gallery.replaceChildren();gallery.hidden=sources.length<2;sources.forEach((source,index)=>{const thumb=document.createElement('button');thumb.type='button';thumb.className='photo-viewer-thumb'+(index===0?' active':'');thumb.innerHTML=`<img src="${source}" alt="">`;thumb.addEventListener('click',()=>{mainImage.src=source;gallery.querySelectorAll('.photo-viewer-thumb').forEach(node=>node.classList.remove('active'));thumb.classList.add('active')});gallery.appendChild(thumb)})})})();</script>"""
     html = html.replace("</body>", detail_script + "</body>", 1)
     filter_css = """.catalog-filter-panel{margin:18px 0;border:1px solid var(--line);border-radius:14px;background:var(--card)}.catalog-filter-panel summary{min-height:48px;padding:13px 16px;color:var(--forest);font-weight:800;cursor:pointer}.catalog-filter-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:12px;padding:0 16px 16px}.catalog-filter-grid label{display:grid;gap:5px;color:var(--muted);font-size:12px;font-weight:800}.catalog-filter-grid select,.catalog-filter-grid button{min-height:44px;padding:8px 11px;border:1px solid var(--line);border-radius:10px;color:var(--ink);background:var(--card);font:inherit}.catalog-filter-grid fieldset{display:flex;gap:6px;align-items:end;margin:0;padding:0;border:0}.catalog-filter-grid legend{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}.catalog-filter-grid button[aria-pressed=true]{border-color:var(--forest);color:var(--forest);box-shadow:inset 0 0 0 1px var(--forest)}.filters-clear{align-self:end}.catalog-list-view .products{grid-template-columns:1fr}.catalog-list-view .product{display:grid;grid-template-columns:minmax(150px,220px) minmax(120px,.35fr) minmax(0,1fr);gap:8px 18px;align-items:start}.catalog-list-view .photo{grid-row:1/5;width:auto;height:150px;margin:-10px 0 -10px -10px}.catalog-list-view .product h3,.catalog-list-view .product .meta{margin:0}.catalog-list-view .specifications{grid-column:3;grid-row:1/5;margin:0}@media(max-width:760px){.catalog-filter-grid{grid-template-columns:1fr 1fr}.catalog-filter-grid fieldset,.filters-clear{align-self:auto}.catalog-list-view .product{grid-template-columns:110px minmax(0,1fr);gap:6px 12px;padding:12px}.catalog-list-view .photo{grid-row:1/5;width:auto;height:110px;margin:0}.catalog-list-view .specifications{grid-column:1/-1;grid-row:auto;margin-top:8px}}@media print{.catalog-filter-panel{display:none}.catalog-list-view .product{display:block}}"""
     html = html.replace("</style>", filter_css + "</style>", 1)
+    copy_css = """.ref-copy{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:8px;padding:4px 2px;border-radius:6px}.ref-copy .copy-hint{font-size:10px;font-weight:800;color:var(--muted);opacity:0;transition:opacity .15s}.ref-copy:hover .copy-hint,.ref-copy:focus-visible .copy-hint{opacity:1}.ref-copy.copied .copy-hint{opacity:1;color:var(--forest)}.ref-copy:focus-visible{outline:2px solid var(--forest);outline-offset:2px}@media print{.copy-hint{display:none}}"""
+    html = html.replace("</style>", copy_css + "</style>", 1)
+    copy_script = """<script>(()=>{function fallbackCopy(value){const area=document.createElement('textarea');area.value=value;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.focus();area.select();try{document.execCommand('copy')}catch(ignored){}area.remove()}document.addEventListener('click',event=>{const button=event.target.closest('.ref-copy');if(!button)return;const value=button.dataset.ref||'',hint=button.querySelector('.copy-hint'),original=hint.textContent,mark=()=>{hint.textContent='Copiado';button.classList.add('copied');clearTimeout(button._resetTimer);button._resetTimer=setTimeout(()=>{hint.textContent=original;button.classList.remove('copied')},1500)};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(value).then(mark).catch(()=>{fallbackCopy(value);mark()})}else{fallbackCopy(value);mark()}})})();</script>"""
+    html = html.replace("</body>", copy_script + "</body>", 1)
     filter_script = f"""<script>(()=>{{const q=document.querySelector('#catalog-query'),status=document.querySelector('#catalog-status'),main=document.querySelector('main'),cards=[...document.querySelectorAll('.product')],sections=[...document.querySelectorAll('main>section')],category=document.querySelector('#filter-category'),brand=document.querySelector('#filter-brand'),vehicle=document.querySelector('#filter-vehicle'),cardsButton=document.querySelector('#view-cards'),listButton=document.querySelector('#view-list'),clear=document.querySelector('#filters-clear'),fold=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es'),stateKey='perfect-catalog-state:{checksum or version or "working"}';let view='cards';function save(){{try{{localStorage.setItem(stateKey,JSON.stringify({{query:q.value,category:category.value,brand:brand.value,vehicle:vehicle.value,view:view,scrollY:window.scrollY}}))}}catch(ignored){{}}}}function apply(){{const terms=fold(q.value.trim()).split(/\\s+/).filter(Boolean),wantedCategory=fold(category.value),wantedBrand=fold(brand.value),wantedVehicle=fold(vehicle.value);let visible=0;for(const card of cards){{const search=card.dataset.search||'',matchQuery=!terms.length||terms.every(term=>search.includes(term)||search.replace(/[^a-z0-9]+/g,'').includes(term.replace(/[^a-z0-9]+/g,''))),matchCategory=!wantedCategory||fold(card.dataset.category)===wantedCategory,matchBrand=!wantedBrand||fold(card.dataset.brand)===wantedBrand,matchVehicle=!wantedVehicle||fold(card.dataset.vehicle).split('|').includes(wantedVehicle),match=matchQuery&&matchCategory&&matchBrand&&matchVehicle;card.hidden=!match;if(match)visible++}}for(const section of sections)section.hidden=![...section.querySelectorAll('.product')].some(card=>!card.hidden);status.textContent=`${{visible}} de ${{cards.length}} productos encontrados`;save()}}function setView(next){{view=next==='list'?'list':'cards';main.classList.toggle('catalog-list-view',view==='list');cardsButton.setAttribute('aria-pressed',String(view==='cards'));listButton.setAttribute('aria-pressed',String(view==='list'));save()}}for(const control of [q,category,brand,vehicle])control.addEventListener(control===q?'input':'change',apply);cardsButton.addEventListener('click',()=>setView('cards'));listButton.addEventListener('click',()=>setView('list'));clear.addEventListener('click',()=>{{category.value='';brand.value='';vehicle.value='';apply()}});let restored=null;try{{restored=JSON.parse(localStorage.getItem(stateKey)||'null')}}catch(ignored){{}}if(restored){{q.value=restored.query||'';category.value=restored.category||'';brand.value=restored.brand||'';vehicle.value=restored.vehicle||'';setView(restored.view);apply();requestAnimationFrame(()=>scrollTo(0,Number(restored.scrollY)||0))}}else apply();let timer;addEventListener('scroll',()=>{{clearTimeout(timer);timer=setTimeout(save,180)}},{{passive:true}})}})();</script>"""
     html = html.replace("</body>", filter_script + "</body>", 1)
     if company_logo_uri or brand_logo_uri:
-        marks = ((f'<img class="brand-logo" src="{company_logo_uri}" alt="Perfect Trading">' if company_logo_uri else "")
+        marks = ((f'<img class="brand-logo" src="{company_logo_uri}" alt="{company_name}">' if company_logo_uri else "")
                  + (f'<img class="watermark" src="{brand_logo_uri}" alt="">' if brand_logo_uri else ""))
         html = html.replace('<header class="hero">', '<header class="hero">' + marks, 1)
     return html.encode("utf-8")

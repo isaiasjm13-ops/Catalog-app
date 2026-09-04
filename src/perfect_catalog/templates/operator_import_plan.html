@@ -10,6 +10,37 @@
   <article>
     <span class="row-label">Alcance calculado</span>
     <strong>{{ plan.item_count }}</strong><span>operaciones del plan</span>
+    <div class="plan-operation-breakdown">
+      <span class="state-pill complete">{{ plan.create_count }} nuevos</span>
+      <span class="state-pill pending">{{ plan.update_count }} actualizan algo existente</span>
+      <span class="state-pill">{{ plan.no_change_count }} sin cambios</span>
+      {% if plan.inventory_snapshot_count %}<span class="state-pill">{{ plan.inventory_snapshot_count }} inventario</span>{% endif %}
+    </div>
+    {% if plan.update_count == 0 and plan.create_count == 0 %}
+    <p class="draft-note">Este Excel no agrega nada nuevo: todas las referencias ya coinciden exactamente con lo que hay en el catálogo.</p>
+    {% endif %}
+    {% if plan.update_count > 0 %}
+    {% set field_labels = {"name_original": "Nombre", "name_normalized": "Nombre normalizado", "category_path": "Categoría", "variant_count_observed": "Variantes observadas"} %}
+    <details class="materialize-action plan-diff-preview">
+      <summary>Vista previa de cambios · {{ plan.update_count }} producto{{ 'e' if plan.update_count != 1 else '' }}s actualizan algo existente</summary>
+      {% if update_diffs.filtered_count > update_diffs["items"]|length %}
+      <p class="draft-note">Mostrando los primeros {{ update_diffs["items"]|length }} de {{ update_diffs.filtered_count }}.</p>
+      {% endif %}
+      <div class="plan-diff-list">
+        {% for item in update_diffs["items"] %}
+        <article class="plan-diff-card">
+          <code>{{ item.internal_reference_original or 'Sin referencia' }}</code>
+          <h3>{{ item.name_original or 'Sin nombre' }}</h3>
+          <dl>
+            {% for change in item.changed_fields %}
+            <div><dt>{{ field_labels.get(change.field, change.field) }}</dt><dd><span class="diff-before">{{ change.before if change.before is not none else '—' }}</span><span class="diff-arrow" aria-hidden="true">→</span><span class="diff-after">{{ change.incoming if change.incoming is not none else '—' }}</span></dd></div>
+            {% endfor %}
+          </dl>
+        </article>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
   </article>
   <dl>
     <div><dt>UUID</dt><dd><code>{{ plan.plan_id }}</code></dd></div>
@@ -27,7 +58,7 @@
   <p>Una sola confirmación verifica el archivo y aplica el plan. Los productos y sus aplicaciones vehiculares quedarán visibles para revisión; nada se publica todavía.</p>
   <form method="post" action="/operator/import-plans/{{ plan.plan_id }}/prepare">
     <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><input type="hidden" name="fingerprint" value="{{ plan.approval_fingerprint_sha256 }}">
-    <label><span>Marca del catálogo</span><select name="brand_code" required><option value="">Selecciona una marca</option>{% for profile in profiles %}<option value="{{ profile.code }}"{% if plan.brand_profile_code == profile.code %} selected{% endif %}>{{ profile.display_name }} · {{ profile.code }}</option>{% endfor %}</select></label>
+    <div class="fixed-context"><span>Marca fijada en el dry-run</span><strong>{{ plan.brand_profile_name }} · {{ plan.brand_profile_code }}</strong></div>
     <label><span>Motivo de la importación</span><textarea name="reason" minlength="4" maxlength="500" required placeholder="Ej. Exportación Odoo verificada para catálogo"></textarea></label>
     <label class="confirm-field"><input type="checkbox" name="confirm" value="prepare" required><span>Confirmo el archivo, sus hashes y la creación de identidades pendientes.</span></label>
     <button class="primary-button" type="submit">Verificar y preparar</button>

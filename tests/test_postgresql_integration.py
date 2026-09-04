@@ -602,6 +602,7 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
                 "2026.08.24-pending-must-fail",
                 "integration-publisher",
                 "pending products cannot be published",
+                brand_name="NATSUKI",
             )
         self.connection.execute("RESET ROLE")
         counts = self.connection.execute(
@@ -778,6 +779,7 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
             "2026.08.24-integration",
             "integration-publisher",
             "synthetic release build",
+            brand_name="NATSUKI",
         )
         self.assertEqual(built["status"], "built")
         self.assertEqual(built["item_count"], 1)
@@ -789,6 +791,7 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
             "2026.08.24-integration",
             "integration-publisher",
             "synthetic release retry",
+            brand_name="NATSUKI",
         )
         self.assertEqual(rebuilt["status"], "already_built")
 
@@ -819,7 +822,7 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
             "already_published",
         )
 
-        repository = ReleaseCatalogRepository.from_connection(self.connection)
+        repository = ReleaseCatalogRepository.from_connection(self.connection, brand="NATSUKI")
         product = repository.product(str(ids["product"]))
         self.assertIsNotNone(product)
         self.assertNotIn("quantity_available", product["data"])
@@ -844,7 +847,7 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
             "already_archived",
         )
         with self.assertRaises(FileNotFoundError):
-            ReleaseCatalogRepository.from_connection(self.connection)
+            ReleaseCatalogRepository.from_connection(self.connection, brand="NATSUKI")
 
         self.connection.execute("RESET ROLE")
         release_audits = self.connection.execute(
@@ -1069,7 +1072,7 @@ class PostgreSQLSchemaIntegrationTests(unittest.TestCase):
         )
 
         self.connection.execute("SET ROLE perfect_catalog_app")
-        repository = ReleaseCatalogRepository.from_connection(self.connection)
+        repository = ReleaseCatalogRepository.from_connection(self.connection, brand="NATSUKI")
         self.assertEqual(repository.plan(), ("published:2026.08.24-test", 1, 1))
         results = repository.search("release", "Publicados", 10, 0)
         self.assertEqual(len(results), 1)

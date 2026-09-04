@@ -3,6 +3,13 @@
 Estado: implementado y validado en PostgreSQL local con el rol de aplicación. Migraciones
 `0003`–`0006` aplicadas; apply empresarial no autorizado.
 
+Antes de resolver un producto, el plan debe contener una Company activa y una Brand activa de esa
+Company. La resolución usa `source_system_id + brand_id + reference_type='internal' + value_normalized`.
+`NO_CHANGE` no realiza escrituras empresariales. `CONFLICT` e `INVALID` no pueden aplicarse. `UPDATE`
+se muestra con diff campo a campo y queda bloqueado por el contrato actual del trigger de revisión de
+`product_template` hasta aprobar una migración posterior específica; los releases publicados no se
+modifican para resolverlo.
+
 ## Límite de seguridad
 
 El importador nunca escribe en Odoo ni modifica el XLSX/CSV fuente. El dry-run persiste evidencia y

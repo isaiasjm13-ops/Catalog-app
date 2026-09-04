@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Revisión de catálogo{% endblock %} · Perfect Trading</title>
+  <title>{% block title %}Revisión de catálogo{% endblock %} · {{ session.company_name if session is defined and session and session.company_name else 'Catálogo multiempresa' }}</title>
   <link rel="stylesheet" href="/operator/static/operator.css">
+  {% if session %}<link rel="stylesheet" href="/operator/theme.css">{% endif %}
 </head>
 <body>
   <a class="skip-link" href="#contenido-principal">Saltar al contenido</a>
@@ -15,11 +16,12 @@
     <header class="topbar">
       <a class="brand" href="/operator" aria-label="Volver a planes">
         <span class="brand-mark">P</span>
-        <span><strong>Perfect Trading</strong><small>Control de catálogo</small></span>
+        <span><strong>{{ session.company_name if session is defined and session and session.company_name else 'Perfect Catalog' }}</strong><small>Control de catálogo</small></span>
       </a>
       <nav class="operator-nav" aria-label="Navegación del operador">
         <a href="/operator">Revisión</a>
         <a href="/operator/intake">Ingresos</a>
+        <a href="/operator/simple">Modo simple</a>
         <a href="/operator/catalogs">Catálogos</a>
         <a href="/operator/brands">Marcas</a>
         <a href="/operator/images">Imágenes</a>

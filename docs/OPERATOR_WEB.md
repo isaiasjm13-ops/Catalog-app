@@ -7,11 +7,12 @@ migración `0007`. No se ha aplicado ni revisado ningún plan empresarial real.
 
 | Superficie | Dirección | Fuente | Mutaciones |
 |---|---|---|---|
-| Catálogo piloto | `http://127.0.0.1:8080/` | XLSX más reciente | Ninguna |
+| Catálogo publicado | `http://127.0.0.1:8080/` (`INICIAR-CATALOGO-PUBLICADO.cmd`) | PostgreSQL, último release | Ninguna |
 | Consola operativa | `http://127.0.0.1:8081/operator` | PostgreSQL | Ingreso y decisión individual |
 
-`INICIAR-SERVER.cmd` continúa abriendo el visor XLSX. `INICIAR-REVISOR.cmd` arranca otro proceso y
-otro puerto; no agrega rutas administrativas al catálogo público.
+`INICIAR-REVISOR.cmd` arranca otro proceso y otro puerto; no agrega rutas administrativas al catálogo
+público. El visor XLSX del piloto (`INICIAR-SERVER.cmd`) se retiró por evadir cuarentena, dry-run y
+aprobación.
 
 La navegación **Ingresos** abre `http://127.0.0.1:8081/operator/intake`. Antes del primer uso se
 debe ejecutar `ACTUALIZAR-SISTEMA.cmd`. El flujo y sus límites están documentados en

@@ -5,15 +5,18 @@ import json
 import os
 import re
 import shutil
+import threading
+import time
 import uuid
 import io
 import zipfile
+from collections import OrderedDict
 from datetime import datetime, timezone
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Iterable
 
-from .catalog_exports import CATALOG_THEMES, export_rows_from_release, generate_catalog_html, generate_catalog_pdf, generate_catalog_pptx, generate_indesign_datamerge_csv
+from .catalog_exports import CATALOG_THEMES, export_rows_from_release, generate_catalog_html, generate_catalog_pdf, generate_catalog_pptx, generate_indesign_datamerge_csv, group_values
 from .config import DatabaseConfig
 from .publication import load_published_release
 
@@ -28,6 +31,7 @@ CATALOG_GROUP_FIELDS = ("category_path", "brand", "vehicle_make", "internal_refe
 CATALOG_FILTER_FIELDS = ("all", "category_path", "brand", "vehicle_make", "internal_reference_original", "name_original")
 MAX_SELECTED_REFERENCES = 5000
 MAX_INDESIGN_PREFLIGHT_BYTES = 1024 * 1024
+MAX_STANDALONE_EMBED_IMAGE_BYTES = 200 * 1024 * 1024
 INDESIGN_PREFLIGHT_SCHEMA = "perfect-catalog.indesign-preflight.v1"
 INDESIGN_PREFLIGHT_RECEIPT_SCHEMA = "perfect-catalog.indesign-preflight-receipt.v1"
 
@@ -382,19 +386,18 @@ def _indesign_zip(
 def _package_images(
     rows: list[dict[str, Any]], output_dir: Path, image_root: Path | None
 ) -> list[dict[str, Any]]:
-    image_rows = [row for row in rows if row.get("image_storage_relpath")]
+    image_rows = [row for row in rows if row.get("image_storage_relpath") or row.get("variant_images")]
     if not image_rows:
         return []
     if image_root is None:
         raise RuntimeError("El release contiene imágenes pero no se configuró image_root.")
     root = image_root.resolve()
     packaged: dict[str, dict[str, Any]] = {}
-    for row in image_rows:
-        digest = str(row.get("image_sha256") or "")
+
+    def package_one(storage_relpath: str, digest: str, media_type: Any) -> str:
         if not re.fullmatch(r"[0-9a-f]{64}", digest):
             raise RuntimeError("Una imagen materializada no conserva un SHA-256 válido.")
-        relative = Path(str(row["image_storage_relpath"]))
-        source = (root / relative).resolve()
+        source = (root / Path(storage_relpath)).resolve()
         if not source.is_relative_to(root) or not source.is_file():
             raise RuntimeError("Una imagen materializada falta o sale de image_root.")
         suffix = source.suffix.lower()
@@ -408,10 +411,22 @@ def _package_images(
             _write_new(output_dir / filename, content)
             packaged[digest] = {
                 "format": "image", "filename": filename,
-                "bytes": len(content), "sha256": digest,
-                "media_type": row.get("image_media_type"),
+                "bytes": len(content), "sha256": digest, "media_type": media_type,
             }
-        row["image_path"] = filename
+        return filename
+
+    for row in image_rows:
+        if row.get("image_storage_relpath"):
+            row["image_path"] = package_one(
+                str(row["image_storage_relpath"]), str(row.get("image_sha256") or ""),
+                row.get("image_media_type"),
+            )
+        variant_paths = [
+            package_one(str(variant["storage_relpath"]), str(variant.get("sha256") or ""), variant.get("media_type"))
+            for variant in row.get("variant_images") or []
+        ]
+        if variant_paths:
+            row["variant_image_paths"] = variant_paths
     return list(packaged.values())
 
 
@@ -460,8 +475,7 @@ def _indesign_rows(rows: list[dict[str, Any]], config: dict[str, Any]) -> list[d
         return rows
     expanded: list[dict[str, Any]] = []
     for row in rows:
-        makes = row.get("vehicle_makes") or ["Sin marca vehicular"]
-        for make in makes:
+        for make in group_values(row, "vehicle_make", empty_label="Sin marca vehicular"):
             copy = dict(row)
             copy["vehicle_make"] = str(make)
             expanded.append(copy)
@@ -606,6 +620,15 @@ def build_catalog_bundle(
             f"{stem}.digital.zip", _digital_zip(html_content, image_files, output_dir)
         )
     if "html-standalone" in requested:
+        if selection["image_bytes"] > MAX_STANDALONE_EMBED_IMAGE_BYTES:
+            raise ValueError(
+                "Las fotos seleccionadas pesan "
+                f"{selection['image_bytes'] / (1024 * 1024):.0f} MiB; el HTML autónomo con fotos "
+                "incrustadas no admite más de "
+                f"{MAX_STANDALONE_EMBED_IMAGE_BYTES // (1024 * 1024)} MiB porque el archivo "
+                "resultante dejaría de abrirse con fluidez en el navegador. Usa el ZIP digital "
+                "(HTML + carpeta de imágenes) para este volumen."
+            )
         payloads["html-standalone"] = (
             f"{stem}.autonomo.html",
             generate_catalog_html(
@@ -684,6 +707,20 @@ def export_catalog_release(
     )
 
 
+def _replace_with_retry(source: Path, destination: Path, *, attempts: int = 5) -> None:
+    """Windows puede denegar el rename si el antivirus sigue escaneando los archivos
+    recien escritos (WinError 5); reintentar con espera breve resuelve ese choque
+    transitorio sin ocultar un fallo real tras el ultimo intento."""
+    for attempt in range(1, attempts + 1):
+        try:
+            source.replace(destination)
+            return
+        except PermissionError:
+            if attempt == attempts:
+                raise
+            time.sleep(0.3 * attempt)
+
+
 def create_operator_catalog_export(
     release_id: uuid.UUID,
     database: DatabaseConfig,
@@ -708,11 +745,12 @@ def create_operator_catalog_export(
             brand_asset_root=brand_asset_root, require_images=True,
         )
         destination.parent.mkdir(parents=True, exist_ok=True)
-        temporary.replace(destination)
+        _replace_with_retry(temporary, destination)
     except Exception:
         if temporary.is_dir() and temporary.parent == root:
             shutil.rmtree(temporary)
         raise
+    _append_export_index_entry(root, release_id, export_id, str(result["manifest"]))
     return {
         **result,
         "export_id": str(export_id),
@@ -854,18 +892,74 @@ def verify_catalog_bundle(manifest_path: Path) -> dict[str, Any]:
     }
 
 
+EXPORT_INDEX_FILENAME = "_export_index.jsonl"
+
+
+def _append_export_index_entry(
+    output_root: Path, release_id: uuid.UUID, export_id: uuid.UUID, manifest_name: str,
+) -> None:
+    """Registra la exportación recién creada en un índice de solo-anexar, para que listar el
+    historial no tenga que recorrer todo el árbol de disco cada vez (crece sin límite con los
+    años). Si `output_root` recibe exportaciones por otra vía además de la consola del operador
+    (por ejemplo el CLI `export-catalog` apuntado manualmente a esta misma carpeta), esas no
+    quedan indexadas hasta que se borre `_export_index.jsonl` y se reconstruya una vez."""
+    index_path = output_root.resolve() / EXPORT_INDEX_FILENAME
+    entry = json.dumps(
+        {"release_id": str(release_id), "export_id": str(export_id), "manifest": manifest_name},
+        ensure_ascii=False,
+    )
+    with index_path.open("a", encoding="utf-8") as handle:
+        handle.write(entry + "\n")
+
+
+def _rebuild_export_index(root: Path) -> list[dict[str, str]]:
+    """Reconstrucción única: recorre el árbol completo (como hacía siempre este listado antes)
+    solo la primera vez que no existe el índice, ordenando por fecha real de modificación del
+    manifiesto ya que todavía no hay orden de creación registrado para estas entradas viejas."""
+    entries: list[dict[str, str]] = []
+    for manifest_path in sorted(root.glob("*/*/*.manifest.json"), key=lambda path: path.stat().st_mtime):
+        try:
+            release_id = uuid.UUID(manifest_path.parent.parent.name)
+            export_id = uuid.UUID(manifest_path.parent.name)
+            if manifest_path.resolve().parent.parent.parent != root:
+                continue
+        except ValueError:
+            continue
+        entries.append({
+            "release_id": str(release_id), "export_id": str(export_id), "manifest": manifest_path.name,
+        })
+    index_path = root / EXPORT_INDEX_FILENAME
+    with index_path.open("w", encoding="utf-8") as handle:
+        for entry in entries:
+            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return entries
+
+
 def list_operator_catalog_exports(output_root: Path, *, limit: int = 100) -> list[dict[str, Any]]:
     if limit < 1 or limit > 500:
         raise ValueError("limit debe estar entre 1 y 500.")
     root = output_root.resolve()
     if not root.is_dir():
         return []
+    index_path = root / EXPORT_INDEX_FILENAME
+    if index_path.is_file():
+        index_entries = []
+        for line in index_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                index_entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    else:
+        index_entries = _rebuild_export_index(root)
     results: list[dict[str, Any]] = []
-    for manifest_path in sorted(root.glob("*/*/*.manifest.json"), reverse=True):
+    for index_entry in reversed(index_entries):
         try:
-            release_id = uuid.UUID(manifest_path.parent.parent.name)
-            export_id = uuid.UUID(manifest_path.parent.name)
-            if manifest_path.resolve().parent.parent.parent != root:
+            release_id = uuid.UUID(str(index_entry["release_id"]))
+            export_id = uuid.UUID(str(index_entry["export_id"]))
+            manifest_path = (root / str(release_id) / str(export_id) / str(index_entry["manifest"])).resolve()
+            if manifest_path.parent.parent.parent != root:
                 continue
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             if manifest.get("schema") != EXPORT_MANIFEST_SCHEMA:
@@ -885,7 +979,7 @@ def list_operator_catalog_exports(output_root: Path, *, limit: int = 100) -> lis
                 "layout": manifest.get("layout") or {},
                 "files": files,
             })
-        except (ValueError, OSError, json.JSONDecodeError):
+        except (ValueError, KeyError, OSError, json.JSONDecodeError):
             continue
         if len(results) >= limit:
             break
@@ -912,9 +1006,9 @@ def build_catalog_preview(
     groups: dict[str, dict[str, Any]] = {}
     sampled = 0
     for row in rows:
-        primary_values = row.get("vehicle_makes") or ["Sin marca vehicular"] if group_by == "vehicle_make" else [row.get(group_by) or "Sin categoría"]
+        primary_values = group_values(row, group_by, empty_label="Sin categoría")
         secondary_field = preview_config["group_by_secondary"]
-        secondary_values = row.get("vehicle_makes") or ["Sin marca vehicular"] if secondary_field == "vehicle_make" else [row.get(secondary_field) or "Sin subgrupo"] if secondary_field else [""]
+        secondary_values = group_values(row, secondary_field, empty_label="Sin subgrupo") if secondary_field else [""]
         for primary in primary_values:
             for secondary in secondary_values:
                 label = f"{primary} · {secondary}" if secondary else str(primary)
@@ -990,6 +1084,78 @@ def list_catalog_release_products(
             "total": total, "products": products}
 
 
+BROWSE_GROUP_BY_FIELDS = ("category_path", "vehicle_make")
+BROWSE_PAGE_SIZE_MAX = 96
+
+_EXPORT_ROWS_CACHE: "OrderedDict[uuid.UUID, list[dict[str, Any]]]" = OrderedDict()
+_EXPORT_ROWS_CACHE_LOCK = threading.Lock()
+_EXPORT_ROWS_CACHE_MAX_ENTRIES = 8
+
+
+def _cached_export_rows(release: dict[str, Any], items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`export_rows_from_release` revalida y recalcula el hash de cada item; para un release
+    dado ese resultado nunca cambia, así que se cachea por release_id para que cambiar de
+    pestaña o de página en la consola no vuelva a recalcular todo cada vez."""
+    release_id = release["catalog_release_id"]
+    with _EXPORT_ROWS_CACHE_LOCK:
+        cached = _EXPORT_ROWS_CACHE.get(release_id)
+        if cached is not None:
+            _EXPORT_ROWS_CACHE.move_to_end(release_id)
+            return cached
+    rows = export_rows_from_release(release, items)
+    with _EXPORT_ROWS_CACHE_LOCK:
+        _EXPORT_ROWS_CACHE[release_id] = rows
+        _EXPORT_ROWS_CACHE.move_to_end(release_id)
+        while len(_EXPORT_ROWS_CACHE) > _EXPORT_ROWS_CACHE_MAX_ENTRIES:
+            _EXPORT_ROWS_CACHE.popitem(last=False)
+    return rows
+
+
+def browse_catalog_release(
+    release_id: uuid.UUID, database: DatabaseConfig, password: str,
+    *, group_by: str = "category_path", group: str = "", page: int = 1, page_size: int = 48,
+) -> dict[str, Any]:
+    """Navegación de solo lectura del release publicado organizada en pestañas por categoría o
+    marca vehicular, para revisar el catálogo completo antes de exportarlo."""
+    if group_by not in BROWSE_GROUP_BY_FIELDS:
+        raise ValueError("Agrupación no permitida.")
+    if page < 1:
+        raise ValueError("page debe ser positivo.")
+    if page_size < 1 or page_size > BROWSE_PAGE_SIZE_MAX:
+        raise ValueError(f"page_size debe estar entre 1 y {BROWSE_PAGE_SIZE_MAX}.")
+    release, items = load_published_release(release_id, database, password)
+    rows = _cached_export_rows(release, items)
+    for index, row in enumerate(rows, start=1):
+        row["browse_item"] = index
+    buckets: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        for label in group_values(row, group_by, empty_label="Sin categoría"):
+            buckets.setdefault(str(label), []).append(row)
+    if not buckets:
+        raise RuntimeError("El release publicado no contiene productos.")
+    groups = sorted(
+        ({"label": label, "count": len(bucket_rows)} for label, bucket_rows in buckets.items()),
+        key=lambda entry: entry["label"].casefold(),
+    )
+    active_group = group.strip() if group.strip() in buckets else groups[0]["label"]
+    bucket_rows = buckets[active_group]
+    total_pages = max(1, -(-len(bucket_rows) // page_size))
+    page = min(page, total_pages)
+    start = (page - 1) * page_size
+    return {
+        "release": _release_metadata(release, len(rows)),
+        "group_by": group_by,
+        "groups": groups,
+        "active_group": active_group,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "total_count": len(rows),
+        "group_count": len(bucket_rows),
+        "products": bucket_rows[start:start + page_size],
+    }
+
+
 def resolve_catalog_preview_image(
     release_id: uuid.UUID, item_number: int, database: DatabaseConfig, password: str,
     image_root: Path,
@@ -997,7 +1163,7 @@ def resolve_catalog_preview_image(
     if item_number < 1:
         raise ValueError("item_number debe ser positivo.")
     release, items = load_published_release(release_id, database, password)
-    rows = export_rows_from_release(release, items)
+    rows = _cached_export_rows(release, items)
     if item_number > len(rows):
         raise FileNotFoundError("El producto no pertenece al release.")
     row = rows[item_number - 1]

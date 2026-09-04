@@ -5,7 +5,7 @@ SET ROLE perfect_catalog_owner;
 DROP SCHEMA IF EXISTS perfect_catalog CASCADE;
 RESET ROLE;
 
-\echo 'Reconstruyendo el esquema y aplicando migraciones 0001-0020...'
+\echo 'Reconstruyendo el esquema y aplicando migraciones 0001-0021...'
 \ir apply_initial_schema.sql
 SET ROLE perfect_catalog_owner;
 \ir ../migrations/0002_plan_future_product_targets.sql
@@ -27,6 +27,7 @@ SET ROLE perfect_catalog_owner;
 \ir ../migrations/0018_companies.sql
 \ir ../migrations/0019_company_visual_identity.sql
 \ir ../migrations/0020_company_intake_context.sql
+\ir ../migrations/0021_company_administration.sql
 RESET ROLE;
 
 \echo 'Esquema limpio y actualizado.'

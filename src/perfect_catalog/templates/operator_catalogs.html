@@ -41,8 +41,8 @@
         <strong>{{ plan.original_name }}</strong>
         <span>{{ plan.candidate_count }} identidades · {{ plan.pending_count }} pendientes</span>
       </div>
-      <label><span>Versión nueva</span><input name="version" maxlength="80" placeholder="2026.08-natsuki" required></label>
-      <label><span>Marca</span><input name="brand" maxlength="120" value="NATSUKI" required></label>
+      <label><span>Versión nueva</span><input name="version" maxlength="80" placeholder="2026.08" required></label>
+      <label><span>Marca</span><input name="brand" maxlength="120" value="{{ plan.get('brand_profile_code') or '' }}" required readonly></label>
       <label class="builder-reason"><span>Motivo auditable</span><input name="reason" minlength="4" maxlength="500" placeholder="Primera edición revisada" required></label>
       <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Congelar este plan como borrador inmutable.</span></label>
       <button class="secondary-button" type="submit" {% if plan.pending_count or plan.inconsistent_count %}disabled title="Resuelve primero la cola de revisión"{% endif %}>Construir borrador</button>
@@ -98,12 +98,21 @@
           <input type="hidden" name="theme" value="forest">
           <button class="secondary-button" type="submit">Previsualizar</button>
         </form>
+        <form class="quick-html-export" method="post" action="/operator/catalogs/{{ release.catalog_release_id }}/quick-html">
+          <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+          <input type="hidden" name="title" value="Catálogo {{ release.version }}">
+          <input type="hidden" name="subtitle" value="{{ session.company_name }} · {{ release.item_count }} productos">
+          <input type="hidden" name="confirm" value="yes">
+          <button class="primary-button" type="submit">HTML autónomo ya</button>
+          <small>Un solo archivo, colores de la marca, todo visible. Para PDF/PowerPoint/InDesign usa "Configurar exportación" abajo.</small>
+        </form>
+        <a class="secondary-button browse-launcher" href="/operator/catalogs/{{ release.catalog_release_id }}/browse">Explorar por categoría</a>
         <details class="export-composer">
           <summary>Configurar exportación</summary>
           <form method="post" action="/operator/catalogs/{{ release.catalog_release_id }}/exports">
             <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
             <label><span>Título</span><input name="title" maxlength="120" value="Catálogo {{ release.version }}" required></label>
-            <label><span>Subtítulo</span><input name="subtitle" maxlength="180" value="Perfect Trading · {{ release.item_count }} productos"></label>
+            <label><span>Subtítulo</span><input name="subtitle" maxlength="180" value="{{ session.company_name }} · {{ release.item_count }} productos"></label>
             <fieldset class="composer-section">
               <legend>01 · Estructura del contenido</legend>
               <div class="composer-row">
@@ -157,6 +166,19 @@
           </form>
         </details>
         {% endif %}
+        <details class="publish-composer">
+          <summary>Archivar esta versión</summary>
+          <p>No borra nada: el contenido y su historial de auditoría quedan intactos. Deja de listarse como vigente y de poder exportarse hasta que se construya y publique una versión nueva.</p>
+          <form method="post" action="/operator/catalogs/{{ release.catalog_release_id }}/archive">
+            <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+            <input type="hidden" name="snapshot_sha256" value="{{ release.snapshot_sha256 }}">
+            <label><span>Motivo auditable</span><textarea name="reason" minlength="4" maxlength="500" required placeholder="Versión reemplazada por una edición más nueva"></textarea></label>
+            <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo archivar este release; su evidencia permanece disponible.</span></label>
+            <button type="submit" class="secondary-button">Archivar versión</button>
+          </form>
+        </details>
+        {% elif release.status == 'archived' %}
+        <div class="draft-note">Release archivado por {{ release.archived_by }}. Su contenido permanece intacto para auditoría, pero ya no aparece como vigente ni puede exportarse.</div>
         {% else %}
         <div class="draft-note">Este borrador no puede exportarse hasta completar su publicación controlada.</div>
         {% if release.status == 'draft' %}

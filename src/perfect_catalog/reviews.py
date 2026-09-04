@@ -373,6 +373,7 @@ def _review_queue_page_in_connection(
     state: str = "all",
     limit: int = 50,
     offset: int = 0,
+    company_id: uuid.UUID | None = None,
     _max_limit: int = 500,
 ) -> dict[str, Any]:
     query = str(query or "").strip()
@@ -383,6 +384,20 @@ def _review_queue_page_in_connection(
         raise ValueError(f"limit debe estar entre 1 y {_max_limit}.")
     if offset < 0:
         raise ValueError("offset no puede ser negativo.")
+    if company_id is not None:
+        plan_owned = connection.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM perfect_catalog.import_plan AS p
+                JOIN perfect_catalog.brand_profile AS bp
+                  ON bp.brand_profile_id=p.brand_profile_id
+                WHERE p.import_plan_id=%s AND bp.company_id=%s
+            )
+            """,
+            (plan_id, company_id),
+        ).fetchone()[0]
+        if not plan_owned:
+            raise PermissionError("El plan no pertenece a la empresa activa.")
     plan = _load_applied_plan(
         connection, plan_id, expected_fingerprint, lock=False
     )
@@ -486,6 +501,7 @@ def inspect_review_queue_page(
     state: str = "all",
     limit: int = 50,
     offset: int = 0,
+    company_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
     with psycopg.connect(**config.connection_kwargs(password)) as connection:
         return _review_queue_page_in_connection(
@@ -496,6 +512,7 @@ def inspect_review_queue_page(
             state=state,
             limit=limit,
             offset=offset,
+            company_id=company_id,
         )
 
 
@@ -570,7 +587,8 @@ def _list_review_plans_in_connection(
         )
         SELECT p.import_plan_id, p.approval_fingerprint_sha256,
                p.contract_version, p.rules_version, p.applied_at, p.applied_by,
-               f.original_name,
+               f.original_name, bp.code AS brand_profile_code,
+               bp.display_name AS brand_profile_name,
                count(c.public_id) AS candidate_count,
                count(c.public_id) FILTER (WHERE c.review_state='pending') AS pending_count,
                count(c.public_id) FILTER (WHERE c.review_state='approved') AS approved_count,
@@ -583,7 +601,7 @@ def _list_review_plans_in_connection(
         WHERE p.plan_status='applied' {plan_filter} {company_filter}
         GROUP BY p.import_plan_id, p.approval_fingerprint_sha256,
                  p.contract_version, p.rules_version, p.applied_at, p.applied_by,
-                 f.original_name
+                 f.original_name, bp.code, bp.display_name
         ORDER BY p.applied_at DESC, p.import_plan_id DESC
         LIMIT %s
     """
@@ -1069,6 +1087,14 @@ class DatabaseReviewGateway:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def create_company(self, **kwargs: Any) -> dict[str, Any]:
+        from .companies import create_company
+        return create_company(config=self._config, password=self._password, **kwargs)
+
+    def set_company_active(self, **kwargs: Any) -> dict[str, Any]:
+        from .companies import set_company_active
+        return set_company_active(config=self._config, password=self._password, **kwargs)
+
     def authorize_company_resource(
         self, company_id: uuid.UUID, resource_type: str, resource_id: uuid.UUID,
     ) -> bool:
@@ -1116,6 +1142,16 @@ class DatabaseReviewGateway:
         from .brand_profiles import list_brand_profiles
 
         return list_brand_profiles(self._config, self._password, company_id=company_id)
+
+    def brands(self, *, company_id: uuid.UUID) -> list[dict[str, Any]]:
+        from .brand_profiles import list_company_brands
+
+        return list_company_brands(self._config, self._password, company_id=company_id)
+
+    def link_brand_profile(self, **kwargs: Any) -> dict[str, Any]:
+        from .brand_profiles import link_brand_profile
+
+        return link_brand_profile(config=self._config, password=self._password, **kwargs)
 
     def create_brand_profile(
         self, values: dict[str, str], actor: str, reason: str, company_id: uuid.UUID,
@@ -1179,6 +1215,15 @@ class DatabaseReviewGateway:
             release_id, snapshot_sha256, actor, reason, self._config, self._password
         )
 
+    def archive_catalog_release(
+        self, release_id: uuid.UUID, snapshot_sha256: str, actor: str, reason: str,
+    ) -> dict[str, Any]:
+        from .publication import archive_release
+
+        return archive_release(
+            release_id, snapshot_sha256, actor, reason, self._config, self._password
+        )
+
     def preview_catalog_release(
         self, release_id: uuid.UUID, *, group_by: str, group_by_secondary: str = "",
         filter_field: str = "all", filter_query: str = "", selected_references: str = "",
@@ -1211,6 +1256,17 @@ class DatabaseReviewGateway:
             release_id, self._config, self._password, query=query, limit=limit, offset=offset,
         )
 
+    def browse_catalog_release(
+        self, release_id: uuid.UUID, *, group_by: str = "category_path",
+        group: str = "", page: int = 1, page_size: int = 48,
+    ) -> dict[str, Any]:
+        from .catalog_export_job import browse_catalog_release
+
+        return browse_catalog_release(
+            release_id, self._config, self._password,
+            group_by=group_by, group=group, page=page, page_size=page_size,
+        )
+
     def plans(
         self, *, limit: int = 100, company_id: uuid.UUID | None = None,
     ) -> list[dict[str, Any]]:
@@ -1235,6 +1291,13 @@ class DatabaseReviewGateway:
 
         return inspect_plan(plan_id, self._config, self._password)
 
+    def import_plan_update_diffs(
+        self, plan_id: uuid.UUID, *, limit: int = 50, offset: int = 0,
+    ) -> dict[str, Any]:
+        from .importer import list_plan_update_diffs
+
+        return list_plan_update_diffs(plan_id, self._config, self._password, limit=limit, offset=offset)
+
     def approve_import_plan(
         self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
     ) -> dict[str, Any]:
@@ -1251,13 +1314,11 @@ class DatabaseReviewGateway:
 
     def prepare_import_plan(
         self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
-        brand_code: str,
     ) -> dict[str, Any]:
         from .application import approve_and_apply_plan
 
         return approve_and_apply_plan(
             plan_id, fingerprint, actor, reason, self._config, self._password,
-            brand_code=brand_code,
         )
 
     def page(
@@ -1288,6 +1349,7 @@ class DatabaseReviewGateway:
         *,
         kind: str = "all",
         status: str = "all",
+        archived: str = "active",
         limit: int = 50,
         offset: int = 0,
         company_id: uuid.UUID | None = None,
@@ -1297,8 +1359,20 @@ class DatabaseReviewGateway:
             self._password,
             kind=kind,
             status=status,
+            archived=archived,
             limit=limit,
             offset=offset,
+            company_id=company_id,
+        )
+
+    def archive_intake_submission(
+        self, submission_id: uuid.UUID, archived: bool, actor: str, reason: str,
+        company_id: uuid.UUID | None = None,
+    ) -> dict[str, Any]:
+        from .intake import archive_intake_submission as _archive_intake_submission
+
+        return _archive_intake_submission(
+            self._config, self._password, submission_id, archived, actor, reason,
             company_id=company_id,
         )
 
@@ -1313,10 +1387,11 @@ class DatabaseReviewGateway:
         actor: str,
         reason: str,
         max_rows: int,
+        brand_code: str,
     ) -> dict[str, Any]:
         return promote_intake_to_dry_run(
             submission_id, intake_root, self._config, self._password, output_dir,
-            actor=actor, reason=reason, max_rows=max_rows,
+            actor=actor, reason=reason, brand_code=brand_code, max_rows=max_rows,
         )
 
     def index_image_archive(
@@ -1383,6 +1458,15 @@ class DatabaseReviewGateway:
             candidate_id, evidence_sha256, intake_root, image_root,
             self._config, self._password, actor=actor, reason=reason,
             company_id=company_id,
+        )
+
+    def image_candidate_preview(
+        self, candidate_id: uuid.UUID, intake_root: Path, company_id: uuid.UUID,
+    ) -> bytes:
+        from .approved_image_materialization import resolve_image_candidate_preview
+
+        return resolve_image_candidate_preview(
+            candidate_id, intake_root, self._config, self._password, company_id=company_id,
         )
 
     def materialize_approved_images_bulk(

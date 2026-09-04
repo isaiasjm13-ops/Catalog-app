@@ -9,8 +9,9 @@ La API v1.1 usa `catalog_release` como fuente predeterminada. Selecciona únicam
 estado `published` para la marca solicitada y elige el más reciente por fecha de publicación,
 creación e ID. Después carga sus items en `item_order`; una consulta nunca mezcla releases.
 
-El modo XLSX sigue disponible solo cuando se indica `--source` o `--source-dir`. Sus identidades
-`source-row:*` son provisionales y están rotuladas como tales en JSON y HTML.
+El modo piloto XLSX (`--source`/`--source-dir`, identidades provisionales `source-row:*`) se retiró:
+evadía cuarentena, dry-run y aprobación. `--brand` es obligatorio; la API solo lee releases
+publicados desde PostgreSQL.
 
 ## Contrato canónico
 
@@ -35,12 +36,11 @@ productos.
 ## Ejecución
 
 ```powershell
-# Fuente publicada predeterminada; solicita la contraseña sin guardarla
+# --brand es obligatorio; solicita la contraseña sin guardarla
 .\.venv\Scripts\perfect-catalog-api.exe --brand NATSUKI --prompt-password
-
-# Piloto explícito sobre archivos locales
-.\.venv\Scripts\perfect-catalog-api.exe --source-dir data\imports
 ```
+
+`INICIAR-CATALOGO-PUBLICADO.cmd` pregunta qué marca abrir en vez de tener una fija.
 
 El repositorio de releases es de solo lectura. Crear, inspeccionar, publicar y archivar usa el
 workflow separado descrito en [`RELEASE_PUBLICATION_WORKFLOW.md`](RELEASE_PUBLICATION_WORKFLOW.md);

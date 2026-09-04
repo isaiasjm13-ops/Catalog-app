@@ -8,13 +8,30 @@
 > fechas operativas ni `Imagen 128`, y no crea snapshots de inventario.
 
 El dry-run, staging, resultados, incidencias y planes ya tienen una implementación piloto. El
-contrato `natsuki-empaques-v0.2` acepta columnas conocidas reordenadas, conserva columnas nuevas,
+contrato `perfect-catalog-v0.2` acepta columnas conocidas reordenadas, conserva columnas nuevas,
 reporta opcionales ausentes y permite conteos variables bajo un límite de piloto de 5,000 filas.
 La aprobación/apply empresarial, candidatos, medios procesados y cierre completo descritos más
 adelante siguen pendientes. `docs/STATUS_AUDIT_V2_2.md` contiene el estado operativo vigente.
 
 Este documento conserva el flujo objetivo v0.1 aprobado. No debe interpretarse como evidencia de
 que cada etapa ya funciona: el estado se determina mediante código, pruebas e informe de auditoría.
+
+## 0.1 Importador multiempresa actual
+
+El contexto debe fijar una Company activa y una Brand activa perteneciente a ella antes de generar
+el dry-run o resolver referencias. El motor usa `brand_id` y la referencia interna normalizada dentro
+del `source_system`; no resuelve productos por referencia global. NATSUKI/empaques se conserva como
+perfil piloto compatible, pero no es un supuesto del contexto general.
+
+La clasificación es `NO_CHANGE` si los campos importables son equivalentes, `UPDATE` si difieren,
+`CONFLICT` si la identidad es ambigua o incompatible e `INVALID` si falla el contrato mínimo. Un
+valor entrante vacío produce `KEEP_EXISTING`; no representa un borrado. El diff se conserva en
+`before_values`, `proposed_values.field_diffs` y el hash del item.
+
+El apply mantiene la transacción serializable y no escribe para `NO_CHANGE`, `CONFLICT` o `INVALID`.
+`UPDATE` queda clasificado en el plan, pero permanece bloqueado antes de cualquier escritura mientras
+el trigger vigente de `product_template` prohíba modificar datos de catálogo; habilitarlo requiere
+una decisión de esquema posterior y no se resuelve alterando migraciones aplicadas.
 
 ## 1. Alcance
 

@@ -36,6 +36,26 @@ def normalize_image_key(filename: str) -> str:
     return re.sub(r"[^A-Z0-9]+", "-", text).strip("-")
 
 
+_VARIANT_SUFFIX_RE = re.compile(r"^(.+)-([2-9]|[1-9]\d)$")
+
+
+def split_variant_suffix(key: str) -> tuple[str, int | None]:
+    """`REF-1234-2` -> (`REF-1234`, 2): a normalized key ending in `-<N>` (2 <= N <= 99) names
+    an extra photo of the base reference, not a different product. `REF-1234` (no suffix) is
+    always the main photo; there is no `-1` variant by convention, only `-2`, `-3`, etc.
+
+    The suffix is capped at two digits on purpose: a real reference's own trailing digits
+    (e.g. `REF-1234`, four digits) must never be misread as a huge variant index. This is
+    only a heuristic fallback — callers must always try an exact, unsplit match against real
+    approved references first, and only fall back to this split when that direct match finds
+    nothing, so a reference that genuinely ends in `-2`..`-99` is never shadowed by it.
+    """
+    match = _VARIANT_SUFFIX_RE.fullmatch(key)
+    if not match:
+        return key, None
+    return match.group(1), int(match.group(2))
+
+
 def inspect_image_archive(path: Path) -> dict[str, Any]:
     members, archive_report = _inspect_archive(Path(path))
     image_members = [(info, member) for info, member in members if member.suffix.lower() in IMAGE_EXTENSIONS]

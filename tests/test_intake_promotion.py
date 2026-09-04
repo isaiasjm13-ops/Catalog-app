@@ -28,7 +28,7 @@ class IntakePromotionUnitTests(unittest.TestCase):
         ):
             result = intake_promotion.promote_intake_to_dry_run(
                 submission_id, Path("intake"), config, "secret", Path("reports"),
-                actor="qa", reason="Prueba de bloqueo",
+                actor="qa", reason="Prueba de bloqueo", brand_code="A1",
             )
         self.assertEqual(result["status"], "promoted")
         self.assertTrue(connect.call_args.kwargs["autocommit"])

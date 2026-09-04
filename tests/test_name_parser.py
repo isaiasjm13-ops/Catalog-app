@@ -6,8 +6,8 @@ from perfect_catalog.vehicle_makes import VEHICLE_MAKES, VEHICLE_MAKE_ALIASES
 
 class NameParserTests(unittest.TestCase):
     def test_curated_registry_contract_is_stable_and_deduplicated(self) -> None:
-        self.assertEqual(len(VEHICLE_MAKES), 100)
-        self.assertEqual(len(VEHICLE_MAKE_ALIASES), 122)
+        self.assertEqual(len(VEHICLE_MAKES), 130)
+        self.assertEqual(len(VEHICLE_MAKE_ALIASES), 156)
         self.assertEqual(len(VEHICLE_MAKES), len(set(VEHICLE_MAKES)))
 
     def test_global_registry_recognizes_current_aliases_without_publishing_them(self) -> None:
@@ -17,6 +17,7 @@ class NameParserTests(unittest.TestCase):
             "MERCEDES-BENZ SPRINTER 2019-2024 2.1L": "Mercedes-Benz",
             "SSANG YONG KORANDO 2014-2018 2.0L": "KGM",
             "VW AMAROK 2011-2020 2.0L": "Volkswagen",
+            "V.W GOL 2015-2019 1.6L": "Volkswagen",
             "CITROËN C3 2018-2023 1.2L": "Citroën",
             "MARUTI SUZUKI SWIFT 2017-2024 1.2L": "Maruti Suzuki",
         }
@@ -29,6 +30,28 @@ class NameParserTests(unittest.TestCase):
     def test_ambiguous_generic_abbreviations_are_not_claimed_as_vehicle_makes(self) -> None:
         parsed = parse_product_name("KIT GM RAM MINI SEAT MAN 2018-2020")
         self.assertEqual(parsed["applications"], [])
+
+    def test_truck_moto_and_new_car_brands_are_recognized(self) -> None:
+        cases = {
+            "FUSO CANTER 2015-2020 4.0L": "Fuso",
+            "MITSUBISHI FUSO CANTER 2015-2020 4.0L": "Fuso",
+            "SHACMAN X3000 2018-2023 12.0L": "Shacman",
+            "MG ZS 2021-2024 1.5L": "MG",
+            "ITALIKA FT150 2018-2023": "Italika",
+            "AKT NKD 125 2019-2024": "AKT",
+            "YAMAHA FZ 2016-2022": "Yamaha",
+            "PERODUA MYVI 2018-2023 1.5L": "Perodua",
+        }
+        for source, expected in cases.items():
+            with self.subTest(source=source):
+                parsed = parse_product_name(source)
+                self.assertEqual(parsed["applications"][0]["vehicle_brand"], expected)
+
+    def test_force_and_hero_only_match_their_full_brand_name_not_the_bare_word(self) -> None:
+        self.assertEqual(parse_product_name("FORCE MOTORS TRAVELLER 2018-2023")["applications"][0]["vehicle_brand"], "Force Motors")
+        self.assertEqual(parse_product_name("HERO MOTOCORP SPLENDOR 2018-2023")["applications"][0]["vehicle_brand"], "Hero MotoCorp")
+        self.assertEqual(parse_product_name("KIT DE FUERZA MAXIMA FORCE 2018-2023")["applications"], [])
+        self.assertEqual(parse_product_name("KIT HERO DELANTERO 2018-2023")["applications"], [])
 
     def test_vehicle_data_is_only_a_pending_review_suggestion(self) -> None:
         result = parse_product_name("EMPAQUE TOY. COROLLA 1.8L 2010-2015 DEL. [11213-0T020]")

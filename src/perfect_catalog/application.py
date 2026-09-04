@@ -27,7 +27,7 @@ from .importer import (
 )
 
 
-APPLICABLE_OPERATIONS = frozenset({"create", "no_change", "inventory_snapshot", "media_pending"})
+APPLICABLE_OPERATIONS = frozenset({"create", "update", "no_change", "inventory_snapshot", "media_pending"})
 
 
 def _require_text(value: str, label: str) -> str:
@@ -325,7 +325,10 @@ def _ensure_brand(
         (code,),
     ).fetchone()
     if row is None:
-        raise RuntimeError(f"No se pudo resolver la marca {code!r} después del insert idempotente.")
+        raise RuntimeError(
+            f"No se pudo registrar la marca {code!r} en el catálogo. Esto no debería ocurrir; "
+            "contacta soporte técnico si el problema se repite."
+        )
     if row[1] != source_system_id or row[2] != normalized or row[3] != brand_profile_id:
         raise RuntimeError(
             f"La marca existente con código {code!r} no coincide con la fuente y nombre del plan."
@@ -371,7 +374,10 @@ def _ensure_category(
         (category_id,),
     ).fetchone()
     if persisted is None or persisted[0] != source_system_id or persisted[1] != path:
-        raise RuntimeError("La categoría determinista colisionó con datos incompatibles.")
+        raise RuntimeError(
+            "No se pudo registrar la categoría del producto por un conflicto interno. "
+            "Contacta soporte técnico si el problema se repite."
+        )
     return category_id
 
 
@@ -596,6 +602,45 @@ def _apply_create_item(
     )
 
 
+def _apply_update_item(
+    connection: Connection[Any],
+    plan: dict[str, Any],
+    item: dict[str, Any],
+    expected_fingerprint: str,
+    actor: str,
+    reason: str,
+    correlation_id: uuid.UUID,
+) -> None:
+    proposed = item["proposed_values"]
+    diffs = proposed.get("field_diffs") or []
+    if any(diff.get("field") == "category_path" and diff.get("action") == "UPDATE" for diff in diffs):
+        _ensure_category(connection, plan["source_system_id"], proposed.get("category_path"))
+    row = connection.execute(
+        "SELECT perfect_catalog.apply_controlled_product_update(%s,%s,%s)",
+        (plan["import_plan_id"], item["import_plan_item_id"], expected_fingerprint),
+    ).fetchone()
+    if row is None or row[0] is None:
+        raise RuntimeError(
+            "No se pudo confirmar la actualización de este producto. "
+            "Contacta soporte técnico si el problema se repite."
+        )
+    evidence = row[0]
+    product_id = uuid.UUID(str(evidence["product_template_id"]))
+    _insert_audit_event(
+        connection,
+        plan=plan,
+        event_type="product_template.source_updated",
+        entity_type="product_template",
+        entity_id=product_id,
+        actor=actor,
+        reason=reason,
+        before_data=evidence.get("before"),
+        after_data=evidence.get("after") or {},
+        staging_row_id=item.get("staging_row_id"),
+        correlation_id=correlation_id,
+    )
+
+
 def _apply_snapshot_item(
     connection: Connection[Any],
     plan: dict[str, Any],
@@ -679,7 +724,10 @@ def _apply_plan_in_connection(
         (plan_id,),
     ).rowcount
     if changed != 1:
-        raise RuntimeError("No se pudo adquirir la aplicación única del plan.")
+        raise RuntimeError(
+            "Este plan ya se está aplicando (o ya se aplicó) desde otra sesión. "
+            "Actualiza la página antes de intentarlo de nuevo."
+        )
     connection.execute(
         "UPDATE perfect_catalog.import_batch SET status='applying' WHERE import_batch_id=%s",
         (plan["import_batch_id"],),
@@ -695,13 +743,17 @@ def _apply_plan_in_connection(
             plan["brand_profile_code"], plan["brand_profile_name"],
         ) if creates_products else None
     )
-    counts = {"create": 0, "inventory_snapshot": 0, "media_pending": 0, "no_change": 0}
+    counts = {"create": 0, "update": 0, "inventory_snapshot": 0, "media_pending": 0, "no_change": 0}
     for item in items:
         operation = item["operation_type"]
         if operation == "create":
             if brand_id is None:  # Defensive: assert_applicable_items already classified the plan.
                 raise RuntimeError("No se pudo resolver la marca para el alta planificada.")
             _apply_create_item(connection, plan, item, brand_id, actor, reason, correlation_id)
+        elif operation == "update":
+            _apply_update_item(
+                connection, plan, item, expected_fingerprint, actor, reason, correlation_id
+            )
         elif operation == "inventory_snapshot":
             _apply_snapshot_item(connection, plan, item, actor, reason, correlation_id)
         counts[operation] += 1
@@ -761,34 +813,18 @@ def apply_approved_plan(
 
 def approve_and_apply_plan(
     plan_id: uuid.UUID, expected_fingerprint: str, actor: str, reason: str,
-    config: DatabaseConfig, password: str, *, brand_code: str,
+    config: DatabaseConfig, password: str,
 ) -> dict[str, Any]:
-    """Una confirmación del operador; dos eventos auditados en una transacción."""
+    """Una confirmación del operador; la Brand ya quedó fijada antes del dry-run."""
     with psycopg.connect(**config.connection_kwargs(password)) as connection:
         connection.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
         plan = _load_plan(connection, plan_id, lock=True)
         if plan["plan_status"] != "awaiting_review":
-            raise PermissionError("La marca solo puede elegirse antes de aprobar el plan.")
-        if plan["company_id"] is None:
-            raise PermissionError("El plan histórico no tiene Company verificable.")
-        profile = connection.execute(
-            """SELECT brand_profile_id, code, display_name
-               FROM perfect_catalog.brand_profile
-               WHERE code=%s AND company_id=%s""",
-            (str(brand_code or "").strip().upper(), plan["company_id"]),
-        ).fetchone()
-        if profile is None:
-            raise ValueError("El perfil de marca seleccionado no existe.")
-        connection.execute(
-            "UPDATE perfect_catalog.import_plan SET brand_profile_id=%s WHERE import_plan_id=%s AND plan_status='awaiting_review'",
-            (profile[0], plan_id),
-        )
-        _insert_audit_event(
-            connection, plan=plan, event_type="import_plan.brand_selected",
-            entity_type="import_plan", entity_id=plan_id, actor=actor, reason=reason,
-            before_data={"brand_profile_id": str(plan["brand_profile_id"]) if plan["brand_profile_id"] else None},
-            after_data={"brand_profile_id": str(profile[0]), "brand_code": profile[1]},
-        )
+            raise PermissionError("El plan ya no está disponible para preparación.")
+        if plan["company_id"] is None or plan.get("brand_profile_id") is None:
+            raise PermissionError(
+                "El plan no tiene Company y Brand verificables; genera un dry-run nuevo."
+            )
         _approve_plan_in_connection(
             connection, plan_id, expected_fingerprint, actor, reason
         )

@@ -44,7 +44,7 @@ migraciones 0001-0016 se registrarán como baseline observado, sin volver a ejec
 ### 0017B - backfill explícito
 
 - Archivo separado con mapping por `brand_id`, no por coincidencia débil de nombre.
-- NATSUKI puede asignarse a Natsuki Company.
+- NATSUKI y MASAKI se asignan a Perfect Trading como marcas de producto; no son Companies.
 - EXACTCARS se asigna a Perfect Company por confirmación explícita del usuario.
 - Verificar que cero marcas activas queden sin Company.
 

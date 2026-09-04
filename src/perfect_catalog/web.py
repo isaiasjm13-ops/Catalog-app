@@ -1,21 +1,14 @@
 from __future__ import annotations
 
 import html
-import json
-import threading
 import uuid
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from typing import Any, Protocol
-from urllib.parse import parse_qs, unquote, urlencode, urlparse
+from urllib.parse import urlencode
 
 import psycopg
 
-from tools.odoo_profiler import read_tabular_source
-
 from .canonical import normalize_name
 from .config import DatabaseConfig
-from .importer import prepare_rows, validate_headers
 from .releases import (
     release_snapshot_sha256,
     validate_release_definition,
@@ -29,7 +22,7 @@ PAGE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Perfect Trading Catalog</title>
+<title>{catalog_title}</title>
 <style>
 :root {{ color-scheme: light; --ink:#17242a; --muted:#637279; --line:#dbe4e6; --paper:#f6f8f6; --card:#fff; --accent:#0f766e; --accent-dark:#115e59; --warm:#e9b949; }}
 * {{ box-sizing:border-box; }} body {{ margin:0; color:var(--ink); background:var(--paper); font-family: Georgia, 'Times New Roman', serif; }}
@@ -52,7 +45,7 @@ input {{ background:var(--card); color:var(--ink); }} button {{ background:var(-
 </style>
 </head>
 <body><main class="shell">
-<header><div><div class="eyebrow">Perfect Trading / Natsuki</div><h1>Catálogo de empaques</h1></div><div class="header-note">Consulta local de la muestra importada desde Odoo. Datos en revisión, sin cambios empresariales.</div></header>
+<header><div><div class="eyebrow">{eyebrow}</div><h1>{catalog_title}</h1></div><div class="header-note">Catálogo publicado de solo lectura, sin cambios empresariales.</div></header>
 <form class="search" method="get"><input name="q" value="{query}" placeholder="Referencia o nombre" autofocus><input name="category" value="{category}" placeholder="Categoría contiene"><button type="submit">Buscar</button></form>
 <nav class="category-strip" aria-label="Categorías del catálogo">{categories}</nav>
 <div class="stats"><span class="stat">Plan <strong>{plan_status}</strong></span><span class="stat">Referencias <strong>{total}</strong></span><span class="stat">Resultados <strong>{shown}</strong></span><span class="stat">Página <strong>{page}</strong></span><span class="stat">Fuente <strong>Odoo</strong></span></div>
@@ -62,6 +55,8 @@ input {{ background:var(--card); color:var(--ink); }} button {{ background:var(-
 
 
 class CatalogReader(Protocol):
+    brand_name: str
+
     def close(self) -> None: ...
 
     def plan(self) -> tuple[str, int, int]: ...
@@ -79,123 +74,12 @@ class CatalogReader(Protocol):
     def categories(self) -> list[dict[str, Any]]: ...
 
 
-def _source_row_number(product_id: str) -> int | None:
-    value = str(product_id).removeprefix("source-row:")
-    try:
-        return int(value)
-    except ValueError:
-        return None
-
-
-def _provisional_item(source_row_number: int, data: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "id": f"source-row:{source_row_number}",
-        "identity_status": "provisional_source_row",
-        "row": source_row_number,
-        "data": data,
-    }
-
-
 def _identity_label(item: dict[str, Any]) -> str:
-    if item.get("identity_status") == "published_uuid":
-        return f"UUID publicado {item['id']}"
-    return f"Fila Odoo {item.get('row', 'desconocida')}"
-
-
-class CatalogRepository:
-    def __init__(self, config: DatabaseConfig, password: str) -> None:
-        self.connection = psycopg.connect(**config.connection_kwargs(password), autocommit=True)
-
-    def close(self) -> None:
-        self.connection.close()
-
-    def plan(self) -> tuple[str, int, int]:
-        row = self.connection.execute(
-            """
-            SELECT p.plan_status, count(DISTINCT sr.staging_row_id), count(DISTINCT sr.staging_row_id)
-            FROM perfect_catalog.import_plan p
-            JOIN perfect_catalog.import_file f ON f.import_file_id = p.import_file_id
-            JOIN perfect_catalog.staging_row sr ON sr.import_file_id = f.import_file_id
-            WHERE p.import_plan_id = (SELECT import_plan_id FROM perfect_catalog.import_plan ORDER BY generated_at DESC LIMIT 1)
-            GROUP BY p.plan_status
-            """
-        ).fetchone()
-        return (str(row[0]), int(row[1]), int(row[2])) if row else ("sin_plan", 0, 0)
-
-    def search(
-        self,
-        query: str,
-        category: str,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> list[dict[str, Any]]:
-        like_query = f"%{query}%"
-        like_category = f"%{category}%"
-        rows = self.connection.execute(
-            """
-            SELECT sr.source_row_number, r.normalized_data
-            FROM perfect_catalog.staging_row_result r
-            JOIN perfect_catalog.staging_row sr ON sr.staging_row_id = r.staging_row_id
-            WHERE r.import_batch_id = (SELECT import_batch_id FROM perfect_catalog.import_plan ORDER BY generated_at DESC LIMIT 1)
-              AND r.processing_stage = 'reconciled'
-              AND (r.normalized_data->>'internal_reference_normalized' ILIKE %s
-                   OR r.normalized_data->>'name_normalized' ILIKE %s)
-              AND r.normalized_data->>'category_path' ILIKE %s
-            ORDER BY r.normalized_data->>'internal_reference_normalized'
-            LIMIT %s OFFSET %s
-            """,
-            (like_query, like_query, like_category, limit, offset),
-        ).fetchall()
-        return [_provisional_item(int(source_row), data) for source_row, data in rows]
-
-    def product(self, product_id: str) -> dict[str, Any] | None:
-        source_row_number = _source_row_number(product_id)
-        if source_row_number is None:
-            return None
-        row = self.connection.execute(
-            """
-            SELECT sr.source_row_number, r.normalized_data
-            FROM perfect_catalog.staging_row_result AS r
-            JOIN perfect_catalog.staging_row AS sr ON sr.staging_row_id = r.staging_row_id
-            WHERE r.import_batch_id = (
-                SELECT import_batch_id
-                FROM perfect_catalog.import_plan
-                ORDER BY generated_at DESC
-                LIMIT 1
-            )
-              AND r.processing_stage = 'reconciled'
-              AND sr.source_row_number = %s
-            ORDER BY r.created_at DESC
-            LIMIT 1
-            """,
-            (source_row_number,),
-        ).fetchone()
-        return _provisional_item(int(row[0]), row[1]) if row else None
-
-    def categories(self) -> list[dict[str, Any]]:
-        rows = self.connection.execute(
-            """
-            SELECT r.normalized_data->>'category_path' AS category, count(*)
-            FROM perfect_catalog.staging_row_result AS r
-            WHERE r.import_batch_id = (
-                SELECT import_batch_id
-                FROM perfect_catalog.import_plan
-                ORDER BY generated_at DESC
-                LIMIT 1
-            )
-              AND r.processing_stage = 'reconciled'
-            GROUP BY r.normalized_data->>'category_path'
-            ORDER BY r.normalized_data->>'category_path' NULLS LAST
-            """
-        ).fetchall()
-        return [
-            {"value": str(category) if category is not None else None, "count": int(count)}
-            for category, count in rows
-        ]
+    return f"UUID publicado {item['id']}"
 
 
 class ReleaseCatalogRepository:
-    def __init__(self, config: DatabaseConfig, password: str, brand: str = "NATSUKI") -> None:
+    def __init__(self, config: DatabaseConfig, password: str, brand: str) -> None:
         self.connection = psycopg.connect(
             **config.connection_kwargs(password), autocommit=True
         )
@@ -208,7 +92,7 @@ class ReleaseCatalogRepository:
 
     @classmethod
     def from_connection(
-        cls, connection: Any, brand: str = "NATSUKI"
+        cls, connection: Any, brand: str
     ) -> "ReleaseCatalogRepository":
         repository = cls.__new__(cls)
         repository.connection = connection
@@ -220,7 +104,7 @@ class ReleaseCatalogRepository:
         release = self.connection.execute(
             """
             SELECT r.catalog_release_id, r.brand_id, r.version, r.status,
-                   r.snapshot_sha256, r.definition
+                   r.snapshot_sha256, r.definition, b.name, b.code
             FROM perfect_catalog.catalog_release AS r
             JOIN perfect_catalog.brand AS b ON b.brand_id = r.brand_id
             WHERE r.status='published' AND b.normalized_name=%s
@@ -238,6 +122,8 @@ class ReleaseCatalogRepository:
         self.version = str(release[2])
         self.status = str(release[3])
         self.snapshot_sha256 = str(release[4])
+        self.brand_name = str(release[6])
+        self.brand_code = str(release[7])
         definition = release[5]
         rows = self.connection.execute(
             """
@@ -367,114 +253,6 @@ class ReleaseCatalogRepository:
         ]
 
 
-class ExcelCatalogRepository:
-    def __init__(self, source_path: str) -> None:
-        sheets = read_tabular_source(Path(source_path))
-        if len(sheets) != 1 or not sheets[0].rows:
-            raise ValueError("El catálogo local requiere exactamente una hoja no vacía.")
-        sheet = sheets[0]
-        headers = validate_headers(sheet.rows[0])
-        self.rows = prepare_rows(sheet.name, headers, sheet.rows[1:], sheet.row_numbers[1:])
-
-    def close(self) -> None:
-        return
-
-    def plan(self) -> tuple[str, int, int]:
-        return ("muestra_local", len(self.rows), len(self.rows))
-
-    def search(
-        self,
-        query: str,
-        category: str,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> list[dict[str, Any]]:
-        query_upper = query.upper()
-        category_upper = category.upper()
-        matches = []
-        skipped = 0
-        for row in self.rows:
-            data = row.normalized
-            haystack = f"{data['internal_reference_normalized']} {data['name_normalized']}"
-            if query_upper not in haystack or category_upper not in str(data.get("category_path") or "").upper():
-                continue
-            if skipped < offset:
-                skipped += 1
-                continue
-            matches.append(_provisional_item(row.source_row_number, data))
-            if len(matches) >= limit:
-                break
-        return matches
-
-    def product(self, product_id: str) -> dict[str, Any] | None:
-        source_row_number = _source_row_number(product_id)
-        if source_row_number is None:
-            return None
-        for row in self.rows:
-            if row.source_row_number == source_row_number:
-                return _provisional_item(row.source_row_number, row.normalized)
-        return None
-
-    def categories(self) -> list[dict[str, Any]]:
-        counts: dict[str | None, int] = {}
-        for row in self.rows:
-            value = row.normalized.get("category_path")
-            category = str(value) if value is not None and str(value).strip() else None
-            counts[category] = counts.get(category, 0) + 1
-        return [
-            {"value": category, "count": counts[category]}
-            for category in sorted(counts, key=lambda value: (value is None, value or ""))
-        ]
-
-
-class AutoExcelCatalogRepository:
-    def __init__(self, source_dir: Path) -> None:
-        self.source_dir = source_dir
-        self._repository: ExcelCatalogRepository | None = None
-        self._source_signature: tuple[str, int] | None = None
-        self._lock = threading.Lock()
-
-    def _latest_source(self) -> Path:
-        sources = sorted(
-            self.source_dir.glob("*.xlsx"),
-            key=lambda path: path.stat().st_mtime_ns,
-            reverse=True,
-        )
-        if not sources:
-            raise FileNotFoundError(f"No hay archivos XLSX en {self.source_dir}")
-        return sources[0]
-
-    def _current(self) -> ExcelCatalogRepository:
-        source = self._latest_source()
-        signature = (str(source.resolve()), source.stat().st_mtime_ns)
-        with self._lock:
-            if self._repository is None or self._source_signature != signature:
-                self._repository = ExcelCatalogRepository(str(source))
-                self._source_signature = signature
-            return self._repository
-
-    def close(self) -> None:
-        return
-
-    def plan(self) -> tuple[str, int, int]:
-        return self._current().plan()
-
-    def search(
-        self,
-        query: str,
-        category: str,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> list[dict[str, Any]]:
-        return self._current().search(query, category, limit, offset)
-
-    def product(self, product_id: str) -> dict[str, Any] | None:
-        return self._current().product(product_id)
-
-    def categories(self) -> list[dict[str, Any]]:
-        return self._current().categories()
-
-
 def render_results(items: list[dict[str, Any]]) -> str:
     if not items:
         return '<div class="empty">No hay resultados para esta búsqueda.</div>'
@@ -496,7 +274,7 @@ def render_results(items: list[dict[str, Any]]) -> str:
             f'<div class="result-body"><div class="ref"><a href="{product_url}">{reference}</a></div>'
             f'<div class="name">{html.escape(str(data.get("name_original") or ""))}</div>'
             f'<div class="meta">{html.escape(str(data.get("category_path") or "Sin categoría"))}</div>'
-            f'<div class="result-footer"><span class="brand-chip">{html.escape(str(data.get("brand") or "Perfect"))}</span></div></div>'
+            f'<div class="result-footer"><span class="brand-chip">{html.escape(str(data.get("brand") or ""))}</span></div></div>'
             '</article>'
         )
     return "".join(rendered)
@@ -537,9 +315,10 @@ def render_pagination(
     return f'<nav class="pagination" aria-label="Páginas del catálogo">{previous}<strong>Página {page}</strong>{following}</nav>'
 
 
-def render_product(product: dict[str, Any], printable: bool = False) -> str:
+def render_product(product: dict[str, Any], printable: bool = False, brand_name: str = "Catálogo") -> str:
     data = product["data"]
-    title = html.escape(str(data.get("name_original") or "Producto Natsuki"))
+    eyebrow = html.escape(brand_name)
+    title = html.escape(str(data.get("name_original") or "Producto sin nombre"))
     reference = html.escape(str(data.get("internal_reference_original") or ""))
     category = html.escape(str(data.get("category_path") or "Sin categoría"))
     image_status = html.escape(str(data.get("image_status") or "absent"))
@@ -563,7 +342,7 @@ def render_product(product: dict[str, Any], printable: bool = False) -> str:
     print_link = f'<a class="print-link" href="/producto/{html.escape(str(product["id"]), quote=True)}/ficha">Ficha imprimible / PDF</a>' if not printable else ''
     return f"""<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{reference} - Natsuki</title><style>
+<title>{reference} - {eyebrow}</title><style>
 :root {{ --ink:#17242a; --muted:#637279; --line:#dbe4e6; --accent:#0f766e; --warm:#e9b949; --paper:#f6f8f6; }}
 * {{ box-sizing:border-box; }} body {{ margin:0; background:var(--paper); color:var(--ink); font-family:Georgia,'Times New Roman',serif; }}
 .sheet {{ max-width:900px; margin:0 auto; padding:34px 22px 60px; }} .back,.print-link {{ font:14px Arial,sans-serif; color:var(--accent); text-decoration:none; }}
@@ -574,75 +353,9 @@ def render_product(product: dict[str, Any], printable: bool = False) -> str:
 .facts {{ background:#fff; border:1px solid var(--line); padding:22px; }} .fact {{ display:flex; justify-content:space-between; gap:18px; padding:12px 0; border-bottom:1px solid var(--line); font:14px Arial,sans-serif; }} .fact.stacked {{ display:grid; }} .fact:last-child {{ border-bottom:0; }} .label {{ color:var(--muted); }}
 .notice {{ border-left:4px solid var(--warm); padding:14px 16px; background:#fff8e8; font:14px/1.5 Arial,sans-serif; }}
 @media print {{ body {{ background:#fff; }} .actions,.back {{ display:none; }} .sheet {{ padding:0; }} }} @media(max-width:700px) {{ .hero {{ grid-template-columns:1fr; }} .top {{ display:block; }} .actions {{ margin-top:18px; }} }}
-</style></head><body><main class="sheet">{back}<div class="top"><div><div class="eyebrow">Perfect Trading / Natsuki</div><h1>{title}</h1><div class="ref">{reference}</div></div><div class="actions">{print_link}</div></div>
+</style></head><body><main class="sheet">{back}<div class="top"><div><div class="eyebrow">{eyebrow}</div><h1>{title}</h1><div class="ref">{reference}</div></div><div class="actions">{print_link}</div></div>
 <section class="hero">{image_panel}<div class="facts"><div class="fact"><span class="label">Categoría</span><strong>{category}</strong></div>{applications_fact}{oem_fact}<div class="fact"><span class="label">Identidad</span><strong>{_identity_label(product)}</strong></div></div></section>
-<div class="notice">Ficha basada en la exportación preliminar de Odoo. Los campos no presentes en la muestra, como aplicaciones, OEM, FMSI y especificaciones técnicas, permanecen pendientes de futuras fuentes.</div>
+<div class="notice">Ficha del release publicado. Los campos ausentes, como aplicaciones, OEM, FMSI y especificaciones técnicas, no están disponibles en este catálogo.</div>
 </main></body></html>"""
 
 
-def make_handler(repository: CatalogReader) -> type[BaseHTTPRequestHandler]:
-    class CatalogHandler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:
-            parsed = urlparse(self.path)
-            if parsed.path == "/":
-                params = parse_qs(parsed.query)
-                query = params.get("q", [""])[0].strip()
-                category = params.get("category", [""])[0].strip()
-                try:
-                    page = int(params.get("page", ["1"])[0])
-                except ValueError:
-                    page = 1
-                page = min(10000, max(1, page))
-                status, total, _ = repository.plan()
-                page_size = 48
-                page_items = repository.search(
-                    query, category, page_size + 1, (page - 1) * page_size
-                )
-                has_next = len(page_items) > page_size
-                items = page_items[:page_size]
-                categories = repository.categories()
-                body = PAGE.format(
-                    query=html.escape(query, quote=True),
-                    category=html.escape(category, quote=True),
-                    plan_status=html.escape(status),
-                    total=total,
-                    shown=len(items),
-                    page=page,
-                    categories=render_category_filters(categories, category, query),
-                    results=render_results(items),
-                    pagination=render_pagination(query, category, page, has_next),
-                ).encode("utf-8")
-            elif parsed.path.startswith("/producto/"):
-                parts = parsed.path.strip("/").split("/")
-                try:
-                    product = repository.product(unquote(parts[1]))
-                except IndexError:
-                    product = None
-                if product is None:
-                    self.send_error(404)
-                    return
-                body = render_product(product, len(parts) > 2 and parts[2] == "ficha").encode("utf-8")
-            else:
-                self.send_error(404)
-                return
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def log_message(self, format: str, *args: object) -> None:
-            return
-
-    return CatalogHandler
-
-
-def serve(repository: CatalogReader, host: str = "127.0.0.1", port: int = 8080) -> None:
-    server = ThreadingHTTPServer((host, port), make_handler(repository))
-    print(f"Catálogo local: http://{host}:{port}")
-    print("Solo lectura. Presiona Ctrl+C para detener.")
-    try:
-        server.serve_forever()
-    finally:
-        server.server_close()
-        repository.close()

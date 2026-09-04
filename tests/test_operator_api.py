@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import argparse
 import re
@@ -7,6 +8,7 @@ import json
 import tempfile
 import unittest
 import uuid
+import zipfile
 from unittest import mock
 from pathlib import Path
 from typing import Any
@@ -18,8 +20,11 @@ from perfect_catalog.operator_api import (
     MAX_UPLOAD_REQUEST_BYTES,
     OPERATOR_VERSION,
     OperatorAuthenticator,
+    _darken_hex,
     _operator_access_code,
     _operator_actor,
+    _safe_zip_member_name,
+    _write_local_images_archive,
     build_parser,
     create_operator_app,
 )
@@ -45,11 +50,14 @@ class SyntheticReviewGateway:
         self.catalog_exports: list[dict[str, Any]] = []
         self.release_changes: list[dict[str, Any]] = []
         self.visual_identity_records: list[dict[str, Any]] = []
+        self.company_theme_data: dict[str, dict[str, Any]] = {}
         self.company_data = [{
             "company_id": str(COMPANY_ID), "code": "PERFECT",
             "display_name": "Perfect Company", "is_active": True, "brand_count": 1,
         }]
+        self.company_changes: list[dict[str, Any]] = []
         self.import_plan_status = "awaiting_review"
+        self.import_plan_update_count = 0
         self.release_data = [{
             "catalog_release_id": str(RELEASE_ID),
             "brand_id": str(uuid.uuid4()), "version": "2026.08", "status": "published",
@@ -58,6 +66,7 @@ class SyntheticReviewGateway:
             "published_by": "publisher", "item_count": 12,
             "brand_code": "NATSUKI", "brand_name": "Natsuki",
             "visual_profile": {"primary_color": "#C60012", "secondary_color": "#202327"},
+            "archived_at": None, "archived_by": None,
         }]
         self.plan_data = {
             "import_plan_id": str(PLAN_ID),
@@ -79,6 +88,14 @@ class SyntheticReviewGateway:
 
     def companies(self) -> list[dict[str, Any]]:
         return self.company_data
+
+    def create_company(self, **kwargs: Any) -> dict[str, Any]:
+        self.company_changes.append({"action": "create", **kwargs})
+        return {"company_id": str(uuid.uuid4()), **kwargs}
+
+    def set_company_active(self, **kwargs: Any) -> dict[str, Any]:
+        self.company_changes.append({"action": "state", **kwargs})
+        return kwargs
 
     def authorize_company_resource(
         self, company_id: uuid.UUID, resource_type: str, resource_id: uuid.UUID,
@@ -108,17 +125,39 @@ class SyntheticReviewGateway:
             "file_sha256": "e" * 64, "contract_version": "contract-test",
             "rules_version": "rules-test", "item_count": 1,
             "brand_profile_code": None, "brand_profile_name": None,
+            "create_count": 1, "update_count": self.import_plan_update_count, "no_change_count": 0,
+            "inventory_snapshot_count": 0,
         }
+
+    def import_plan_update_diffs(
+        self, plan_id: uuid.UUID, *, limit: int = 50, offset: int = 0,
+    ) -> dict[str, Any]:
+        items = [{
+            "import_plan_item_id": str(uuid.uuid4()), "internal_reference_original": "NK-001",
+            "name_original": "Empaque <script> nuevo",
+            "changed_fields": [{"field": "name_original", "before": "Empaque viejo", "incoming": "Empaque <script> nuevo"}],
+        }] * self.import_plan_update_count
+        return {"items": items, "filtered_count": self.import_plan_update_count, "limit": limit, "offset": offset}
 
     def brand_profiles(self, *, company_id: uuid.UUID) -> list[dict[str, Any]]:
         if company_id != COMPANY_ID:
             raise PermissionError("Company incorrecta")
         return [{"brand_profile_id": str(uuid.uuid4()), "code": "NATSUKI", "display_name": "Natsuki", "tagline": "Trust", "primary_color": "#C60012", "secondary_color": "#202327", "ink_color": "#16191D", "paper_color": "#FFFFFF"}]
 
-    def visual_identities(self, *, company_id: uuid.UUID) -> dict[str, Any]:
+    def brands(self, *, company_id: uuid.UUID) -> list[dict[str, Any]]:
         if company_id != COMPANY_ID:
             raise PermissionError("Company incorrecta")
-        return {"company": None, "brands": {}, "vehicle_makes": [], "vehicle_make_identities": {}}
+        return [{"brand_id": str(uuid.uuid4()), "code": "NATSUKI", "name": "Natsuki", "is_active": True, "brand_profile_id": None, "linked_profile_code": None, "linked_profile_name": None}]
+
+    def link_brand_profile(self, **kwargs: Any) -> dict[str, Any]:
+        self.company_changes.append({"action": "brand_profile_link", **kwargs})
+        return {"brand_id": str(kwargs.get("brand_id")), "brand_profile_id": str(kwargs.get("brand_profile_id"))}
+
+    def visual_identities(self, *, company_id: uuid.UUID) -> dict[str, Any]:
+        return {
+            "company": self.company_theme_data.get(str(company_id)),
+            "brands": {}, "vehicle_makes": [], "vehicle_make_identities": {},
+        }
 
     def create_visual_identity(self, **kwargs: Any) -> dict[str, Any]:
         self.visual_identity_records.append(kwargs)
@@ -145,9 +184,8 @@ class SyntheticReviewGateway:
 
     def prepare_import_plan(
         self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
-        brand_code: str,
     ) -> dict[str, Any]:
-        if plan_id != PLAN_ID or fingerprint != FINGERPRINT or self.import_plan_status != "awaiting_review" or brand_code != "NATSUKI":
+        if plan_id != PLAN_ID or fingerprint != FINGERPRINT or self.import_plan_status != "awaiting_review":
             raise PermissionError("Preparación rechazada")
         self.import_plan_status = "applied"
         return {"plan_id": str(plan_id), "status": "prepared", "counts": {"create": 1}}
@@ -231,13 +269,15 @@ class SyntheticReviewGateway:
             "ambiguous_count": None,
             "indexed_at": None,
             "indexed_by": None,
+            "archived": False,
+            "archived_by": None,
         }
         self.intake_records.append(stored)
         return stored
 
     def promote_intake(
         self, submission_id: uuid.UUID, intake_root: Path, output_dir: Path,
-        actor: str, reason: str, max_rows: int,
+        actor: str, reason: str, max_rows: int, brand_code: str = "NATSUKI",
     ) -> dict[str, Any]:
         record = next(
             (item for item in self.intake_records if item["intake_submission_id"] == str(submission_id)),
@@ -250,12 +290,15 @@ class SyntheticReviewGateway:
         promotion = {
             "submission_id": submission_id, "intake_root": intake_root,
             "output_dir": output_dir, "actor": actor, "reason": reason,
-            "max_rows": max_rows,
+            "max_rows": max_rows, "brand_code": brand_code,
         }
         self.promotions.append(promotion)
         record["intake_promotion_id"] = str(uuid.uuid4())
-        record["import_plan_id"] = str(uuid.uuid4())
-        return {"status": "promoted"}
+        record["import_plan_id"] = str(PLAN_ID)
+        return {
+            "status": "promoted",
+            "dry_run": {"plan_id": str(PLAN_ID), "approval_fingerprint_sha256": FINGERPRINT},
+        }
 
     def index_image_archive(
         self, submission_id: uuid.UUID, intake_root: Path, actor: str, reason: str,
@@ -264,13 +307,13 @@ class SyntheticReviewGateway:
         if record["intake_kind"] != "image_archive" or record["validation_status"] != "quarantined":
             raise PermissionError("ingreso no indexable")
         if record["image_archive_index_id"]:
-            return {"status": "already_indexed"}
+            return {"status": "already_indexed", "image_archive_index_id": record["image_archive_index_id"]}
         record.update({
             "image_archive_index_id": str(uuid.uuid4()), "image_index_sha256": "f" * 64,
             "image_count": 2, "ambiguous_count": 1, "indexed_by": actor,
         })
         self.image_indexes.append({"submission_id": submission_id, "intake_root": intake_root, "actor": actor, "reason": reason})
-        return {"status": "indexed"}
+        return {"status": "indexed", "image_archive_index_id": record["image_archive_index_id"]}
 
     def generate_image_candidates(
         self, image_archive_index_id: uuid.UUID, actor: str, reason: str,
@@ -333,6 +376,16 @@ class SyntheticReviewGateway:
         candidate["storage_relpath"] = "objects/88/" + "8" * 64 + ".jpg"
         return {"status": "materialized"}
 
+    def image_candidate_preview(
+        self, candidate_id: uuid.UUID, intake_root: Path, company_id: uuid.UUID,
+    ) -> bytes:
+        matches = [item for item in self.image_candidate_data if item["image_product_candidate_id"] == str(candidate_id)]
+        if not matches:
+            raise ValueError("no existe")
+        return base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        )
+
     def materialize_approved_images_bulk(
         self, expected_count: int, intake_root: Path, image_root: Path,
         actor: str, reason: str,
@@ -351,6 +404,7 @@ class SyntheticReviewGateway:
         *,
         kind: str = "all",
         status: str = "all",
+        archived: str = "active",
         limit: int = 50,
         offset: int = 0,
         company_id: uuid.UUID | None = None,
@@ -360,6 +414,10 @@ class SyntheticReviewGateway:
             items = [item for item in items if item["intake_kind"] == kind]
         if status != "all":
             items = [item for item in items if item["validation_status"] == status]
+        if archived == "active":
+            items = [item for item in items if not item.get("archived")]
+        elif archived == "archived":
+            items = [item for item in items if item.get("archived")]
         if company_id is not None:
             items = [item for item in items if item.get("company_id") == company_id]
         return {
@@ -367,9 +425,24 @@ class SyntheticReviewGateway:
             "filtered_count": len(items),
             "kind": kind,
             "status": status,
+            "archived": archived,
             "limit": limit,
             "offset": offset,
         }
+
+    def archive_intake_submission(
+        self, submission_id: uuid.UUID, archived: bool, actor: str, reason: str,
+        company_id: uuid.UUID | None = None,
+    ) -> dict[str, Any]:
+        record = next(
+            item for item in self.intake_records
+            if item["intake_submission_id"] == str(submission_id)
+        )
+        if bool(record.get("archived")) == archived:
+            return {"status": "already_archived" if archived else "already_active"}
+        record["archived"] = archived
+        record["archived_by"] = actor if archived else None
+        return {"status": "archived" if archived else "unarchived"}
 
     def decide_many(
         self, plan_id: uuid.UUID, fingerprint: str, decision: str,
@@ -419,6 +492,19 @@ class SyntheticReviewGateway:
         self.release_changes.append({"operation": "publish", "release_id": release_id, "actor": actor, "reason": reason})
         return {"status": "published", "release_id": str(release_id)}
 
+    def archive_catalog_release(
+        self, release_id: uuid.UUID, snapshot_sha256: str, actor: str, reason: str,
+    ) -> dict[str, Any]:
+        release = next(item for item in self.release_data if item["catalog_release_id"] == str(release_id))
+        if release["snapshot_sha256"] != snapshot_sha256:
+            raise PermissionError("checksum incorrecto")
+        if release["status"] != "published":
+            raise PermissionError(f"Archivo rechazado: el release está en {release['status']!r}.")
+        release["status"] = "archived"
+        release["archived_by"] = actor
+        self.release_changes.append({"operation": "archive", "release_id": release_id, "actor": actor, "reason": reason})
+        return {"status": "archived", "release_id": str(release_id)}
+
     def preview_catalog_release(
         self, release_id: uuid.UUID, *, group_by: str, group_by_secondary: str = "",
         filter_field: str = "all", filter_query: str = "", selected_references: str = "",
@@ -457,6 +543,29 @@ class SyntheticReviewGateway:
             products = []
         return {"release_id": str(release_id), "query": query, "limit": limit,
                 "offset": offset, "total": len(products), "products": products}
+
+    def browse_catalog_release(
+        self, release_id: uuid.UUID, *, group_by: str = "category_path",
+        group: str = "", page: int = 1, page_size: int = 48,
+    ) -> dict[str, Any]:
+        groups = [{"label": "Motor <seguro>", "count": 1}, {"label": "Frenos", "count": 1}]
+        active_group = group or groups[0]["label"]
+        products = [{
+            "browse_item": 1, "internal_reference_original": "NK-001",
+            "name_original": "Empaque <script>", "category_path": "Motor <seguro>",
+            "vehicle_makes": ["Toyota"],
+        }] if active_group == "Motor <seguro>" else [{
+            "browse_item": 2, "internal_reference_original": "NK-002",
+            "name_original": "Pastilla", "category_path": "Frenos",
+            "vehicle_makes": ["Honda"],
+        }]
+        return {
+            "release": {"release_id": str(release_id), "version": "2026.08", "status": "published",
+                        "snapshot_sha256": "c" * 64, "item_count": 2},
+            "group_by": group_by, "groups": groups, "active_group": active_group,
+            "page": page, "page_size": page_size, "total_pages": 1,
+            "total_count": 2, "group_count": len(products), "products": products,
+        }
 
     def export_catalog(
         self, release_id: uuid.UUID, output_root: Path,
@@ -497,6 +606,58 @@ def hidden_value(html: str, name: str) -> str:
     if match is None:
         raise AssertionError(f"No se encontró el campo oculto {name!r}.")
     return match.group(1)
+
+
+class DarkenHexTests(unittest.TestCase):
+    def test_darkens_a_valid_hex_color(self) -> None:
+        self.assertEqual(_darken_hex("#C60012"), "#8f000d")
+        self.assertEqual(_darken_hex("#FFFFFF"), "#b8b8b8")
+
+    def test_returns_input_unchanged_for_invalid_colors(self) -> None:
+        self.assertEqual(_darken_hex("not-a-color"), "not-a-color")
+        self.assertEqual(_darken_hex("#FFF"), "#FFF")
+        self.assertEqual(_darken_hex(""), "")
+
+
+class SimpleModeZipNamingTests(unittest.TestCase):
+    def test_rejects_path_traversal_and_deduplicates_collisions(self) -> None:
+        seen: set[str] = set()
+        self.assertEqual(_safe_zip_member_name("REF-1234.jpg", seen), "REF-1234.jpg")
+        self.assertEqual(_safe_zip_member_name("Carpeta/REF-5678.jpg", seen), "Carpeta/REF-5678.jpg")
+        self.assertEqual(_safe_zip_member_name("../../etc/passwd", seen), "etc/passwd")
+        self.assertEqual(_safe_zip_member_name("REF-1234.jpg", seen), "REF-1234-1.jpg")
+        self.assertIsNone(_safe_zip_member_name("", seen))
+        self.assertIsNone(_safe_zip_member_name("..", seen))
+        self.assertIsNone(_safe_zip_member_name(None, seen))
+
+    def test_local_folder_archive_filters_by_extension_and_reads_subfolders(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "NK-001.jpg").write_bytes(b"foto")
+            (root / "Thumbs.db").write_bytes(b"basura")
+            (root / "sub").mkdir()
+            (root / "sub" / "NK-002.PNG").write_bytes(b"otra-foto")
+            destination = root.parent / "salida.zip"
+            try:
+                written = _write_local_images_archive(root, destination, max_files=500)
+                self.assertEqual(written, 2)
+                with zipfile.ZipFile(destination) as archive:
+                    names = set(archive.namelist())
+                self.assertEqual(names, {"NK-001.jpg", "sub/NK-002.PNG"})
+            finally:
+                destination.unlink(missing_ok=True)
+
+    def test_local_folder_archive_enforces_file_count_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for index in range(3):
+                (root / f"NK-{index}.jpg").write_bytes(b"foto")
+            destination = root.parent / "salida-limite.zip"
+            try:
+                with self.assertRaisesRegex(ValueError, "límite"):
+                    _write_local_images_archive(root, destination, max_files=2)
+            finally:
+                destination.unlink(missing_ok=True)
 
 
 class OperatorAuthenticatorTests(unittest.TestCase):
@@ -621,9 +782,12 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
     async def test_multiple_companies_require_csrf_bound_active_selection(self) -> None:
         second_id = uuid.uuid4()
         self.gateway.company_data.append({
-            "company_id": str(second_id), "code": "NATSUKI",
-            "display_name": "Natsuki", "is_active": True, "brand_count": 1,
+            "company_id": str(second_id), "code": "PDM",
+            "display_name": "PDM", "is_active": True, "brand_count": 1,
         })
+        self.gateway.company_theme_data[str(second_id)] = {
+            "primary_color": "#C60012", "secondary_color": "#202327",
+        }
         login_page = await self.client.get("/operator/login")
         response = await self.client.post(
             "/operator/login",
@@ -633,7 +797,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["location"], "/operator/company")
         selector = await self.client.get("/operator/company")
         self.assertIn("Perfect Company", selector.text)
-        self.assertIn("Natsuki", selector.text)
+        self.assertIn("PDM", selector.text)
         csrf = hidden_value(selector.text, "csrf_token")
         rejected = await self.client.post(
             "/operator/company", data={"csrf_token": "wrong", "company_id": str(second_id)},
@@ -646,7 +810,175 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(selected.headers["location"], "/operator")
         dashboard = await self.client.get("/operator")
-        self.assertIn("Natsuki", dashboard.text)
+        self.assertIn("PDM", dashboard.text)
+        self.assertIn('href="/operator/theme.css"', dashboard.text)
+        theme = await self.client.get("/operator/theme.css")
+        self.assertEqual(theme.headers["content-type"].split(";")[0], "text/css")
+        self.assertIn("--forest:#C60012", theme.text)
+        self.assertIn("--forest-dark:#8f000d", theme.text)
+        self.assertIn("--lime:#202327", theme.text)
+
+    async def test_theme_css_is_empty_without_a_configured_corporate_identity(self) -> None:
+        await self.login()
+        theme = await self.client.get("/operator/theme.css")
+        self.assertEqual(theme.text, "")
+
+    async def test_company_workspace_creates_and_safely_deactivates_companies(self) -> None:
+        await self.login()
+        selector = await self.client.get("/operator/company")
+        self.assertIn("Añadir empresa", selector.text)
+        csrf = hidden_value(selector.text, "csrf_token")
+        created = await self.client.post(
+            "/operator/company/create",
+            data={"csrf_token": csrf, "code": "NUEVA", "display_name": "Nueva Empresa",
+                  "reason": "Alta aprobada por administración", "confirm": "yes"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(created.status_code, 303)
+        self.assertEqual(self.gateway.company_changes[-1]["action"], "create")
+        other_id = uuid.uuid4()
+        deactivated = await self.client.post(
+            f"/operator/company/{other_id}/state",
+            data={"csrf_token": csrf, "active": "false", "reason": "Empresa fuera de operación",
+                  "confirm": "yes"}, headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(deactivated.status_code, 303)
+        self.assertFalse(self.gateway.company_changes[-1]["active"])
+
+    async def test_brands_page_offers_linking_unlinked_brand_to_a_profile(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/brands")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("Vincular marca con su perfil visual", page.text)
+        self.assertIn("Sin perfil vinculado todavía", page.text)
+        csrf = hidden_value(page.text, "csrf_token")
+        brand_id = self.gateway.brands(company_id=COMPANY_ID)[0]["brand_id"]
+        linked = await self.client.post(
+            "/operator/brands/link",
+            data={
+                "csrf_token": csrf, "brand_id": brand_id,
+                "brand_profile_id": str(uuid.uuid4()),
+                "expected_previous_brand_profile_id": "",
+                "reason": "Vínculo aprobado por administración", "confirm": "yes",
+            },
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(linked.status_code, 303)
+        self.assertEqual(self.gateway.company_changes[-1]["action"], "brand_profile_link")
+        rejected = await self.client.post(
+            "/operator/brands/link",
+            data={
+                "csrf_token": "wrong", "brand_id": brand_id,
+                "brand_profile_id": str(uuid.uuid4()),
+                "expected_previous_brand_profile_id": "",
+                "reason": "Vínculo aprobado por administración", "confirm": "yes",
+            },
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(rejected.status_code, 403)
+
+    async def test_brands_page_explains_when_there_is_no_profile_to_link_yet(self) -> None:
+        await self.login()
+        original_brand_profiles = self.gateway.brand_profiles
+        self.gateway.brand_profiles = lambda **_: []
+        try:
+            page = await self.client.get("/operator/brands")
+        finally:
+            self.gateway.brand_profiles = original_brand_profiles
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("Todavía no hay ningún perfil de marca en esta Company", page.text)
+        self.assertNotIn("<select name=\"brand_profile_id\"", page.text)
+
+    async def test_simple_mode_chains_dry_run_prepare_and_exact_image_matches(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/simple")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("Modo simple", page.text)
+        csrf = hidden_value(page.text, "csrf_token")
+        response = await self.client.post(
+            "/operator/simple",
+            data={
+                "csrf_token": csrf, "brand_code": "NATSUKI",
+                "reason": "Carga guiada de prueba", "confirm": "yes",
+            },
+            files=[
+                ("odoo_file", ("productos.csv", b"ref,name\nA,B\n", "text/csv")),
+                ("images", ("NK-001.jpg", b"contenido-de-prueba", "image/jpeg")),
+            ],
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 303)
+        location = response.headers["location"]
+        self.assertIn(f"/operator/plans/{PLAN_ID}", location)
+        self.assertIn("result=simple_mode", location)
+        self.assertIn("matched=1", location)
+        self.assertEqual(len(self.gateway.promotions), 1)
+        self.assertEqual(self.gateway.promotions[0]["brand_code"], "NATSUKI")
+        self.assertEqual(len(self.gateway.image_indexes), 1)
+        self.assertEqual(self.gateway.image_candidate_data[0]["decision"], "approved")
+        self.assertIsNotNone(self.gateway.image_candidate_data[0]["approved_image_materialization_id"])
+        landing = await self.client.get(location)
+        self.assertEqual(landing.status_code, 200)
+        self.assertIn("1 foto vinculada automáticamente", landing.text)
+
+    async def test_simple_mode_reads_images_from_a_local_server_folder(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/simple")
+        csrf = hidden_value(page.text, "csrf_token")
+        with tempfile.TemporaryDirectory() as local_folder:
+            local_path = Path(local_folder)
+            (local_path / "NK-001.jpg").write_bytes(b"contenido-local")
+            (local_path / "Thumbs.db").write_bytes(b"basura-de-windows")
+            response = await self.client.post(
+                "/operator/simple",
+                data={
+                    "csrf_token": csrf, "brand_code": "NATSUKI",
+                    "reason": "Carga guiada desde carpeta local", "confirm": "yes",
+                    "local_images_path": str(local_path),
+                },
+                files=[("odoo_file", ("productos.csv", b"ref,name\nA,B\n", "text/csv"))],
+                headers={"Origin": "http://testserver"},
+            )
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("matched=1", response.headers["location"])
+        self.assertEqual(len(self.gateway.image_indexes), 1)
+
+    async def test_simple_mode_rejects_missing_images_and_bad_csrf(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/simple")
+        csrf = hidden_value(page.text, "csrf_token")
+        no_images = await self.client.post(
+            "/operator/simple",
+            data={"csrf_token": csrf, "brand_code": "NATSUKI", "reason": "Sin fotos adjuntas", "confirm": "yes"},
+            files=[("odoo_file", ("productos.csv", b"ref,name\nA,B\n", "text/csv"))],
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(no_images.status_code, 409)
+        self.assertEqual(self.gateway.promotions, [])
+        both_sources = await self.client.post(
+            "/operator/simple",
+            data={
+                "csrf_token": csrf, "brand_code": "NATSUKI", "reason": "Ambas fuentes a la vez",
+                "confirm": "yes", "local_images_path": "C:\\cualquier\\ruta",
+            },
+            files=[
+                ("odoo_file", ("productos.csv", b"ref,name\nA,B\n", "text/csv")),
+                ("images", ("NK-001.jpg", b"contenido-de-prueba", "image/jpeg")),
+            ],
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(both_sources.status_code, 409)
+        self.assertEqual(self.gateway.promotions, [])
+        bad_csrf = await self.client.post(
+            "/operator/simple",
+            data={"csrf_token": "wrong", "brand_code": "NATSUKI", "reason": "Carga guiada de prueba", "confirm": "yes"},
+            files=[
+                ("odoo_file", ("productos.csv", b"ref,name\nA,B\n", "text/csv")),
+                ("images", ("NK-001.jpg", b"contenido-de-prueba", "image/jpeg")),
+            ],
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(bad_csrf.status_code, 403)
 
     async def test_direct_resource_id_is_hidden_outside_active_company(self) -> None:
         await self.login()
@@ -771,11 +1103,14 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(detail.status_code, 200)
         self.assertIn("Verificar y preparar", detail.text)
         self.assertIn(FINGERPRINT, detail.text)
+        self.assertIn("1 nuevos", detail.text)
+        self.assertIn("0 actualizan algo existente", detail.text)
+        self.assertIn("0 sin cambios", detail.text)
 
         rejected = await self.client.post(
             f"/operator/import-plans/{PLAN_ID}/prepare",
             data={
-                "csrf_token": hidden_value(detail.text, "csrf_token"), "brand_code": "NATSUKI",
+                "csrf_token": hidden_value(detail.text, "csrf_token"),
                 "fingerprint": FINGERPRINT, "reason": "Revisión piloto", "confirm": "wrong",
             },
             headers={"Origin": "http://testserver"},
@@ -786,7 +1121,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         prepared = await self.client.post(
             f"/operator/import-plans/{PLAN_ID}/prepare",
             data={
-                "csrf_token": hidden_value(detail.text, "csrf_token"), "brand_code": "NATSUKI",
+                "csrf_token": hidden_value(detail.text, "csrf_token"),
                 "fingerprint": FINGERPRINT, "reason": "Revisión piloto", "confirm": "prepare",
             },
             headers={"Origin": "http://testserver"},
@@ -795,6 +1130,38 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("result=prepared", prepared.headers["location"])
         final_detail = await self.client.get(f"/operator/import-plans/{PLAN_ID}?result=prepared")
         self.assertIn("Abrir cola de revisión", final_detail.text)
+
+    async def test_import_plan_shows_field_by_field_diff_preview_for_updates(self) -> None:
+        await self.login()
+        self.gateway.import_plan_update_count = 1
+        detail = await self.client.get(f"/operator/import-plans/{PLAN_ID}")
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn("Vista previa de cambios", detail.text)
+        self.assertIn("NK-001", detail.text)
+        self.assertIn("Empaque viejo", detail.text)
+        self.assertIn("Empaque &lt;script&gt; nuevo", detail.text)
+        self.assertNotIn("<script>", detail.text)
+
+    async def test_quick_html_export_uses_sensible_defaults_with_one_click(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/catalogs")
+        self.assertIn("HTML autónomo ya", page.text)
+        csrf = hidden_value(page.text, "csrf_token")
+        rejected = await self.client.post(
+            f"/operator/catalogs/{RELEASE_ID}/quick-html",
+            data={"csrf_token": "wrong", "title": "Catálogo 2026.08", "subtitle": "", "confirm": "yes"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(rejected.status_code, 403)
+        response = await self.client.post(
+            f"/operator/catalogs/{RELEASE_ID}/quick-html",
+            data={"csrf_token": csrf, "title": "Catálogo 2026.08", "subtitle": "Perfect · 12 productos", "confirm": "yes"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/operator/catalogs?result=created")
+        self.assertEqual(self.gateway.catalog_exports[0]["formats"], ("html-standalone",))
+        self.assertEqual(self.gateway.catalog_exports[0]["config"]["group_by"], "category_path")
 
     async def test_catalog_workspace_exports_and_downloads_manifest_files(self) -> None:
         await self.login()
@@ -984,6 +1351,31 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(published.headers["location"], "/operator/catalogs?result=published")
         self.assertEqual(draft["status"], "published")
         self.assertEqual([item["operation"] for item in self.gateway.release_changes], ["build", "publish"])
+        rejected_archive = await self.client.post(
+            f"/operator/catalogs/{draft['catalog_release_id']}/archive",
+            data={
+                "csrf_token": "wrong", "snapshot_sha256": draft["snapshot_sha256"],
+                "reason": "Reemplazada", "confirm": "yes",
+            }, headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(rejected_archive.status_code, 403)
+        archived = await self.client.post(
+            f"/operator/catalogs/{draft['catalog_release_id']}/archive",
+            data={
+                "csrf_token": csrf, "snapshot_sha256": draft["snapshot_sha256"],
+                "reason": "Reemplazada por una edición más nueva", "confirm": "yes",
+            }, headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(archived.status_code, 303)
+        self.assertEqual(archived.headers["location"], "/operator/catalogs?result=archived")
+        self.assertEqual(draft["status"], "archived")
+        self.assertEqual(
+            [item["operation"] for item in self.gateway.release_changes], ["build", "publish", "archive"]
+        )
+        listing = await self.client.get("/operator/catalogs?result=archived")
+        self.assertEqual(listing.status_code, 200)
+        self.assertIn("Release archivado por web-reviewer", listing.text)
+        self.assertIn("Release archivado. Deja de aparecer como vigente", listing.text)
 
     async def test_catalog_preview_is_read_only_limited_and_escaped(self) -> None:
         await self.login()
@@ -1039,6 +1431,28 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
             f"/operator/catalogs/{RELEASE_ID}/preview?preview_target=indesign&template_profile=T8"
         )
         self.assertEqual(invalid_profile.status_code, 400)
+
+    async def test_catalog_browse_shows_real_tabs_and_escapes_output(self) -> None:
+        await self.login()
+        response = await self.client.get(f"/operator/catalogs/{RELEASE_ID}/browse")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Motor &lt;seguro&gt;", response.text)
+        self.assertNotIn("<script>", response.text)
+        self.assertIn('class="browse-tabs"', response.text)
+        self.assertIn("NK-001", response.text)
+        other_tab = await self.client.get(
+            f"/operator/catalogs/{RELEASE_ID}/browse?group=Frenos"
+        )
+        self.assertEqual(other_tab.status_code, 200)
+        self.assertIn("NK-002", other_tab.text)
+        invalid_group_by = await self.client.get(
+            f"/operator/catalogs/{RELEASE_ID}/browse?group_by=brand"
+        )
+        self.assertEqual(invalid_group_by.status_code, 400)
+        invalid_page = await self.client.get(
+            f"/operator/catalogs/{RELEASE_ID}/browse?page=0"
+        )
+        self.assertEqual(invalid_page.status_code, 400)
         hidden_fields = await self.client.get(
             f"/operator/catalogs/{RELEASE_ID}/preview?show_brand=no&show_oem=no&show_applications=no"
         )
@@ -1129,13 +1543,13 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         self.assertEqual((await self.client.get("/openapi.json")).status_code, 404)
         self.assertEqual((await self.client.get("/api/v1/products")).status_code, 404)
-        self.assertEqual(OPERATOR_VERSION, "1.39.1")
+        self.assertEqual(OPERATOR_VERSION, "1.41.0")
 
     async def test_company_identity_upload_requires_csrf_and_records_logo_without_exposing_it(self) -> None:
         await self.login()
         page = await self.client.get("/operator/brands")
         self.assertEqual(page.status_code, 200)
-        self.assertIn("Identidad madre", page.text)
+        self.assertIn("Identidad corporativa · Perfect Company", page.text)
         self.assertIn('id="contenido-principal"', page.text)
         self.assertIn('/operator/static/brand-preview.js', page.text)
         self.assertIn("img-src 'self' blob:", page.headers["content-security-policy"])
@@ -1144,6 +1558,9 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("brand-live-preview", preview_script.text)
         self.assertIn("4.5", preview_script.text)
         self.assertIn("URL.createObjectURL", preview_script.text)
+        self.assertIn("extractPalette", preview_script.text)
+        self.assertIn("Usar estos colores", preview_script.text)
+        self.assertIn('Logo para sugerir colores', page.text)
         csrf = hidden_value(page.text, "csrf_token")
         fields = {
             "csrf_token": csrf, "scope": "company", "brand_profile_id": "", "vehicle_make_id": "",
@@ -1248,6 +1665,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         submission_id = self.gateway.intake_records[-1]["intake_submission_id"]
         form = {
             "csrf_token": csrf,
+            "brand_code": "NATSUKI",
             "reason": "Perfilado individual autorizado por calidad",
             "confirm": "yes",
         }
@@ -1283,7 +1701,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         ):
             response = await self.client.post(
                 f"/operator/intake/{submission_id}/promote",
-                data={"csrf_token": csrf, "reason": "Reintento controlado", "confirm": "yes"},
+                data={"csrf_token": csrf, "brand_code": "NATSUKI", "reason": "Reintento controlado", "confirm": "yes"},
                 headers={"Origin": "http://testserver"},
             )
         self.assertEqual(response.status_code, 503)
@@ -1307,6 +1725,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
             "intake_promotion_id": None, "import_plan_id": None, "promoted_at": None, "promoted_by": None,
             "image_archive_index_id": None, "image_index_sha256": None, "image_count": None,
             "ambiguous_count": None, "indexed_at": None, "indexed_by": None,
+            "archived": False, "archived_by": None,
         })
         path = f"/operator/intake/{submission_id}/index-images"
         form = {"csrf_token": csrf, "reason": "Índice autorizado", "confirm": "yes"}
@@ -1334,6 +1753,17 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("NK-001.jpg", queue.text)
         self.assertIn("Empaque &lt;seguro&gt;", queue.text)
         candidate = self.gateway.image_candidate_data[0]
+        self.assertIn(
+            f'src="/operator/images/candidates/{candidate["image_product_candidate_id"]}/preview"',
+            queue.text,
+        )
+        preview = await self.client.get(
+            f"/operator/images/candidates/{candidate['image_product_candidate_id']}/preview"
+        )
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.headers["content-type"], "image/jpeg")
+        missing_preview = await self.client.get(f"/operator/images/candidates/{uuid.uuid4()}/preview")
+        self.assertEqual(missing_preview.status_code, 404)
         decided = await self.client.post(
             f"/operator/images/candidates/{candidate['image_product_candidate_id']}/decision",
             data={"csrf_token": csrf, "evidence_sha256": candidate["evidence_sha256"],
@@ -1497,6 +1927,58 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
 
         invalid_filter = await self.client.get("/operator/intake?kind=executable")
         self.assertEqual(invalid_filter.status_code, 400)
+
+    async def test_intake_submission_can_be_archived_and_restored_without_deleting_evidence(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/intake")
+        csrf = hidden_value(page.text, "csrf_token")
+        uploaded = await self.client.post(
+            "/operator/intake",
+            data={"csrf_token": csrf, "kind": "manual_pdf", "reason": "Manual viejo sin uso", "confirm": "yes"},
+            files={"file": ("manual-viejo.pdf", b"%PDF-1.7\nvalid", "application/pdf")},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(uploaded.status_code, 303)
+        submission_id = self.gateway.intake_records[0]["intake_submission_id"]
+
+        active_list = await self.client.get("/operator/intake")
+        self.assertIn("manual-viejo.pdf", active_list.text)
+        self.assertIn("Archivar (no borra nada)", active_list.text)
+
+        rejected_csrf = await self.client.post(
+            f"/operator/intake/{submission_id}/archive",
+            data={"csrf_token": "wrong", "archived": "true", "reason": "Ya no se usa", "confirm": "archive"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(rejected_csrf.status_code, 403)
+
+        archived = await self.client.post(
+            f"/operator/intake/{submission_id}/archive",
+            data={"csrf_token": csrf, "archived": "true", "reason": "Ya no se usa", "confirm": "archive"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(archived.status_code, 303)
+        self.assertIn("result=archived", archived.headers["location"])
+        self.assertTrue(self.gateway.intake_records[0]["archived"])
+
+        hidden_now = await self.client.get("/operator/intake")
+        self.assertNotIn("manual-viejo.pdf", hidden_now.text)
+
+        archived_view = await self.client.get("/operator/intake?archived=archived")
+        self.assertIn("manual-viejo.pdf", archived_view.text)
+        self.assertIn("Archivado por web-reviewer", archived_view.text)
+        self.assertIn("Restaurar a la lista activa", archived_view.text)
+
+        restored = await self.client.post(
+            f"/operator/intake/{submission_id}/archive",
+            data={"csrf_token": csrf, "archived": "false", "reason": "Vuelve a hacer falta", "confirm": "restore"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(restored.status_code, 303)
+        self.assertIn("result=unarchived", restored.headers["location"])
+        self.assertFalse(self.gateway.intake_records[0]["archived"])
+        visible_again = await self.client.get("/operator/intake")
+        self.assertIn("manual-viejo.pdf", visible_again.text)
 
 
 if __name__ == "__main__":

@@ -5,8 +5,11 @@
 ```
 ┌─ Perfect Trading (Empresa)
 │  ├─ Perfect (Marca)
-│  └─ Natsuki (Marca) ← Primera implementación
-│     └─ 25,000+ referencias
+│  ├─ Natsuki (Marca) ← Primera implementación
+│  ├─ Masaki (Marca)
+│  └─ Exact Cars (Marca)
+└─ PDM (Empresa independiente)
+   └─ Marcas administradas por PDM
 ```
 
 ## Inicio Rápido
@@ -59,6 +62,9 @@ historial técnico de esos cambios y no son accesos de uso diario. No debes esco
 Desde la versión 1.37 también habilita Company activa de extremo a extremo: al entrar se elige la
 empresa de trabajo y sus ingresos, imágenes, planes, marcas, catálogos e identidad corporativa se
 muestran y procesan únicamente dentro de ese contexto.
+La pantalla **Empresa** permite crear, desactivar y reactivar empresas. Desactivar conserva el
+historial y sustituye el borrado destructivo. Natsuki, Masaki y Exact Cars se administran como
+marcas dentro de Perfect Trading; PDM es una empresa independiente y no hereda identidad de Perfect.
 Úsalo después de recibir una actualización que incluya cambios de base de datos o cuando la consola
 lo indique. Para el trabajo normal abre únicamente `INICIAR-REVISOR.cmd`.
 
@@ -70,14 +76,6 @@ Solicita la contraseña de `postgres` de forma oculta, crea un backup lógico co
 de sólo lectura con esquema, marcas, productos, releases, referencias, identidades y permisos.
 No modifica PostgreSQL ni aplica migraciones. El informe se usa para completar y aprobar
 [`docs/MAPPING-COMPANY-BRAND-INICIAL.md`](docs/MAPPING-COMPANY-BRAND-INICIAL.md).
-
-Al hacer doble clic en `INICIAR-SERVER.cmd`, la web queda visible en
-`http://127.0.0.1:8080/`. Ese iniciador conserva deliberadamente el piloto XLSX y detecta el archivo más reciente de
-`data/imports`. Para fijar una fuente concreta:
-
-```powershell
-.\.venv\Scripts\perfect-catalog-api.exe --source "data\imports\NATSUKI_EMPAQUES_MAESTRO.xlsx"
-```
 
 Para consultar el último release publicado e inmutable desde PostgreSQL, usa
 `INICIAR-CATALOGO-PUBLICADO.cmd`. Solicita la contraseña de forma oculta y conserva el servidor en
@@ -164,18 +162,19 @@ productos) y luego aplicar el plan aprobado. Los productos aplicados quedan pend
 individual; sus OEM, FMSI y referencias adicionales detectadas se muestran y resuelven junto con la
 misma identidad. Nunca se publican automáticamente. Véase [`docs/OPERATOR_WEB.md`](docs/OPERATOR_WEB.md).
 
-Sin `--source` ni `--source-dir`, la API v1.2 lee por defecto el último release publicado de la
-marca solicitada y expone UUID estables. El release completo y cada snapshot se validan contra sus
-checksums antes de responder:
+La API v1.2 solo lee releases publicados desde PostgreSQL; el modo piloto que leía un XLSX
+directamente (`--source`/`--source-dir`) se retiró por evadir cuarentena/dry-run/aprobación, igual
+que `INICIAR-SERVER.cmd`. `--brand` es obligatorio y expone UUID estables de la marca pedida. El
+release completo y cada snapshot se validan contra sus checksums antes de responder:
 
 ```powershell
 .\.venv\Scripts\perfect-catalog-api.exe --brand NATSUKI --prompt-password
 ```
 
-Actualmente no existe un release empresarial publicado, por lo que ese comando debe fallar de
-forma explícita hasta completar una publicación controlada. Los IDs `source-row:*` solo existen en
-el modo piloto XLSX y nunca deben tratarse como identidad empresarial. El contrato del read model
-se documenta en [`docs/RELEASE_READ_MODEL.md`](docs/RELEASE_READ_MODEL.md).
+`INICIAR-CATALOGO-PUBLICADO.cmd` pregunta qué marca abrir en vez de tener una fija. Si esa marca
+no tiene ningún release publicado, el comando falla de forma explícita hasta completar una
+publicación controlada. El contrato del read model se documenta en
+[`docs/RELEASE_READ_MODEL.md`](docs/RELEASE_READ_MODEL.md).
 
 ### Pruebas
 

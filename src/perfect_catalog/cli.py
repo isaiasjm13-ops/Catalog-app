@@ -58,6 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--company-id", type=uuid.UUID, required=True,
         help="Company exacta que será propietaria del plan; la consola web la completa automáticamente.",
     )
+    import_parser.add_argument("--brand-code", default="NATSUKI")
     import_parser.add_argument(
         "--max-rows",
         type=int,
@@ -74,6 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     promotion_parser.add_argument("--intake-root", type=Path, default=Path("data/intake"))
     promotion_parser.add_argument("--output-dir", type=Path, default=Path("data/exports/imports"))
     promotion_parser.add_argument("--max-rows", type=int, default=DEFAULT_MAX_PILOT_ROWS)
+    promotion_parser.add_argument("--brand-code", default="NATSUKI")
     _human_evidence_arguments(promotion_parser)
     _database_arguments(promotion_parser)
 
@@ -130,7 +132,7 @@ def build_parser() -> argparse.ArgumentParser:
     build_release_parser.add_argument("plan_id", type=uuid.UUID)
     build_release_parser.add_argument("--fingerprint", required=True)
     build_release_parser.add_argument("--version", required=True)
-    build_release_parser.add_argument("--brand", default="NATSUKI")
+    build_release_parser.add_argument("--brand", required=True, help="Marca de producto exacta del plan")
     _human_evidence_arguments(build_release_parser)
     _database_arguments(build_release_parser)
 
@@ -206,11 +208,12 @@ def main(argv: list[str] | None = None) -> int:
             result = run_dry_run(
                 args.source, config, password, args.output_dir, args.max_rows,
                 company_id=args.company_id,
+                brand_code=args.brand_code,
             )
         elif args.command == "promote-intake":
             result = promote_intake_to_dry_run(
                 args.submission_id, args.intake_root, config, password, args.output_dir,
-                actor=args.actor, reason=args.reason, max_rows=args.max_rows,
+                actor=args.actor, reason=args.reason, brand_code=args.brand_code, max_rows=args.max_rows,
             )
         elif args.command == "index-images":
             result = build_image_archive_index(

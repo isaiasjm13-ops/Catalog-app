@@ -111,3 +111,80 @@ def create_brand_profile(
              profile["paper_color"], profile["public_base_url"], actor, reason),
         ).fetchone()
     return dict(row)
+
+
+def list_company_brands(
+    config: DatabaseConfig, password: str, *, company_id: uuid.UUID,
+) -> list[dict[str, Any]]:
+    """Brands reales (perfect_catalog.brand) de la Company, con su vinculo de perfil si existe.
+
+    Distinto de list_brand_profiles: un brand_profile puede existir sin que ninguna Brand
+    lo tenga asignado todavia, y una Brand puede existir (sembrada por migracion o creada
+    por un alta previa) sin perfil. El dry-run exige el vinculo; esta lista es la evidencia
+    que el operador necesita para completarlo desde /operator/brands.
+    """
+    with psycopg.connect(**config.connection_kwargs(password), row_factory=dict_row) as connection:
+        rows = connection.execute(
+            """
+            SELECT b.brand_id, b.code, b.name, b.is_active, b.brand_profile_id,
+                   bp.code AS linked_profile_code, bp.display_name AS linked_profile_name
+            FROM perfect_catalog.brand AS b
+            LEFT JOIN perfect_catalog.brand_profile AS bp
+              ON bp.brand_profile_id = b.brand_profile_id
+            WHERE b.company_id = %s
+            ORDER BY b.name, b.code
+            """,
+            (company_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def link_brand_profile(
+    *, brand_id: uuid.UUID, brand_profile_id: uuid.UUID,
+    expected_previous_brand_profile_id: uuid.UUID | None,
+    actor: str, reason: str, config: DatabaseConfig, password: str,
+) -> dict[str, Any]:
+    actor = str(actor or "").strip()
+    reason = str(reason or "").strip()
+    if not actor or len(actor) > 120:
+        raise ValueError("El operador no es valido.")
+    if not 4 <= len(reason) <= 500:
+        raise ValueError("El motivo debe contener entre 4 y 500 caracteres.")
+    with psycopg.connect(**config.connection_kwargs(password), row_factory=dict_row) as connection:
+        connection.execute("SELECT pg_advisory_xact_lock(hashtext('perfect_catalog.brand_profile_link'))")
+        brand = connection.execute(
+            """SELECT brand_id, company_id, brand_profile_id, is_active
+               FROM perfect_catalog.brand WHERE brand_id=%s FOR UPDATE""",
+            (brand_id,),
+        ).fetchone()
+        if brand is None or not brand["is_active"]:
+            raise ValueError("La marca no existe o esta inactiva.")
+        if brand["brand_profile_id"] != expected_previous_brand_profile_id:
+            raise PermissionError(
+                "El vinculo actual de la marca cambio desde que abriste esta pagina; recarga e intenta de nuevo."
+            )
+        profile = connection.execute(
+            "SELECT brand_profile_id, company_id FROM perfect_catalog.brand_profile WHERE brand_profile_id=%s",
+            (brand_profile_id,),
+        ).fetchone()
+        if profile is None:
+            raise ValueError("El perfil de marca no existe.")
+        if profile["company_id"] != brand["company_id"]:
+            raise ValueError("El perfil de marca pertenece a otra Company.")
+        if brand["brand_profile_id"] == brand_profile_id:
+            raise ValueError("La marca ya esta vinculada a ese perfil.")
+        updated = connection.execute(
+            """UPDATE perfect_catalog.brand SET brand_profile_id=%s, updated_at=CURRENT_TIMESTAMP
+               WHERE brand_id=%s RETURNING *""",
+            (brand_profile_id, brand_id),
+        ).fetchone()
+        connection.execute(
+            """
+            INSERT INTO perfect_catalog.brand_profile_link_event (
+                brand_profile_link_event_id, brand_id, previous_brand_profile_id,
+                new_brand_profile_id, actor, reason
+            ) VALUES (%s,%s,%s,%s,%s,%s)
+            """,
+            (uuid.uuid4(), brand_id, brand["brand_profile_id"], brand_profile_id, actor, reason),
+        )
+    return dict(updated)

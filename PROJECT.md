@@ -6,10 +6,11 @@ Sistema local de catálogo de autopartes que posteriormente puede publicarse en 
 
 ## Estructura Organizativa
 
-- **Empresa**: Perfect Trading
-- **Marca Corporativa**: Perfect
-- **Primera Marca Implementada**: Natsuki
-- **Arquitectura**: Diseñada para múltiples marcas desde el inicio
+- **Empresas confirmadas**: Perfect Trading y PDM (independientes)
+- **Marcas de Perfect Trading confirmadas**: Natsuki, Masaki y Exact Cars
+- **Marca corporativa de Perfect Trading**: Perfect
+- **Marcas de PDM**: se administran dentro del contexto PDM y no heredan identidad de Perfect
+- **Arquitectura**: multiempresa y multimarca; una marca pertenece a una sola empresa
 
 ## Fuente de Datos Maestra
 
@@ -22,7 +23,9 @@ Sistema local de catálogo de autopartes que posteriormente puede publicarse en 
 ### 1. Integridad de Datos
 - Perfect Trading es la empresa.
 - Perfect es una marca distinta dentro de Perfect Trading.
-- La primera marca implementada será Natsuki.
+- Natsuki, Masaki y Exact Cars son marcas de Perfect Trading, no empresas.
+- PDM es una empresa independiente; sus catálogos no muestran identidad de Perfect ni Natsuki.
+- Las empresas pueden crearse y desactivarse desde la consola sin borrar su historial.
 - Odoo será la fuente maestra de productos.
 - No se eliminarán productos automáticamente.
 - Las fotografías originales nunca se modificarán.
