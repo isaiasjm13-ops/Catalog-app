@@ -86,6 +86,19 @@ def _company_name(config: dict[str, Any]) -> str:
     return str(company.get("display_name") or "Empresa del catálogo")
 
 
+def _resolve_visual_context(config: dict[str, Any]) -> dict[str, Any]:
+    """Paleta de marca, paleta de empresa y nombre de empresa: el trío que los tres generadores
+    (PDF, PPTX, HTML) resolvían cada uno por separado a partir del mismo config. El logo no
+    entra aquí a propósito: cada generador lo pide en momentos distintos (portada, esquina,
+    marca de agua) con banderas distintas (`company=`, `raster_only=`), así que forzarlo a un
+    valor único calculado por adelantado cambiaría ese comportamiento en vez de solo desduplicar."""
+    return {
+        "palette": _theme(config),
+        "company_palette": _company_theme(config),
+        "company_name": _company_name(config),
+    }
+
+
 def _logo_path(
     config: dict[str, Any], bundle_dir: Path | None = None, *,
     company: bool = False, raster_only: bool = False,
@@ -319,9 +332,10 @@ def generate_catalog_pdf(
     release = release or {}
     columns, page_capacity = _layout(config)
     title = str(config.get("title") or "Catálogo de productos")
-    palette = _theme(config)
-    company_palette = _company_theme(config)
-    company_name = _company_name(config)
+    visual_context = _resolve_visual_context(config)
+    palette = visual_context["palette"]
+    company_palette = visual_context["company_palette"]
+    company_name = visual_context["company_name"]
     title_font, body_font, body_bold_font = _catalog_pdf_fonts(config)
     styles = getSampleStyleSheet()
     cover_title_style = ParagraphStyle(
@@ -481,9 +495,10 @@ def generate_catalog_pptx(
     release = release or {}
     columns, per_slide = _layout(config)
     title = str(config.get("title") or "Catálogo de productos")
-    palette = _theme(config)
-    company_palette = _company_theme(config)
-    company_name = _company_name(config)
+    visual_context = _resolve_visual_context(config)
+    palette = visual_context["palette"]
+    company_palette = visual_context["company_palette"]
+    company_name = visual_context["company_name"]
     primary_rgb = RGBColor.from_string(palette["primary"].lstrip("#"))
     secondary_rgb = RGBColor.from_string(palette["secondary"].lstrip("#"))
     prs = Presentation()
@@ -595,9 +610,10 @@ def generate_catalog_html(
     config = config or {}
     release = release or {}
     columns, _ = _layout(config)
-    palette = _theme(config)
-    company_palette = _company_theme(config)
-    company_name = escape(_company_name(config))
+    visual_context = _resolve_visual_context(config)
+    palette = visual_context["palette"]
+    company_palette = visual_context["company_palette"]
+    company_name = escape(visual_context["company_name"])
     title = escape(str(config.get("title") or "Catálogo de productos"))
     subtitle = escape(str(config.get("subtitle") or ""))
     sections: list[str] = []
