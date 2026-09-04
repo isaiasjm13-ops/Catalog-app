@@ -1298,20 +1298,6 @@ class DatabaseReviewGateway:
 
         return list_plan_update_diffs(plan_id, self._config, self._password, limit=limit, offset=offset)
 
-    def approve_import_plan(
-        self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
-    ) -> dict[str, Any]:
-        from .application import approve_plan
-
-        return approve_plan(plan_id, fingerprint, actor, reason, self._config, self._password)
-
-    def apply_import_plan(
-        self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
-    ) -> dict[str, Any]:
-        from .application import apply_approved_plan
-
-        return apply_approved_plan(plan_id, fingerprint, actor, reason, self._config, self._password)
-
     def prepare_import_plan(
         self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
     ) -> dict[str, Any]:

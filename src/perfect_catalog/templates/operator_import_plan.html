@@ -64,17 +64,6 @@
     <button class="primary-button" type="submit">Verificar y preparar</button>
   </form>
 </section>
-{% elif plan.plan_status == 'approved' %}
-<section class="transition-panel danger-zone">
-  <h2>2. Aplicar plan aprobado</h2>
-  <p>Esta acción crea los productos admitidos en estado pendiente. Después deberás revisar cada identidad antes de publicar.</p>
-  <form method="post" action="/operator/import-plans/{{ plan.plan_id }}/apply">
-    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}"><input type="hidden" name="fingerprint" value="{{ plan.approval_fingerprint_sha256 }}">
-    <label><span>Motivo de aplicación</span><textarea name="reason" minlength="4" maxlength="500" required></textarea></label>
-    <label class="confirm-field"><input type="checkbox" name="confirm" value="apply" required><span>Confirmo la escritura de este plan aprobado y la revisión individual posterior.</span></label>
-    <button class="primary-button" type="submit">Aplicar plan aprobado</button>
-  </form>
-</section>
 {% elif plan.plan_status == 'applied' %}
 <section class="transition-panel"><h2>Plan aplicado</h2><p>Continúa con la revisión individual; ningún producto queda publicado automáticamente.</p><a class="primary-button" href="/operator/plans/{{ plan.plan_id }}?state=pending">Abrir cola de revisión</a></section>
 {% else %}

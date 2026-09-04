@@ -167,22 +167,6 @@ class SyntheticReviewGateway:
     def visual_identity_asset(self, revision_id: uuid.UUID, asset_root: Path) -> tuple[Path, str]:
         raise FileNotFoundError(revision_id)
 
-    def approve_import_plan(
-        self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
-    ) -> dict[str, Any]:
-        if plan_id != PLAN_ID or fingerprint != FINGERPRINT or self.import_plan_status != "awaiting_review":
-            raise PermissionError("Aprobación rechazada")
-        self.import_plan_status = "approved"
-        return {"plan_id": str(plan_id), "status": "approved", "approved_by": actor}
-
-    def apply_import_plan(
-        self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
-    ) -> dict[str, Any]:
-        if plan_id != PLAN_ID or fingerprint != FINGERPRINT or self.import_plan_status != "approved":
-            raise PermissionError("Aplicación rechazada")
-        self.import_plan_status = "applied"
-        return {"plan_id": str(plan_id), "status": "applied", "counts": {"create": 1}}
-
     def prepare_import_plan(
         self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
     ) -> dict[str, Any]:

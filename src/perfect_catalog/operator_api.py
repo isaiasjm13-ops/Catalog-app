@@ -160,14 +160,6 @@ class ReviewGateway(Protocol):
         self, plan_id: uuid.UUID, *, limit: int = 50, offset: int = 0,
     ) -> dict[str, Any]: ...
 
-    def approve_import_plan(
-        self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
-    ) -> dict[str, Any]: ...
-
-    def apply_import_plan(
-        self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
-    ) -> dict[str, Any]: ...
-
     def prepare_import_plan(
         self, plan_id: uuid.UUID, fingerprint: str, actor: str, reason: str,
     ) -> dict[str, Any]: ...
@@ -2544,9 +2536,8 @@ def create_operator_app(
             update_diffs=update_diffs, session=session_or_redirect, version=OPERATOR_VERSION,
         )
 
-    async def _import_plan_transition(
-        request: Request, plan_id: str, transition: str,
-    ) -> Response:
+    @app.post("/operator/import-plans/{plan_id}/prepare")
+    async def prepare_import_plan_route(request: Request, plan_id: str) -> Response:
         session_or_redirect = require_session(request)
         if isinstance(session_or_redirect, RedirectResponse):
             return session_or_redirect
@@ -2561,16 +2552,12 @@ def create_operator_app(
             reason = _require_text(form["reason"], "reason")
             if not 4 <= len(reason) <= MAX_REASON_LENGTH:
                 raise ValueError("reason debe contener entre 4 y 500 caracteres.")
-            if form["confirm"] != transition:
+            if form["confirm"] != "prepare":
                 raise ValueError("La confirmación explícita no coincide con la operación.")
             parsed_plan_id = _uuid(plan_id, "plan_id")
-            action = (
-                gateway.prepare_import_plan if transition == "prepare"
-                else gateway.approve_import_plan if transition == "approve"
-                else gateway.apply_import_plan
+            result = await run_in_threadpool(
+                gateway.prepare_import_plan, parsed_plan_id, form["fingerprint"], session.actor, reason,
             )
-            args = [parsed_plan_id, form["fingerprint"], session.actor, reason]
-            result = await run_in_threadpool(action, *args)
         except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
             return _error(environment, 409, "Operación no aplicada", str(exc), session=session)
         except Exception as exc:
@@ -2579,18 +2566,6 @@ def create_operator_app(
             f"/operator/import-plans/{plan_id}?{urlencode({'result': str(result['status'])})}",
             status_code=303,
         )
-
-    @app.post("/operator/import-plans/{plan_id}/approve")
-    async def approve_import_plan_route(request: Request, plan_id: str) -> Response:
-        return await _import_plan_transition(request, plan_id, "approve")
-
-    @app.post("/operator/import-plans/{plan_id}/apply")
-    async def apply_import_plan_route(request: Request, plan_id: str) -> Response:
-        return await _import_plan_transition(request, plan_id, "apply")
-
-    @app.post("/operator/import-plans/{plan_id}/prepare")
-    async def prepare_import_plan_route(request: Request, plan_id: str) -> Response:
-        return await _import_plan_transition(request, plan_id, "prepare")
 
     @app.post("/operator/plans/{plan_id}/products/{product_id}/decision")
     async def decide(request: Request, plan_id: str, product_id: str) -> Response:
