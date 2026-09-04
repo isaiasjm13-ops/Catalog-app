@@ -257,7 +257,32 @@ SELECT checksum_sha256 <> :'checksum_0026' AS mismatch_0026 FROM perfect_catalog
 \ir ../migrations/0026_product_photo_variants.sql
 \endif
 
-\echo 'Validando ledger 0017-0026 y contexto Company'
+
+SELECT (
+    NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname='ck_image_product_candidate_algorithm'
+          AND conrelid='perfect_catalog.image_product_candidate'::regclass
+          AND pg_get_constraintdef(oid) LIKE '%exact-approved-reference-v3%'
+    )
+) AS need_0027 \gset
+SELECT EXISTS (SELECT 1 FROM perfect_catalog.schema_migration WHERE migration_id='0027_image_variant_letter_suffix') AS ledger_0027 \gset
+\if :ledger_0027
+SELECT checksum_sha256 <> :'checksum_0027' AS mismatch_0027 FROM perfect_catalog.schema_migration WHERE migration_id='0027_image_variant_letter_suffix' \gset
+\if :mismatch_0027
+\echo 'CHECKSUM_MISMATCH: 0027_image_variant_letter_suffix.'
+\quit 3
+\endif
+\else
+\if :need_0027
+\echo 'MIGRATION_PENDING: 0027 - sufijo de letra para fotos variantes'
+\else
+\echo 'SCHEMA_AHEAD_OF_LEDGER: 0027; validando postcondiciones.'
+\endif
+\ir ../migrations/0027_image_variant_letter_suffix.sql
+\endif
+
+\echo 'Validando ledger 0017-0027 y contexto Company'
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -290,8 +315,11 @@ BEGIN
     ) OR NOT EXISTS (
         SELECT 1 FROM perfect_catalog.schema_migration
         WHERE migration_id = '0026_product_photo_variants'
+    ) OR NOT EXISTS (
+        SELECT 1 FROM perfect_catalog.schema_migration
+        WHERE migration_id = '0027_image_variant_letter_suffix'
     ) THEN
-        RAISE EXCEPTION 'Validacion del sistema: faltan entradas 0017-0026 en el ledger';
+        RAISE EXCEPTION 'Validacion del sistema: faltan entradas 0017-0027 en el ledger';
     END IF;
 
     IF EXISTS (
@@ -400,6 +428,15 @@ BEGIN
           AND NOT tgisinternal
     ) THEN
         RAISE EXCEPTION 'Validacion de fotos variantes: falta guardia append-only 0026';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname='ck_image_product_candidate_algorithm'
+          AND conrelid='perfect_catalog.image_product_candidate'::regclass
+          AND pg_get_constraintdef(oid) LIKE '%exact-approved-reference-v3%'
+    ) THEN
+        RAISE EXCEPTION 'Validacion de fotos variantes: falta algoritmo v3 (sufijo de letra) 0027';
     END IF;
 END
 $$;

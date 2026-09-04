@@ -1,5 +1,33 @@
 # HANDOFF.md - Estado de Traspasos Entre Sesiones
 
+## Bloque 2026-09-04 (cont. 6): fotos variantes con sufijo de letra (bug real de la convención)
+
+- El usuario reportó que la galería de fotos nunca aparecía para sus productos reales, aunque
+  sí funcionaba en las pruebas. Causa real: su convención de nombres de archivo para fotos
+  adicionales usa **letras** (`CKT-507AU-LB A`, `CKT-507AU-LB - A`, `CKT-507AU-LB (A)`, luego
+  B, C, D, E, F...), no el sufijo numérico (`-2`, `-3`) que era lo único que reconocía el
+  sistema. Todas sus fotos con letra quedaban silenciosamente sin ningún candidato de
+  coincidencia — invisibles, no solo sin galería.
+- `normalize_image_key` ya colapsaba espacio/guion/paréntesis al mismo `-`, así que las tres
+  variantes de escritura del usuario ya normalizaban igual; solo faltaba reconocer la letra
+  final. `split_variant_suffix` ahora reconoce también un sufijo de una sola letra: `A` significa
+  "foto principal" (igual que no tener sufijo), `B`, `C`, `D`... son fotos adicionales
+  (variant_index 2, 3, 4...).
+- **Bug que me atrapé a mí mismo antes de terminar**: al hacer que "A" devolviera `None` (para
+  tratarse igual que "sin sufijo"), el código que llama a `split_variant_suffix` usaba
+  `if suffix is not None` para decidir si intentar la coincidencia — eso habría ignorado
+  silenciosamente el caso "A" (su valor SÍ es None). Se corrigió comparando `base_key !=
+  lookup_key` en su lugar, que distingue correctamente "no se reconoció ningún sufijo" de
+  "se reconoció un sufijo que resulta en la foto principal". Las pruebas nuevas cubren
+  exactamente este caso para que no vuelva a pasar inadvertido.
+- Algoritmo de coincidencia subido a `exact-approved-reference-v3` (migración `0027`, mismo
+  patrón de `DROP CONSTRAINT IF EXISTS`/`ADD CONSTRAINT` que 0026 para poder re-ejecutarse; v1
+  y v2 se conservan porque ya hay candidatos reales generados con esas versiones).
+- Verificación: 377 pruebas correctas, 6 integraciones PostgreSQL omitidas sin credenciales.
+- Pendiente: aplicar la migración 0027 (`ACTUALIZAR-SISTEMA.cmd`) contra la base real, y volver
+  a intentar con una foto real de letra (ej. `CKT-507AU-LB B.jpg`) para confirmar que ahora sí
+  genera un candidato y, una vez aprobada, aparece en la galería del HTML autónomo.
+
 ## Bloque 2026-09-04 (cont. 5): resto de la lista de mejoras ("haz todo")
 
 - **Migración 0026 corregida**: el archivo ya aplicaba todo su DDL pero le faltaba insertar su

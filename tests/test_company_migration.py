@@ -45,7 +45,7 @@ class CompanyMigrationTests(unittest.TestCase):
 
     def test_updater_enforces_post_migration_company_invariants(self) -> None:
         sql = (ROOT / "db/bootstrap/apply_pending_migrations.sql").read_text(encoding="utf-8")
-        self.assertIn("faltan entradas 0017-0026 en el ledger", sql)
+        self.assertIn("faltan entradas 0017-0027 en el ledger", sql)
         self.assertIn("SELECT 1 FROM perfect_catalog.brand WHERE company_id IS NULL", sql)
         self.assertIn("b.code = 'EXACTCARS' AND c.code <> 'PERFECT'", sql)
         self.assertIn("b.code = 'MASAKI' AND c.code <> 'PERFECT'", sql)

@@ -12,7 +12,7 @@ from .config import DatabaseConfig
 from .image_archive_index import normalize_image_key, split_variant_suffix
 from .intake_promotion import _actor, _reason
 
-MATCH_ALGORITHM = "exact-approved-reference-v2"
+MATCH_ALGORITHM = "exact-approved-reference-v3"
 MATCH_NAMESPACE = uuid.UUID("31173b46-b264-4bf7-91ef-fbbd62ace671")
 
 
@@ -20,7 +20,8 @@ def exact_image_candidates(
     entries: list[dict[str, Any]], references: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     """Empareja por nombre de archivo exacto. `REF-1234.jpg` es la foto principal; un sufijo
-    `-N` (`REF-1234-2.jpg`) es una foto adicional de la misma referencia, no otro producto."""
+    numérico (`REF-1234-2.jpg`) o de una sola letra (`REF-1234-B.jpg`, o `A` para la principal)
+    es una foto adicional de la misma referencia, no otro producto."""
     references_by_key: dict[str, list[dict[str, Any]]] = {}
     for reference in references:
         key = normalize_image_key(str(reference["value_original"]))
@@ -33,7 +34,10 @@ def exact_image_candidates(
         variant_index: int | None = None
         if not matches:
             base_key, suffix = split_variant_suffix(lookup_key)
-            if suffix is not None:
+            # base_key != lookup_key means a suffix WAS recognized, even when it resolves to
+            # None (the "A" letter, or no suffix, both mean "this is the main photo") — using
+            # `suffix is not None` here would wrongly skip the "A" case, since its value IS None.
+            if base_key != lookup_key:
                 matches = references_by_key.get(base_key)
                 variant_index = suffix
         for reference in matches or []:

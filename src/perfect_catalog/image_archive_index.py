@@ -37,23 +37,32 @@ def normalize_image_key(filename: str) -> str:
 
 
 _VARIANT_SUFFIX_RE = re.compile(r"^(.+)-([2-9]|[1-9]\d)$")
+_VARIANT_LETTER_RE = re.compile(r"^(.+)-([A-Z])$")
 
 
 def split_variant_suffix(key: str) -> tuple[str, int | None]:
-    """`REF-1234-2` -> (`REF-1234`, 2): a normalized key ending in `-<N>` (2 <= N <= 99) names
-    an extra photo of the base reference, not a different product. `REF-1234` (no suffix) is
-    always the main photo; there is no `-1` variant by convention, only `-2`, `-3`, etc.
+    """`REF-1234-2` -> (`REF-1234`, 2); `REF-1234-B` -> (`REF-1234`, 2): a normalized key ending
+    in `-<N>` (2-99) or a single trailing letter names an extra photo of the base reference, not
+    a different product. Both conventions are real: some catalogs number extra photos (`-2`,
+    `-3`...), others letter every photo including the first (`A`, `B`, `C`...). `A` and no
+    suffix at all both mean "the main photo" — they return the same thing here (None) so the
+    caller treats them identically; `B`, `C`, `D`... map to 2, 3, 4...
 
-    The suffix is capped at two digits on purpose: a real reference's own trailing digits
-    (e.g. `REF-1234`, four digits) must never be misread as a huge variant index. This is
-    only a heuristic fallback — callers must always try an exact, unsplit match against real
-    approved references first, and only fall back to this split when that direct match finds
-    nothing, so a reference that genuinely ends in `-2`..`-99` is never shadowed by it.
+    Both suffix styles are heuristic fallbacks — callers must always try an exact, unsplit
+    match against real approved references first, and only fall back to this split when that
+    direct match finds nothing, so a reference that genuinely ends in `-2`..`-99` or `-A`..`-Z`
+    is never shadowed by it. The numeric suffix is capped at two digits so a reference's own
+    trailing digits (e.g. `REF-1234`) are never misread as a huge variant index.
     """
     match = _VARIANT_SUFFIX_RE.fullmatch(key)
-    if not match:
-        return key, None
-    return match.group(1), int(match.group(2))
+    if match:
+        return match.group(1), int(match.group(2))
+    letter_match = _VARIANT_LETTER_RE.fullmatch(key)
+    if letter_match:
+        letter = letter_match.group(2)
+        index = ord(letter) - ord("A") + 1  # A=1 (primary, same as no suffix), B=2, C=3, ...
+        return letter_match.group(1), None if index == 1 else index
+    return key, None
 
 
 def inspect_image_archive(path: Path) -> dict[str, Any]:

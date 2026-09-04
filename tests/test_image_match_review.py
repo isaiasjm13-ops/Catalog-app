@@ -41,6 +41,32 @@ class ImageMatchReviewTests(unittest.TestCase):
         self.assertEqual(candidates[0]["variant_index"], 2)
         self.assertEqual(candidates[0]["product_reference_id"], str(reference_id))
 
+    def test_letter_a_suffix_matches_as_the_primary_photo_not_a_variant(self) -> None:
+        """Bug real reportado por el usuario: su convención le pone letra a TODAS las fotos,
+        incluida la principal (`CKT-507AU-LB-A`). 'A' debe tratarse igual que no tener sufijo
+        — variant_index=None — no como si fuera 'la variante número 1'."""
+        entry_id, reference_id, product_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        entries = [{"image_archive_entry_id": entry_id, "content_sha256": "a" * 64, "lookup_key": "CKT-507AU-LB-A"}]
+        references = [{
+            "product_reference_id": reference_id, "product_template_id": product_id,
+            "product_variant_id": None, "value_original": "CKT-507AU-LB", "value_normalized": "CKT-507AU-LB",
+        }]
+        candidates = exact_image_candidates(entries, references)
+        self.assertEqual(len(candidates), 1)
+        self.assertIsNone(candidates[0]["variant_index"])
+        self.assertEqual(candidates[0]["product_reference_id"], str(reference_id))
+
+    def test_letter_b_suffix_matches_as_variant_two(self) -> None:
+        entry_id, reference_id, product_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        entries = [{"image_archive_entry_id": entry_id, "content_sha256": "a" * 64, "lookup_key": "CKT-507AU-LB-B"}]
+        references = [{
+            "product_reference_id": reference_id, "product_template_id": product_id,
+            "product_variant_id": None, "value_original": "CKT-507AU-LB", "value_normalized": "CKT-507AU-LB",
+        }]
+        candidates = exact_image_candidates(entries, references)
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["variant_index"], 2)
+
     def test_unsuffixed_filename_is_never_treated_as_a_variant(self) -> None:
         entry_id, reference_id, product_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
         entries = [{"image_archive_entry_id": entry_id, "content_sha256": "a" * 64, "lookup_key": "REF-1234"}]
