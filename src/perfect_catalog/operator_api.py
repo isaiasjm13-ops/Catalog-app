@@ -235,19 +235,8 @@ class ReviewGateway(Protocol):
         self, entry_id: uuid.UUID, intake_root: Path, company_id: uuid.UUID,
     ) -> bytes: ...
 
-    def decide_image_candidate(
-        self, candidate_id: uuid.UUID, evidence_sha256: str, decision: str,
-        actor: str, reason: str, company_id: uuid.UUID,
-    ) -> dict[str, Any]: ...
-
     def decide_image_candidates_bulk(
         self, expected_count: int, decision: str, actor: str, reason: str,
-        company_id: uuid.UUID,
-    ) -> dict[str, Any]: ...
-
-    def materialize_approved_image(
-        self, candidate_id: uuid.UUID, evidence_sha256: str,
-        intake_root: Path, image_root: Path, actor: str, reason: str,
         company_id: uuid.UUID,
     ) -> dict[str, Any]: ...
 
@@ -2056,77 +2045,6 @@ def create_operator_app(
             return _unexpected_error(environment, "Generación no disponible", "No se generaron candidatos. Revisa la consola.", "image_candidates_generate_failed", exc, session=session)
         return RedirectResponse("/operator/images?result=generated", status_code=303)
 
-    @app.post("/operator/images/candidates/{candidate_id}/decision")
-    async def decide_image_candidate_route(request: Request, candidate_id: str) -> Response:
-        session_or_redirect = require_session(request)
-        if isinstance(session_or_redirect, RedirectResponse):
-            return session_or_redirect
-        session = session_or_redirect
-        try:
-            form = await _parse_form(request)
-            if set(form) != {"csrf_token", "evidence_sha256", "decision", "reason", "confirm"}:
-                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
-            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
-                return rejection
-            reason = _require_text(form["reason"], "reason")
-            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
-                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
-            if form["confirm"] != "yes":
-                raise ValueError("Debes confirmar la decisión individual.")
-            result = await run_in_threadpool(
-                gateway.decide_image_candidate, _uuid(candidate_id, "candidate_id"),
-                form["evidence_sha256"], form["decision"], session.actor, reason,
-                session.company_id,
-            )
-        except (ValueError, RuntimeError, PermissionError) as exc:
-            return _error(environment, 409, "Decisión no aplicada", str(exc), session=session)
-        except Exception:
-            diagnostic_id = uuid.uuid4().hex[:12]
-            LOGGER.exception("Fallo al decidir candidato de imagen; diagnostico=%s", diagnostic_id)
-            return _error(
-                environment, 503, "Decisión no disponible",
-                f"No se guardó la decisión. Diagnóstico: {diagnostic_id}.", session=session,
-            )
-        return RedirectResponse(
-            f"/operator/images?{urlencode({'result': str(result['status'])})}", status_code=303
-        )
-
-    @app.post("/operator/images/candidates/bulk-decision")
-    async def decide_image_candidates_bulk_route(request: Request) -> Response:
-        session_or_redirect = require_session(request)
-        if isinstance(session_or_redirect, RedirectResponse):
-            return session_or_redirect
-        session = session_or_redirect
-        try:
-            form = await _parse_form(request)
-            if set(form) != {"csrf_token", "expected_count", "decision", "reason", "confirm"}:
-                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
-            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
-                return rejection
-            reason = _require_text(form["reason"], "reason")
-            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
-                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
-            decision = form["decision"]
-            if decision not in {"approved", "rejected"} or form["confirm"] != decision:
-                raise ValueError("La confirmación explícita no coincide con la decisión por lote.")
-            expected_count = int(form["expected_count"])
-            result = await run_in_threadpool(
-                gateway.decide_image_candidates_bulk,
-                expected_count, decision, session.actor, reason, session.company_id,
-            )
-        except (ValueError, RuntimeError, PermissionError) as exc:
-            return _error(environment, 409, "Lote no aplicado", str(exc), session=session)
-        except Exception:
-            diagnostic_id = uuid.uuid4().hex[:12]
-            LOGGER.exception("Fallo al decidir lote de imágenes; diagnostico=%s", diagnostic_id)
-            return _error(
-                environment, 503, "Decisión no disponible",
-                f"No se guardó el lote. Diagnóstico: {diagnostic_id}.", session=session,
-            )
-        return RedirectResponse(
-            f"/operator/images?{urlencode({'result': str(result['status'])})}", status_code=303
-        )
-
     @app.post("/operator/images/candidates/prepare-exact")
     async def prepare_exact_images_route(request: Request) -> Response:
         """Una confirmación humana: aprueba las coincidencias exactas y copia sus archivos."""
@@ -2169,36 +2087,6 @@ def create_operator_app(
             return _error(environment, 503, "Preparación no disponible", f"No se completó el lote. Diagnóstico: {diagnostic_id}.", session=session)
         return RedirectResponse("/operator/images?result=exact_images_ready", status_code=303)
 
-    @app.post("/operator/images/candidates/{candidate_id}/materialize")
-    async def materialize_approved_image_route(request: Request, candidate_id: str) -> Response:
-        session_or_redirect = require_session(request)
-        if isinstance(session_or_redirect, RedirectResponse):
-            return session_or_redirect
-        session = session_or_redirect
-        try:
-            form = await _parse_form(request)
-            if set(form) != {"csrf_token", "evidence_sha256", "reason", "confirm"}:
-                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
-            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
-                return rejection
-            reason = _require_text(form["reason"], "reason")
-            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
-                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
-            if form["confirm"] != "yes":
-                raise ValueError("Debes confirmar la copia verificada de la imagen aprobada.")
-            result = await run_in_threadpool(
-                gateway.materialize_approved_image, _uuid(candidate_id, "candidate_id"),
-                form["evidence_sha256"], resolved_intake_root, resolved_image_output,
-                session.actor, reason, session.company_id,
-            )
-        except (ValueError, RuntimeError, PermissionError, FileExistsError) as exc:
-            return _error(environment, 409, "Imagen no materializada", str(exc), session=session)
-        except Exception as exc:
-            return _unexpected_error(environment, "Materialización no disponible", "No se publicó la copia verificada. Revisa la consola.", "image_materialize_failed", exc, session=session)
-        return RedirectResponse(
-            f"/operator/images?{urlencode({'result': str(result['status'])})}", status_code=303
-        )
-
     @app.get("/operator/images/candidates/{candidate_id}/preview")
     async def image_candidate_preview_route(request: Request, candidate_id: str) -> Response:
         session_or_redirect = require_session(request)
@@ -2228,36 +2116,6 @@ def create_operator_app(
         except (ValueError, RuntimeError, PermissionError, OSError):
             return Response(status_code=404)
         return Response(content=content, media_type="image/jpeg")
-
-    @app.post("/operator/images/candidates/bulk-materialize")
-    async def materialize_approved_images_bulk_route(request: Request) -> Response:
-        session_or_redirect = require_session(request)
-        if isinstance(session_or_redirect, RedirectResponse):
-            return session_or_redirect
-        session = session_or_redirect
-        try:
-            form = await _parse_form(request)
-            if set(form) != {"csrf_token", "expected_count", "reason", "confirm"}:
-                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
-            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
-                return rejection
-            if form["confirm"] != "yes":
-                raise ValueError("Debes confirmar la materialización del lote exacto.")
-            reason = _require_text(form["reason"], "reason")
-            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
-                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
-            result = await run_in_threadpool(
-                gateway.materialize_approved_images_bulk, int(form["expected_count"]),
-                resolved_intake_root, resolved_image_output, session.actor, reason,
-                session.company_id,
-            )
-        except (ValueError, RuntimeError, PermissionError, FileExistsError) as exc:
-            return _error(environment, 409, "Lote no materializado", str(exc), session=session)
-        except Exception:
-            diagnostic_id = uuid.uuid4().hex[:12]
-            LOGGER.exception("Fallo al materializar lote de imágenes; diagnostico=%s", diagnostic_id)
-            return _error(environment, 503, "Materialización no disponible", f"No se materializó el lote. Diagnóstico: {diagnostic_id}.", session=session)
-        return RedirectResponse(f"/operator/images?{urlencode({'result': str(result['status'])})}", status_code=303)
 
     @app.get("/operator/simple", response_class=HTMLResponse)
     async def simple_mode_page(request: Request) -> Response:

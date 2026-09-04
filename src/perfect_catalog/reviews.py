@@ -1430,17 +1430,6 @@ class DatabaseReviewGateway:
             entry_id, intake_root, self._config, self._password, company_id=company_id,
         )
 
-    def decide_image_candidate(
-        self, candidate_id: uuid.UUID, evidence_sha256: str, decision: str,
-        actor: str, reason: str, company_id: uuid.UUID,
-    ) -> dict[str, Any]:
-        from .image_match_review import decide_image_candidate
-
-        return decide_image_candidate(
-            candidate_id, evidence_sha256, decision, actor, reason,
-            self._config, self._password, company_id=company_id,
-        )
-
     def decide_image_candidates_bulk(
         self, expected_count: int, decision: str, actor: str, reason: str,
         company_id: uuid.UUID,
@@ -1449,19 +1438,6 @@ class DatabaseReviewGateway:
 
         return decide_image_candidates_bulk(
             expected_count, decision, actor, reason, self._config, self._password,
-            company_id=company_id,
-        )
-
-    def materialize_approved_image(
-        self, candidate_id: uuid.UUID, evidence_sha256: str,
-        intake_root: Path, image_root: Path, actor: str, reason: str,
-        company_id: uuid.UUID,
-    ) -> dict[str, Any]:
-        from .approved_image_materialization import materialize_approved_image
-
-        return materialize_approved_image(
-            candidate_id, evidence_sha256, intake_root, image_root,
-            self._config, self._password, actor=actor, reason=reason,
             company_id=company_id,
         )
 
