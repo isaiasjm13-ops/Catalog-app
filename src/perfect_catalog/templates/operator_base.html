@@ -15,7 +15,7 @@
     {% if session %}
     <header class="topbar">
       <a class="brand" href="/operator" aria-label="Volver a planes">
-        <span class="brand-mark">N</span>
+        <span class="brand-mark"><img src="/operator/static/nexo-isa-icon.png" alt="Nexo ISA"></span>
         <span><strong>{{ session.company_name if session is defined and session and session.company_name else 'Nexo ISA' }}</strong><small>Control de catálogo</small></span>
       </a>
       <nav class="operator-nav" aria-label="Navegación del operador">
