@@ -5,6 +5,7 @@ import base64
 import csv
 import os
 import tempfile
+import time
 import unittest
 from unittest import mock
 import uuid
@@ -74,6 +75,38 @@ def fixture_release_with_categories():
             "name_original": f"Producto {reference}", "name_normalized": f"PRODUCTO {reference}",
             "category_path": category, "brand": "Natsuki", "quantity_available": 0,
             "vehicle_makes": vehicle_makes,
+        }
+        items.append({
+            "item_order": order, "product_template_id": template_id, "product_variant_id": None,
+            "snapshot_schema_version": SNAPSHOT_SCHEMA_VERSION, "snapshot_data": data,
+            "snapshot_sha256": product_snapshot_sha256(data),
+        })
+    definition = {"snapshot_schema_version": SNAPSHOT_SCHEMA_VERSION, "release_hash_algorithm": RELEASE_HASH_ALGORITHM,
+                  "source_kind": "applied_catalog", "item_count": len(items), "source_plan_id": str(uuid.uuid4()),
+                  "source_import_batch_id": str(uuid.uuid4()), "source_plan_fingerprint_sha256": "a"*64,
+                  "contract_version": "test-v1", "rules_version": "test-v1", "selection": {}}
+    release = {"catalog_release_id": uuid.uuid4(), "brand_id": brand_id, "version": "synthetic-v1", "status": "published", "definition": definition}
+    release["snapshot_sha256"] = release_snapshot_sha256(brand_id, release["version"], definition, items)
+    return release, items
+
+
+def fixture_large_release(count: int):
+    """Un release sintético con `count` productos reales (no una muestra), repartidos en 20
+    categorías y 8 marcas vehiculares — para probar que el sistema no se cae ni se vuelve
+    impracticamente lento al acercarse al objetivo documentado de 25,000+ productos."""
+    brand_id = uuid.uuid4()
+    categories = [f"Categoría {index:02d}" for index in range(20)]
+    vehicle_makes = ["Toyota", "Honda", "Nissan", "Mazda", "Chevrolet", "Ford", "Hyundai", "Kia"]
+    items = []
+    for order in range(1, count + 1):
+        template_id = uuid.uuid4()
+        reference = f"NK-{order:06d}"
+        data = {
+            "product_template_id": str(template_id), "product_variant_id": None,
+            "internal_reference_original": reference, "internal_reference_normalized": reference,
+            "name_original": f"Producto {reference}", "name_normalized": f"PRODUCTO {reference}",
+            "category_path": categories[order % len(categories)], "brand": "Natsuki", "quantity_available": 0,
+            "vehicle_makes": [vehicle_makes[order % len(vehicle_makes)]],
         }
         items.append({
             "item_order": order, "product_template_id": template_id, "product_variant_id": None,
@@ -1016,3 +1049,50 @@ class BrowseCatalogReleaseTests(unittest.TestCase):
             browse_catalog_release(release["catalog_release_id"], mock.MagicMock(), "secret", group="Suspensión / Amortiguadores")
             browse_catalog_release(release["catalog_release_id"], mock.MagicMock(), "secret", group_by="vehicle_make", group="Mazda")
         export_rows.assert_called_once()
+
+
+class ScalePerformanceTests(unittest.TestCase):
+    """La documentación cita 25,000+ productos como objetivo explícito, pero no había ninguna
+    prueba que construyera un release de ese orden de magnitud para comprobar que el sistema
+    no se cae ni se vuelve impracticamente lento. Usa 5,000 productos reales (no una muestra)
+    como una cota razonable para CI; el límite de tiempo es generoso a propósito — es una
+    alarma contra una regresión catastrófica (ej. un O(n²) reintroducido), no un benchmark fino."""
+
+    def setUp(self) -> None:
+        catalog_export_job_module._EXPORT_ROWS_CACHE.clear()
+
+    def test_a_five_thousand_product_release_paginates_correctly_and_stays_fast(self) -> None:
+        release, items = fixture_large_release(5000)
+        start = time.perf_counter()
+        rows = export_rows_from_release(release, items)
+        elapsed = time.perf_counter() - start
+        self.assertEqual(len(rows), 5000)
+        self.assertLess(elapsed, 10, "revalidar 5,000 productos no debería tardar más de 10s")
+
+    def test_browsing_a_large_release_does_not_reverify_on_every_tab_or_page(self) -> None:
+        release, items = fixture_large_release(5000)
+        with (
+            mock.patch.object(catalog_export_job_module, "load_published_release", return_value=(release, items)),
+            mock.patch.object(
+                catalog_export_job_module, "export_rows_from_release",
+                wraps=catalog_export_job_module.export_rows_from_release,
+            ) as export_rows,
+        ):
+            first = browse_catalog_release(
+                release["catalog_release_id"], mock.MagicMock(), "secret",
+                group_by="category_path", page_size=50,
+            )
+            self.assertEqual(first["total_count"], 5000)
+            self.assertGreater(first["total_pages"], 1)
+            start = time.perf_counter()
+            for page in range(2, 6):
+                browse_catalog_release(
+                    release["catalog_release_id"], mock.MagicMock(), "secret",
+                    group_by="category_path", group=first["active_group"], page=page, page_size=50,
+                )
+            browse_catalog_release(
+                release["catalog_release_id"], mock.MagicMock(), "secret", group_by="vehicle_make",
+            )
+            elapsed = time.perf_counter() - start
+        export_rows.assert_called_once()
+        self.assertLess(elapsed, 1, "cambiar de pestaña/pagina en un release ya cacheado debe ser casi instantáneo")
