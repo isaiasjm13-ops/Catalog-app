@@ -24,17 +24,17 @@ class ImageArchiveIndexTests(unittest.TestCase):
 
     def test_letter_variant_suffix_matches_the_real_naming_convention(self) -> None:
         """Convención real reportada por el usuario: `CKT-507AU-LB A`, `CKT-507AU-LB - A` y
-        `CKT-507AU-LB (A)` normalizan igual (espacios/guiones/paréntesis se colapsan a `-`), y
-        la letra A significa "foto principal" (igual que no tener sufijo); B, C, D... son
-        fotos adicionales."""
+        `CKT-507AU-LB (A)` normalizan igual (espacios/guiones/paréntesis se colapsan a `-`). La
+        foto principal es siempre el archivo SIN sufijo; A no es especial, es solo la primera
+        letra adicional (mismo casillero que `-2`); B, C, D... siguen la secuencia."""
         self.assertEqual(normalize_image_key("CKT-507AU-LB A.jpg"), "CKT-507AU-LB-A")
         self.assertEqual(normalize_image_key("CKT-507AU-LB - A.jpg"), "CKT-507AU-LB-A")
         self.assertEqual(normalize_image_key("CKT-507AU-LB (A).jpg"), "CKT-507AU-LB-A")
-        self.assertEqual(split_variant_suffix("CKT-507AU-LB-A"), ("CKT-507AU-LB", None))
-        self.assertEqual(split_variant_suffix("CKT-507AU-LB-B"), ("CKT-507AU-LB", 2))
-        self.assertEqual(split_variant_suffix("CKT-507AU-LB-C"), ("CKT-507AU-LB", 3))
-        self.assertEqual(split_variant_suffix("CKT-507AU-LB-F"), ("CKT-507AU-LB", 6))
-        self.assertEqual(split_variant_suffix("CKT-507AU-LB-Z"), ("CKT-507AU-LB", 26))
+        self.assertEqual(split_variant_suffix("CKT-507AU-LB-A"), ("CKT-507AU-LB", 2))
+        self.assertEqual(split_variant_suffix("CKT-507AU-LB-B"), ("CKT-507AU-LB", 3))
+        self.assertEqual(split_variant_suffix("CKT-507AU-LB-C"), ("CKT-507AU-LB", 4))
+        self.assertEqual(split_variant_suffix("CKT-507AU-LB-F"), ("CKT-507AU-LB", 7))
+        self.assertEqual(split_variant_suffix("CKT-507AU-LB-Z"), ("CKT-507AU-LB", 27))
 
     def test_index_hashes_streams_and_marks_collisions_without_extracting(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

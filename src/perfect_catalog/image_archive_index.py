@@ -41,12 +41,12 @@ _VARIANT_LETTER_RE = re.compile(r"^(.+)-([A-Z])$")
 
 
 def split_variant_suffix(key: str) -> tuple[str, int | None]:
-    """`REF-1234-2` -> (`REF-1234`, 2); `REF-1234-B` -> (`REF-1234`, 2): a normalized key ending
+    """`REF-1234-2` -> (`REF-1234`, 2); `REF-1234-A` -> (`REF-1234`, 2): a normalized key ending
     in `-<N>` (2-99) or a single trailing letter names an extra photo of the base reference, not
     a different product. Both conventions are real: some catalogs number extra photos (`-2`,
-    `-3`...), others letter every photo including the first (`A`, `B`, `C`...). `A` and no
-    suffix at all both mean "the main photo" — they return the same thing here (None) so the
-    caller treats them identically; `B`, `C`, `D`... map to 2, 3, 4...
+    `-3`...), others letter them (`-A`, `-B`, `-C`...). The main photo is always the reference's
+    own filename with no suffix at all — `A` is NOT special, it is simply the first lettered
+    extra (maps to 2, same slot as `-2`); `B`->3, `C`->4, `D`->5, and so on.
 
     Both suffix styles are heuristic fallbacks — callers must always try an exact, unsplit
     match against real approved references first, and only fall back to this split when that
@@ -60,8 +60,8 @@ def split_variant_suffix(key: str) -> tuple[str, int | None]:
     letter_match = _VARIANT_LETTER_RE.fullmatch(key)
     if letter_match:
         letter = letter_match.group(2)
-        index = ord(letter) - ord("A") + 1  # A=1 (primary, same as no suffix), B=2, C=3, ...
-        return letter_match.group(1), None if index == 1 else index
+        index = ord(letter) - ord("A") + 2  # A=2 (first extra, same slot as -2), B=3, C=4, ...
+        return letter_match.group(1), index
     return key, None
 
 

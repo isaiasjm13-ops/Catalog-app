@@ -41,10 +41,9 @@ class ImageMatchReviewTests(unittest.TestCase):
         self.assertEqual(candidates[0]["variant_index"], 2)
         self.assertEqual(candidates[0]["product_reference_id"], str(reference_id))
 
-    def test_letter_a_suffix_matches_as_the_primary_photo_not_a_variant(self) -> None:
-        """Bug real reportado por el usuario: su convención le pone letra a TODAS las fotos,
-        incluida la principal (`CKT-507AU-LB-A`). 'A' debe tratarse igual que no tener sufijo
-        — variant_index=None — no como si fuera 'la variante número 1'."""
+    def test_letter_a_suffix_matches_as_the_first_extra_photo_not_the_primary(self) -> None:
+        """Corrección del usuario: la foto principal es siempre el archivo SIN sufijo; la letra
+        A no es especial, es solo la primera foto adicional (mismo casillero que `-2`)."""
         entry_id, reference_id, product_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
         entries = [{"image_archive_entry_id": entry_id, "content_sha256": "a" * 64, "lookup_key": "CKT-507AU-LB-A"}]
         references = [{
@@ -53,10 +52,10 @@ class ImageMatchReviewTests(unittest.TestCase):
         }]
         candidates = exact_image_candidates(entries, references)
         self.assertEqual(len(candidates), 1)
-        self.assertIsNone(candidates[0]["variant_index"])
+        self.assertEqual(candidates[0]["variant_index"], 2)
         self.assertEqual(candidates[0]["product_reference_id"], str(reference_id))
 
-    def test_letter_b_suffix_matches_as_variant_two(self) -> None:
+    def test_letter_b_suffix_matches_as_variant_three(self) -> None:
         entry_id, reference_id, product_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
         entries = [{"image_archive_entry_id": entry_id, "content_sha256": "a" * 64, "lookup_key": "CKT-507AU-LB-B"}]
         references = [{
@@ -65,7 +64,7 @@ class ImageMatchReviewTests(unittest.TestCase):
         }]
         candidates = exact_image_candidates(entries, references)
         self.assertEqual(len(candidates), 1)
-        self.assertEqual(candidates[0]["variant_index"], 2)
+        self.assertEqual(candidates[0]["variant_index"], 3)
 
     def test_unsuffixed_filename_is_never_treated_as_a_variant(self) -> None:
         entry_id, reference_id, product_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
