@@ -1027,6 +1027,61 @@ def create_operator_app(
             version=OPERATOR_VERSION,
         )
 
+    @app.get("/operator/review")
+    async def review_redirect(request: Request) -> Response:
+        """'Revisar' en el nav no tiene una URL propia (la cola vive en /operator/plans/{plan_id}):
+        redirige al plan con pendientes más relevante, igual que ya hace la tarjeta 'Continuar
+        donde quedaste' del dashboard, o de vuelta a Inicio si no hay nada pendiente."""
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            plans = await run_in_threadpool(
+                gateway.plans, limit=100, company_id=session_or_redirect.company_id,
+            )
+        except Exception as exc:
+            return _unexpected_error(
+                environment, "PostgreSQL no disponible",
+                "No se pudo leer la cola. Revisa la consola del servidor operador.",
+                "review_redirect_failed", exc, session=session_or_redirect,
+            )
+        pending_plan = next((plan for plan in plans if plan["pending_count"]), None)
+        if pending_plan is None:
+            return RedirectResponse("/operator", status_code=303)
+        return RedirectResponse(
+            f"/operator/plans/{pending_plan['import_plan_id']}?state=pending", status_code=303,
+        )
+
+    @app.get("/operator/admin", response_class=HTMLResponse)
+    async def admin_index(request: Request) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            intakes = await run_in_threadpool(
+                gateway.intake_submissions, kind="all", status="all", limit=1, offset=0,
+                company_id=session_or_redirect.company_id,
+            )
+            image_summary = await run_in_threadpool(
+                gateway.image_candidates, limit=1, offset=0,
+                company_id=session_or_redirect.company_id,
+            )
+            links = await run_in_threadpool(gateway.public_catalog_links)
+        except Exception as exc:
+            return _unexpected_error(
+                environment, "Administración no disponible",
+                "Revisa la consola del servidor operador.",
+                "admin_index_read_failed", exc, session=session_or_redirect,
+            )
+        return _render(
+            environment, "operator_admin.html",
+            intake_count=int(intakes["filtered_count"]),
+            pending_image_count=int(image_summary["pending_count"]),
+            materialize_image_count=int(image_summary["approved_unmaterialized_count"]),
+            active_link_count=sum(1 for link in links if link["active"]),
+            session=session_or_redirect, version=OPERATOR_VERSION,
+        )
+
     @app.get("/operator/intake", response_class=HTMLResponse)
     async def intake_page(
         request: Request,

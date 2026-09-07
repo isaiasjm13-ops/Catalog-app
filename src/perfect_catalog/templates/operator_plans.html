@@ -3,29 +3,35 @@
 {% block content %}
 <section class="page-heading">
   <div>
-    <span class="kicker">Cola de control</span>
-    <h1>Planes aplicados</h1>
-    <p>Selecciona un lote para revisar sus identidades. La publicación permanece bloqueada mientras existan pendientes.</p>
+    <span class="kicker">Inicio</span>
+    <h1>Tus catálogos</h1>
+    <p>Carga un Excel nuevo, retoma la revisión pendiente, o entrega el catálogo listo.</p>
   </div>
-  <div class="safety-chip"><span>●</span> PostgreSQL · modo operador</div>
+  <a class="primary-button load-catalog-cta" href="/operator/simple">Cargar catálogo nuevo</a>
 </section>
 
 <section class="workflow-dashboard" aria-labelledby="workflow-title">
   <div class="section-heading"><div><span class="kicker">Estado del trabajo</span><h2 id="workflow-title">Del archivo a la entrega</h2></div><span>Los conteos se actualizan al abrir esta pantalla</span></div>
   <div class="workflow-dashboard-grid">
-    <a href="/operator/intake" class="workflow-status-card">
-      <span class="workflow-number">01</span><div><strong>Ingresos</strong><b>{{ workflow.intake_count }}</b><small>archivos registrados</small></div><i aria-hidden="true">→</i>
+    <a href="/operator/simple" class="workflow-status-card">
+      <span class="workflow-number">01</span><div><strong>Cargar</strong><b>＋</b><small>Excel y fotos nuevos</small></div><i aria-hidden="true">→</i>
     </a>
     <a href="/operator" class="workflow-status-card {% if workflow.pending_review_count %}needs-action{% endif %}">
-      <span class="workflow-number">02</span><div><strong>Revisión</strong><b>{{ workflow.pending_review_count }}</b><small>identidades pendientes</small></div><i aria-hidden="true">→</i>
-    </a>
-    <a href="/operator/images" class="workflow-status-card {% if workflow.pending_image_count or workflow.materialize_image_count %}needs-action{% endif %}">
-      <span class="workflow-number">03</span><div><strong>Imágenes</strong><b>{{ workflow.pending_image_count + workflow.materialize_image_count }}</b><small>{{ workflow.pending_image_count }} por decidir · {{ workflow.materialize_image_count }} por materializar</small></div><i aria-hidden="true">→</i>
+      <span class="workflow-number">02</span><div><strong>Revisar</strong><b>{{ workflow.pending_review_count }}</b><small>identidades pendientes</small></div><i aria-hidden="true">→</i>
     </a>
     <a href="/operator/catalogs" class="workflow-status-card {% if workflow.draft_release_count %}needs-action{% endif %}">
-      <span class="workflow-number">04</span><div><strong>Catálogos</strong><b>{{ workflow.published_release_count }}</b><small>publicados · {{ workflow.draft_release_count }} borradores</small></div><i aria-hidden="true">→</i>
+      <span class="workflow-number">03</span><div><strong>Entregar</strong><b>{{ workflow.published_release_count }}</b><small>publicados · {{ workflow.draft_release_count }} borradores</small></div><i aria-hidden="true">→</i>
     </a>
   </div>
+</section>
+
+<section class="admin-summary-strip" aria-label="Administración">
+  <span class="kicker">Administración</span>
+  <a href="/operator/intake">Ingresos <b>{{ workflow.intake_count }}</b></a>
+  <a href="/operator/images">Imágenes <b>{{ workflow.pending_image_count + workflow.materialize_image_count }}</b></a>
+  <a href="/operator/brands">Marcas</a>
+  <a href="/operator/public-links">Links públicos</a>
+  <a href="/operator/admin">Ver todo →</a>
 </section>
 
 {% if plans %}

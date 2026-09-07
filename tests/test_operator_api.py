@@ -1076,6 +1076,37 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('href="/operator/catalogs"', dashboard.text)
         self.assertIn("Diseñar catálogo", dashboard.text)
 
+    async def test_dashboard_offers_a_direct_way_to_start_a_new_upload(self) -> None:
+        # Antes del rediseño no existía ningún link de vuelta a "cargar" desde el
+        # dashboard una vez resuelta la revisión; ahora es la acción principal.
+        await self.login()
+        dashboard = await self.client.get("/operator")
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertIn("Cargar catálogo nuevo", dashboard.text)
+        self.assertIn('href="/operator/simple"', dashboard.text)
+
+    async def test_review_nav_redirects_to_the_most_relevant_pending_plan(self) -> None:
+        await self.login()
+        redirected = await self.client.get("/operator/review")
+        self.assertEqual(redirected.status_code, 303)
+        self.assertEqual(redirected.headers["location"], f"/operator/plans/{PLAN_ID}?state=pending")
+
+    async def test_review_nav_falls_back_to_home_when_nothing_is_pending(self) -> None:
+        await self.login()
+        self.gateway.plan_data.update({"pending_count": 0, "approved_count": 1})
+        redirected = await self.client.get("/operator/review")
+        self.assertEqual(redirected.status_code, 303)
+        self.assertEqual(redirected.headers["location"], "/operator")
+
+    async def test_admin_index_links_to_maintenance_screens_with_live_counts(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/admin")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn('href="/operator/intake"', page.text)
+        self.assertIn('href="/operator/images"', page.text)
+        self.assertIn('href="/operator/brands"', page.text)
+        self.assertIn('href="/operator/public-links"', page.text)
+
     async def test_dashboard_failure_has_safe_correlated_diagnostic(self) -> None:
         await self.login()
         self.gateway.plans = mock.Mock(side_effect=RuntimeError("sensitive database detail"))
