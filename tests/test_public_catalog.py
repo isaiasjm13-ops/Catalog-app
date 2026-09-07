@@ -191,6 +191,24 @@ class MatchImagesOrderingTests(unittest.TestCase):
             self.assertEqual(ambiguous, 2)
             self.assertEqual(row["variant_image_paths"], [])
 
+    def test_ambiguous_slot_shared_by_several_rows_is_only_counted_once(self) -> None:
+        # Bug real: cuando varias filas comparten referencia (fix de fotos compartidas)
+        # y esa referencia tiene una posición ambigua, la ambigüedad se contaba una vez
+        # por fila en vez de una vez por posición real — con 2 filas reportaba 4
+        # imágenes ambiguas en lugar de 2.
+        first_row = self._row("CKT-507AU-LB")
+        second_row = self._row("CKT-507AU-LB")
+        with tempfile.TemporaryDirectory() as tmp:
+            images = [
+                ("CKT-507AU-LB A.png", _png_bytes((1, 1, 1))),
+                ("CKT-507AU-LB-2.png", _png_bytes((2, 2, 2))),
+            ]
+            matched, ambiguous = _match_images([first_row, second_row], images, Path(tmp))
+            self.assertEqual(matched, 0)
+            self.assertEqual(ambiguous, 2)
+            self.assertEqual(first_row["variant_image_paths"], [])
+            self.assertEqual(second_row["variant_image_paths"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

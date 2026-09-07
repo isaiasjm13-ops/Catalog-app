@@ -129,6 +129,16 @@ class _SlidingWindowLimiter:
                 return False
             events.append(now)
             self._events[key] = events
+            # Sin esto, cada IP o token distinto que alguna vez pasó por aquí deja una
+            # entrada permanente: en un proceso de larga duración es una fuga de memoria
+            # proporcional a visitantes únicos. Se limpian oportunistamente las claves ya
+            # vacías (ventana vencida) en cada llamada, sin necesitar un hilo aparte.
+            expired_keys = [
+                other_key for other_key, moments in self._events.items()
+                if other_key != key and not any(now - moment < self._window for moment in moments)
+            ]
+            for other_key in expired_keys:
+                del self._events[other_key]
             return True
 
 

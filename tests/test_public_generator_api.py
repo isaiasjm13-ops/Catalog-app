@@ -11,6 +11,7 @@ from PIL import Image
 
 from perfect_catalog.public_generator_api import (
     PublicCatalogGateway,
+    _SlidingWindowLimiter,
     create_public_generator_app,
 )
 
@@ -207,6 +208,20 @@ class PublicGeneratorHttpTests(unittest.IsolatedAsyncioTestCase):
             second_post = await client.post("/generar", data=form_data, files=self._multipart_files(excel=excel))
             self.assertEqual(second_post.status_code, 400)
             self.assertIn("demasiados catálogos", second_post.text)
+
+
+class SlidingWindowLimiterTests(unittest.TestCase):
+    def test_expired_keys_are_evicted_instead_of_kept_forever(self) -> None:
+        # Bug real: cada IP o token distinto dejaba una entrada permanente en el
+        # diccionario interno aunque su ventana ya hubiera vencido — en un proceso de
+        # larga duración, una fuga de memoria proporcional a visitantes únicos.
+        clock = [0.0]
+        limiter = _SlidingWindowLimiter(max_events=5, window_seconds=60.0, now=lambda: clock[0])
+        self.assertTrue(limiter.allow("visitor-1"))
+        self.assertEqual(set(limiter._events), {"visitor-1"})
+        clock[0] = 120.0
+        self.assertTrue(limiter.allow("visitor-2"))
+        self.assertEqual(set(limiter._events), {"visitor-2"})
 
 
 if __name__ == "__main__":

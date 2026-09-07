@@ -221,12 +221,18 @@ def _match_images(
     # se ordenan al final para que la galería quede A, B, C... sin importar el orden de carga.
     pending_variants: dict[int, list[tuple[int, str]]] = {}
     rows_by_id = {id(row): row for row in rows}
+    seen_ambiguous_slots: set[tuple[str, int | None]] = set()
     for (row_id, variant_index), slot_list in slot_candidates.items():
         distinct_entry_ids = {candidate["image_archive_entry_id"] for candidate in slot_list}
         if len(distinct_entry_ids) > 1:
             # Dos fotos distintas reclaman la misma posición de la misma referencia:
-            # evidencia contradictoria, no se adivina cuál es la correcta.
-            ambiguous += len(distinct_entry_ids)
+            # evidencia contradictoria, no se adivina cuál es la correcta. Varias filas
+            # pueden compartir esa referencia (fix de fotos compartidas); se cuenta la
+            # ambigüedad una sola vez por referencia+posición, no una vez por fila.
+            slot_key = (slot_list[0]["product_reference_id"], variant_index)
+            if slot_key not in seen_ambiguous_slots:
+                seen_ambiguous_slots.add(slot_key)
+                ambiguous += len(distinct_entry_ids)
             continue
         row = rows_by_id[row_id]
         filename, content = entry_files[slot_list[0]["image_archive_entry_id"]]
