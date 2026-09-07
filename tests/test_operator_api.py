@@ -499,7 +499,7 @@ class SyntheticReviewGateway:
             "created_at": "2026-08-26T02:00:00Z", "created_by": actor,
             "published_at": None, "published_by": None, "item_count": 1,
         })
-        return {"status": "built", "release_id": str(release_id)}
+        return {"status": "built", "release_id": str(release_id), "snapshot_sha256": "e" * 64}
 
     def publish_catalog_release(
         self, release_id: uuid.UUID, snapshot_sha256: str, actor: str, reason: str,
@@ -1213,6 +1213,56 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["location"], "/operator/catalogs?result=created")
         self.assertEqual(self.gateway.catalog_exports[0]["formats"], ("html-standalone",))
         self.assertEqual(self.gateway.catalog_exports[0]["config"]["group_by"], "category_path")
+
+    async def test_deliver_catalog_chains_build_publish_export_and_preview_is_byte_exact(self) -> None:
+        await self.login()
+        self.gateway.plan_data.update({
+            "pending_count": 0, "inconsistent_count": 0, "approved_count": 1,
+            "brand_profile_code": "NATSUKI",
+        })
+        page = await self.client.get("/operator/catalogs")
+        self.assertIn("Entregar catálogo", page.text)
+        csrf = hidden_value(page.text, "csrf_token")
+        deliver_data = {
+            "csrf_token": csrf, "fingerprint": FINGERPRINT, "brand": "NATSUKI",
+            "version": "2026.09", "title": "Catálogo 2026.09", "subtitle": "",
+            "reason": "Primera entrega guiada", "confirm": "yes",
+        }
+        rejected = await self.client.post(
+            f"/operator/catalogs/{PLAN_ID}/deliver",
+            data={**deliver_data, "csrf_token": "wrong"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(rejected.status_code, 403)
+        response = await self.client.post(
+            f"/operator/catalogs/{PLAN_ID}/deliver", data=deliver_data,
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 303)
+        location = response.headers["location"]
+        self.assertIn("/delivered?filename=", location)
+        self.assertEqual(self.gateway.release_changes[-2]["operation"], "build")
+        self.assertEqual(self.gateway.release_changes[-1]["operation"], "publish")
+        self.assertEqual(self.gateway.catalog_exports[-1]["formats"], ("html-standalone",))
+
+        delivered = await self.client.get(location)
+        self.assertEqual(delivered.status_code, 200)
+        self.assertIn("Tu catálogo está listo", delivered.text)
+        view_match = re.search(r'src="([^"]+/view)"', delivered.text)
+        self.assertIsNotNone(view_match)
+        view_url = view_match.group(1)
+
+        preview = await self.client.get(view_url)
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.headers["content-type"].split(";")[0], "text/html")
+
+        path, _, query = location.partition("?")
+        filename = query.removeprefix("filename=")
+        download_url = path.replace("/delivered", f"/{filename}")
+        download = await self.client.get(download_url)
+        self.assertEqual(download.status_code, 200)
+        # La vista previa (iframe) y la descarga deben ser exactamente el mismo archivo.
+        self.assertEqual(preview.content, download.content)
 
     async def test_catalog_workspace_exports_and_downloads_manifest_files(self) -> None:
         await self.login()

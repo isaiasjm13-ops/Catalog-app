@@ -108,6 +108,8 @@ button:active, .primary-button:active, .secondary-button:active { transform: tra
 .admin-summary-strip a { color: var(--muted); text-decoration: none; }
 .admin-summary-strip a:hover,.admin-summary-strip a:focus-visible { color: var(--forest); }
 .admin-summary-strip b { color: var(--forest); }
+.delivered-preview { margin-bottom: 24px; border: 1px solid rgba(12,91,72,.16); border-radius: 16px; overflow: hidden; box-shadow: var(--shadow); }
+.delivered-preview iframe { display: block; width: 100%; height: 78vh; border: 0; background: #fff; }
 .workflow-status-card { position: relative; display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; min-width: 0; padding: 17px; border: 1px solid rgba(12,91,72,.13); border-radius: 16px; color: var(--ink); background: rgba(255,255,252,.78); text-decoration: none; box-shadow: 0 8px 25px rgba(24,45,37,.04); }
 .workflow-status-card:hover,.workflow-status-card:focus-visible { border-color: var(--forest); transform: translateY(-1px); }
 .workflow-status-card.needs-action { border-color: rgba(193,132,30,.42); background: #fffaf0; }

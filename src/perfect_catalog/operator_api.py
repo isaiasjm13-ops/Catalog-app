@@ -1839,6 +1839,69 @@ def create_operator_app(
             return _unexpected_error(environment, "Exportación no disponible", "No se generó el HTML autónomo. Revisa la consola del servidor operador.", "catalog_quick_export_failed", exc, session=session)
         return RedirectResponse("/operator/catalogs?result=created", status_code=303)
 
+    @app.post("/operator/catalogs/{plan_id}/deliver")
+    async def deliver_catalog(request: Request, plan_id: str) -> Response:
+        """'Entregar' en una sola confirmación: encadena construir + publicar + exportar
+        HTML autónomo (mismo patrón que ya usa simple_mode_submit para su propia cadena de
+        pasos). Cada paso sigue siendo una operación auditada por separado en Postgres —
+        esto solo evita copiar snapshot_sha256/fingerprint a mano entre tres pantallas."""
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "fingerprint", "brand", "version", "title", "subtitle", "reason", "confirm"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
+            if form["confirm"] != "yes":
+                raise ValueError("Debes confirmar la entrega del catálogo.")
+            reason = _require_text(form["reason"], "reason")
+            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
+                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
+            brand = _require_text(form["brand"], "brand")
+            title = _require_text(form["title"], "title")
+            subtitle = form["subtitle"].strip()
+            if len(title) > 120 or len(subtitle) > 180:
+                raise ValueError("Título o subtítulo demasiado largo.")
+            parsed_plan_id = _uuid(plan_id, "plan_id")
+            built = await run_in_threadpool(
+                gateway.build_catalog_release, parsed_plan_id, form["fingerprint"],
+                form["version"], session.actor, reason, brand,
+            )
+            release_id = _uuid(built["release_id"], "release_id")
+            await run_in_threadpool(
+                gateway.publish_catalog_release, release_id, built["snapshot_sha256"], session.actor, reason,
+            )
+            export = await run_in_threadpool(
+                gateway.export_catalog, release_id, resolved_catalog_output,
+                formats=("html-standalone",), image_root=resolved_image_output,
+                brand_asset_root=resolved_brand_assets,
+                export_config={
+                    "title": title, "subtitle": subtitle, "group_by": "category_path",
+                    "group_by_secondary": "", "filter_field": "all", "filter_query": "",
+                    "selected_references": "", "columns_per_row": 2,
+                    "template_profile": "T4", "theme": "forest",
+                    "show_category": True, "show_brand": True, "show_oem": True,
+                    "show_applications": True, "show_engine": True,
+                },
+            )
+        except (ValueError, RuntimeError, PermissionError, NotImplementedError, FileExistsError) as exc:
+            return _error(environment, 409, "Catálogo no entregado", str(exc), session=session)
+        except Exception as exc:
+            return _unexpected_error(
+                environment, "Entrega no disponible",
+                "No se completó la entrega. Revisa la consola del servidor operador.",
+                "catalog_deliver_failed", exc, session=session,
+            )
+        html_file = next(item for item in export["files"] if item["format"] == "html-standalone")
+        return RedirectResponse(
+            f"/operator/catalogs/{built['release_id']}/exports/{export['export_id']}/delivered"
+            f"?{urlencode({'filename': html_file['filename']})}",
+            status_code=303,
+        )
+
     @app.post("/operator/catalogs/{release_id}/exports/{export_id}/preflight")
     async def upload_indesign_preflight(
         request: Request, release_id: str, export_id: str,
@@ -1886,6 +1949,44 @@ def create_operator_app(
         except Exception as exc:
             return _unexpected_error(environment, "Preflight no disponible", "El reporte no quedó registrado.", "indesign_preflight_record_failed", exc, session=session)
         return RedirectResponse("/operator/catalogs?result=preflight_recorded", status_code=303)
+
+    @app.get("/operator/catalogs/{release_id}/exports/{export_id}/delivered", response_class=HTMLResponse)
+    async def delivered_catalog_page(
+        request: Request, release_id: str, export_id: str, filename: str,
+    ) -> Response:
+        """Vista previa byte-exacta: el iframe carga el mismo archivo, con los mismos bytes,
+        que el botón de descarga entrega — no una aproximación generada por otra plantilla."""
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            await run_in_threadpool(
+                resolve_catalog_download, resolved_catalog_output,
+                _uuid(release_id, "release_id"), _uuid(export_id, "export_id"), filename,
+            )
+        except (ValueError, PermissionError, FileNotFoundError):
+            return _error(environment, 404, "Archivo no encontrado", "La entrega no corresponde a una exportación válida.", session=session_or_redirect)
+        return _render(
+            environment, "operator_catalog_delivered.html",
+            release_id=release_id, export_id=export_id, filename=filename,
+            session=session_or_redirect, version=OPERATOR_VERSION,
+        )
+
+    @app.get("/operator/catalogs/{release_id}/exports/{export_id}/{filename}/view")
+    async def view_catalog_export(
+        request: Request, release_id: str, export_id: str, filename: str,
+    ) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            target = await run_in_threadpool(
+                resolve_catalog_download, resolved_catalog_output,
+                _uuid(release_id, "release_id"), _uuid(export_id, "export_id"), filename,
+            )
+        except (ValueError, PermissionError, FileNotFoundError):
+            return _error(environment, 404, "Archivo no encontrado", "La vista previa no corresponde a una exportación válida.", session=session_or_redirect)
+        return FileResponse(target, media_type="text/html", headers={"Content-Disposition": "inline"})
 
     @app.get("/operator/catalogs/{release_id}/exports/{export_id}/{filename}")
     async def download_catalog_export(

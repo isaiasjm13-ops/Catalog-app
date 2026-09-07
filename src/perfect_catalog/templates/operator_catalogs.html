@@ -28,6 +28,28 @@
   </article>
 </section>
 
+{% set deliverable_plans = plans | rejectattr('pending_count') | rejectattr('inconsistent_count') | list %}
+{% if deliverable_plans %}
+<section class="transition-panel brand-profile-builder" aria-labelledby="deliver-title">
+  <h2 id="deliver-title">Entregar</h2>
+  <p>Construye, publica y exporta el HTML autónomo en una sola confirmación. Los pasos siguen quedando auditados por separado; esto solo evita copiarlos a mano entre pantallas.</p>
+  {% for plan in deliverable_plans %}
+  <form method="post" action="/operator/catalogs/{{ plan.import_plan_id }}/deliver" class="builder-form">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+    <input type="hidden" name="fingerprint" value="{{ plan.approval_fingerprint_sha256 }}">
+    <div class="builder-plan"><strong>{{ plan.original_name }}</strong><span>{{ plan.candidate_count }} identidades aprobadas</span></div>
+    <label><span>Versión</span><input name="version" maxlength="80" placeholder="2026.09" required></label>
+    <label><span>Marca</span><input name="brand" maxlength="120" value="{{ plan.get('brand_profile_code') or '' }}" required readonly></label>
+    <label><span>Título del catálogo</span><input name="title" maxlength="120" placeholder="Catálogo de productos" required></label>
+    <label><span>Subtítulo (opcional)</span><input name="subtitle" maxlength="180"></label>
+    <label class="builder-reason"><span>Motivo auditable</span><input name="reason" minlength="4" maxlength="500" placeholder="Edición lista para compartir" required></label>
+    <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo construir, publicar y entregar el HTML autónomo de este plan.</span></label>
+    <button class="primary-button" type="submit">Entregar catálogo</button>
+  </form>
+  {% endfor %}
+</section>
+{% endif %}
+
 <details class="release-builder">
   <summary><span><strong>Construir nueva versión</strong><small>Desde un plan aplicado con todas sus identidades resueltas</small></span><b>＋</b></summary>
   <div class="builder-content">

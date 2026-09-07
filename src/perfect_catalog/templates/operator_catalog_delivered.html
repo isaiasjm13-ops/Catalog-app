@@ -1,0 +1,12 @@
+{% extends "operator_base.html" %}
+{% block title %}Catálogo entregado{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><span class="kicker">Entregar</span><h1>Tu catálogo está listo</h1><p>La vista de abajo es exactamente el archivo que descargas — no una aproximación.</p></div>
+  <a class="primary-button" href="/operator/catalogs/{{ release_id }}/exports/{{ export_id }}/{{ filename }}">Descargar HTML autónomo</a>
+</section>
+<section class="delivered-preview">
+  <iframe src="/operator/catalogs/{{ release_id }}/exports/{{ export_id }}/{{ filename }}/view" title="Vista previa del catálogo entregado" loading="lazy"></iframe>
+</section>
+<p><a href="/operator">Volver a Inicio</a> · <a href="/operator/admin">Formatos adicionales (PDF, PPTX, InDesign)</a></p>
+{% endblock %}
