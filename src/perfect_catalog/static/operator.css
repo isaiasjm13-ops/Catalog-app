@@ -198,7 +198,9 @@ dd { margin: 0; font-size: 12px; }
 .decision-form label { display: grid; gap: 7px; }
 .decision-form .confirm-field { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 9px; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .confirm-field input { width: 16px; min-height: 16px; margin: 1px 0 0; accent-color: var(--forest); }
-.decision-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.decision-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; align-items: start; }
+.reject-details summary { color: var(--muted); font-size: 12px; cursor: pointer; }
+.reject-details[open] summary { margin-bottom: 8px; }
 .reject-button { color: var(--red); background: white; border-color: #e7bdb7; }
 .approve-button { color: white; background: var(--forest); }
 .blocked-note, .resolved-note { align-self: center; border-radius: 11px; padding: 14px; font-size: 12px; line-height: 1.5; }

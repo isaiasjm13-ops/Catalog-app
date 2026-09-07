@@ -61,22 +61,29 @@
 {% if selected_state == 'pending' and queue.filtered_count and queue.filtered_count <= 500 %}
 <details class="bulk-review-panel">
   <summary>Decidir las {{ queue.filtered_count }} pendientes de este filtro</summary>
-  <form method="post" action="/operator/plans/{{ plan.import_plan_id }}/bulk-decision">
+  <p>El servidor volverá a calcular las {{ queue.filtered_count }} evidencias. Si cambió una sola identidad o la cantidad, no aplicará ninguna.</p>
+  <form method="post" action="/operator/plans/{{ plan.import_plan_id }}/bulk-decision" class="bulk-actions">
     <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
     <input type="hidden" name="fingerprint" value="{{ plan.approval_fingerprint_sha256 }}">
     <input type="hidden" name="query" value="{{ q }}">
     <input type="hidden" name="expected_count" value="{{ queue.filtered_count }}">
-    <label><span>Motivo común auditable</span><textarea name="reason" minlength="4" maxlength="500" required placeholder="Qué comprobación justifica la decisión del lote"></textarea></label>
-    <p>El servidor volverá a calcular las {{ queue.filtered_count }} evidencias. Si cambió una sola identidad o la cantidad, no aplicará ninguna.</p>
-    <div class="bulk-actions">
-      <label class="confirm-field"><input type="checkbox" name="confirm" value="reject"><span>Confirmo rechazar todas las pendientes de este filtro.</span></label>
-      <button class="reject-button" type="submit" name="decision" value="reject">Rechazar {{ queue.filtered_count }}</button>
-    </div>
-    <div class="bulk-actions">
-      <label class="confirm-field"><input type="checkbox" name="confirm" value="approve"><span>Confirmo aprobar todas las pendientes de este filtro.</span></label>
-      <button class="approve-button" type="submit" name="decision" value="approve">Aprobar {{ queue.filtered_count }}</button>
-    </div>
+    <input type="hidden" name="decision" value="approve">
+    <label class="confirm-field"><input type="checkbox" name="confirm" value="approve"><span>Confirmo aprobar todas las pendientes de este filtro.</span></label>
+    <button class="approve-button" type="submit">Aprobar {{ queue.filtered_count }}</button>
   </form>
+  <details class="reject-details">
+    <summary>Rechazar el lote</summary>
+    <form method="post" action="/operator/plans/{{ plan.import_plan_id }}/bulk-decision" class="decision-form">
+      <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+      <input type="hidden" name="fingerprint" value="{{ plan.approval_fingerprint_sha256 }}">
+      <input type="hidden" name="query" value="{{ q }}">
+      <input type="hidden" name="expected_count" value="{{ queue.filtered_count }}">
+      <input type="hidden" name="decision" value="reject">
+      <label><span>Motivo común del rechazo</span><textarea name="reason" minlength="4" maxlength="500" required placeholder="Qué comprobación justifica rechazar el lote"></textarea></label>
+      <label class="confirm-field"><input type="checkbox" name="confirm" value="reject"><span>Confirmo rechazar todas las pendientes de este filtro.</span></label>
+      <button class="reject-button" type="submit">Rechazar {{ queue.filtered_count }}</button>
+    </form>
+  </details>
 </details>
 {% elif selected_state == 'pending' and queue.filtered_count > 500 %}
 <div class="blocked-note">El lote supera 500 identidades. Usa la búsqueda para dividirlo en grupos verificables.</div>
@@ -123,17 +130,28 @@
       <details><summary>Evidencia exacta</summary><code class="hash-code">{{ item.review_sha256 }}</code></details>
     </div>
     {% if item.review_state == 'pending' and item.reference_count == 1 %}
-    <form class="decision-form" method="post" action="/operator/plans/{{ plan.import_plan_id }}/products/{{ item.product_id }}/decision">
-      <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
-      <input type="hidden" name="fingerprint" value="{{ plan.approval_fingerprint_sha256 }}">
-      <input type="hidden" name="review_sha256" value="{{ item.review_sha256 }}">
-      <label><span>Motivo de la decisión</span><textarea name="reason" minlength="4" maxlength="500" required placeholder="Qué se verificó o por qué debe corregirse"></textarea></label>
-      <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo que revisé esta identidad y su evidencia.</span></label>
-      <div class="decision-actions">
-        <button class="reject-button" type="submit" name="decision" value="reject">Rechazar</button>
-        <button class="approve-button" type="submit" name="decision" value="approve">Aprobar</button>
-      </div>
-    </form>
+    <div class="decision-actions">
+      <form class="decision-form" data-decision="approve" method="post" action="/operator/plans/{{ plan.import_plan_id }}/products/{{ item.product_id }}/decision">
+        <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+        <input type="hidden" name="fingerprint" value="{{ plan.approval_fingerprint_sha256 }}">
+        <input type="hidden" name="review_sha256" value="{{ item.review_sha256 }}">
+        <input type="hidden" name="decision" value="approve">
+        <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo que revisé esta identidad y su evidencia.</span></label>
+        <button class="approve-button" type="submit">Aprobar</button>
+      </form>
+      <details class="reject-details">
+        <summary>Rechazar</summary>
+        <form class="decision-form" data-decision="reject" method="post" action="/operator/plans/{{ plan.import_plan_id }}/products/{{ item.product_id }}/decision">
+          <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+          <input type="hidden" name="fingerprint" value="{{ plan.approval_fingerprint_sha256 }}">
+          <input type="hidden" name="review_sha256" value="{{ item.review_sha256 }}">
+          <input type="hidden" name="decision" value="reject">
+          <label><span>Motivo del rechazo</span><textarea name="reason" minlength="4" maxlength="500" required placeholder="Qué debe corregirse"></textarea></label>
+          <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo el rechazo de esta identidad.</span></label>
+          <button class="reject-button" type="submit">Rechazar</button>
+        </form>
+      </details>
+    </div>
     {% elif item.review_state == 'inconsistent' %}
     <div class="blocked-note">Esta identidad no puede decidirse desde la web: su estructura requiere investigación.</div>
     {% else %}

@@ -28,7 +28,6 @@
     <label><span>Excel de productos</span><input type="file" name="odoo_file" accept=".xlsx,.csv,.tsv" required></label>
     <label><span>Carpeta de fotos (subida desde el navegador)</span><input type="file" name="images" webkitdirectory multiple><small>El nombre de cada foto debe ser la referencia del producto (por ejemplo <code>REF-1234.jpg</code>).</small></label>
     <label><span>O ruta local de la carpeta de fotos en este servidor</span><input type="text" name="local_images_path" maxlength="400" placeholder="C:\Fotos\Catalogo Septiembre"><small>Alternativa a subir por el navegador: escribe la ruta completa en el equipo donde corre la consola. El servidor lee cualquier carpeta a la que tenga acceso; usa una sola de las dos opciones.</small></label>
-    <label><span>Motivo auditable</span><textarea name="reason" minlength="4" maxlength="500" required placeholder="Actualización mensual de catálogo"></textarea></label>
     <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo iniciar el dry-run, preparar las identidades pendientes e intentar vincular fotos automáticamente con este Excel y esta carpeta.</span></label>
     <button class="primary-button" type="submit">Iniciar modo simple</button>
   </form>

@@ -42,7 +42,6 @@
     <label><span>Marca</span><input name="brand" maxlength="120" value="{{ plan.get('brand_profile_code') or '' }}" required readonly></label>
     <label><span>Título del catálogo</span><input name="title" maxlength="120" placeholder="Catálogo de productos" required></label>
     <label><span>Subtítulo (opcional)</span><input name="subtitle" maxlength="180"></label>
-    <label class="builder-reason"><span>Motivo auditable</span><input name="reason" minlength="4" maxlength="500" placeholder="Edición lista para compartir" required></label>
     <label class="confirm-field"><input type="checkbox" name="confirm" value="yes" required><span>Confirmo construir, publicar y entregar el HTML autónomo de este plan.</span></label>
     <button class="primary-button" type="submit">Entregar catálogo</button>
   </form>

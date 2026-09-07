@@ -1851,15 +1851,15 @@ def create_operator_app(
         session = session_or_redirect
         try:
             form = await _parse_form(request)
-            if set(form) != {"csrf_token", "fingerprint", "brand", "version", "title", "subtitle", "reason", "confirm"}:
+            if set(form) != {"csrf_token", "fingerprint", "brand", "version", "title", "subtitle", "confirm"}:
                 raise ValueError("El formulario contiene campos ausentes o desconocidos.")
             if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
                 return rejection
             if form["confirm"] != "yes":
                 raise ValueError("Debes confirmar la entrega del catálogo.")
-            reason = _require_text(form["reason"], "reason")
-            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
-                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
+            # Entregar es el camino rutinario: se audita igual (cada paso queda registrado
+            # por separado en Postgres), pero sin pedirle a la persona que escriba un motivo.
+            reason = f"Entrega guiada — versión {form['version'].strip()[:80] or 'sin nombre'}."
             brand = _require_text(form["brand"], "brand")
             title = _require_text(form["title"], "title")
             subtitle = form["subtitle"].strip()
@@ -2424,10 +2424,12 @@ def create_operator_app(
                     return rejection
                 if form.get("confirm") != "yes":
                     raise ValueError("Debes confirmar el modo simple antes de continuar.")
-                reason = _require_text(str(form.get("reason") or ""), "reason")
+                brand_code = _require_text(str(form.get("brand_code") or ""), "brand_code")
+                # Cargar es el camino rutinario: se audita igual, pero sin pedirle a la
+                # persona que escriba un motivo cada vez que sube un Excel.
+                reason = str(form.get("reason") or "").strip() or f"Carga vía modo simple — marca {brand_code}."
                 if not 4 <= len(reason) <= MAX_REASON_LENGTH:
                     raise ValueError("reason debe contener entre 4 y 500 caracteres.")
-                brand_code = _require_text(str(form.get("brand_code") or ""), "brand_code")
                 odoo_upload = form.get("odoo_file")
                 if not isinstance(odoo_upload, UploadFile) or not odoo_upload.filename:
                     raise ValueError("Selecciona el Excel de productos.")
@@ -2716,7 +2718,16 @@ def create_operator_app(
             form = await _parse_form(request)
             if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
                 return rejection
-            reason = _require_text(form.get("reason", ""), "reason")
+            decision = str(form.get("decision", ""))
+            typed_reason = str(form.get("reason", "")).strip()
+            if typed_reason:
+                reason = typed_reason
+            elif decision == "approve":
+                # Aprobar es el camino rutinario: no se le pide a la persona escribir un
+                # motivo cada vez, pero la fila sigue quedando auditada igual (la tabla lo exige).
+                reason = "Aprobado desde la cola de revisión."
+            else:
+                raise ValueError("El motivo es obligatorio para rechazar una identidad.")
             if len(reason) < 4:
                 raise ValueError("reason debe contener al menos 4 caracteres.")
             if len(reason) > MAX_REASON_LENGTH:
@@ -2731,7 +2742,7 @@ def create_operator_app(
                 parsed_product_id,
                 form.get("fingerprint", ""),
                 form.get("review_sha256", ""),
-                form.get("decision", ""),
+                decision,
                 session.actor,
                 reason,
             )
@@ -2753,20 +2764,30 @@ def create_operator_app(
         session = session_or_redirect
         try:
             form = await _parse_form(request)
-            if set(form) != {"csrf_token", "fingerprint", "query", "expected_count", "decision", "reason", "confirm"}:
+            base_fields = {"csrf_token", "fingerprint", "query", "expected_count", "decision", "confirm"}
+            # Aprobar en lote es el camino rutinario y no pide motivo (el campo ni se
+            # envía); rechazar en lote sigue exigiendo uno escrito, así que su formulario
+            # sí incluye "reason".
+            if set(form) not in (base_fields, base_fields | {"reason"}):
                 raise ValueError("El formulario contiene campos ausentes o desconocidos.")
             if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
                 return rejection
             decision = form["decision"]
             if decision not in {"approve", "reject"} or form["confirm"] != decision:
                 raise ValueError("Debes confirmar exactamente la decisión del lote.")
-            reason = _require_text(form["reason"], "reason")
-            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
-                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
             query = form["query"].strip()
             if len(query) > 200:
                 raise ValueError("La búsqueda no puede superar 200 caracteres.")
             expected_count = int(form["expected_count"])
+            typed_reason = str(form.get("reason", "")).strip()
+            if typed_reason:
+                reason = typed_reason
+            elif decision == "approve":
+                reason = f"Aprobación en lote de {expected_count} identidades desde la cola de revisión."
+            else:
+                raise ValueError("El motivo es obligatorio para rechazar un lote.")
+            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
+                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
             result = await run_in_threadpool(
                 gateway.decide_many, _uuid(plan_id, "plan_id"), form["fingerprint"],
                 decision, session.actor, reason, query=query, expected_count=expected_count,

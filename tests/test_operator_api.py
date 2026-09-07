@@ -943,6 +943,25 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("2 fotos indexadas", landing.text)
         self.assertIn("1 vinculada automáticamente", landing.text)
 
+    async def test_simple_mode_does_not_require_typing_a_reason(self) -> None:
+        # Cargar es el camino rutinario: la persona no escribe un motivo, pero la
+        # cadena de pasos (submit, promote, prepare, index, match) sigue auditada.
+        await self.login()
+        page = await self.client.get("/operator/simple")
+        self.assertNotIn("Motivo auditable", page.text)
+        self.assertNotIn('name="reason"', page.text)
+        csrf = hidden_value(page.text, "csrf_token")
+        response = await self.client.post(
+            "/operator/simple",
+            data={"csrf_token": csrf, "brand_code": "NATSUKI", "confirm": "yes"},
+            files=[
+                ("odoo_file", ("productos.csv", b"ref,name\nA,B\n", "text/csv")),
+                ("images", ("NK-001.jpg", b"contenido-de-prueba", "image/jpeg")),
+            ],
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 303)
+
     async def test_simple_mode_reads_images_from_a_local_server_folder(self) -> None:
         await self.login()
         page = await self.client.get("/operator/simple")
@@ -1226,7 +1245,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         deliver_data = {
             "csrf_token": csrf, "fingerprint": FINGERPRINT, "brand": "NATSUKI",
             "version": "2026.09", "title": "Catálogo 2026.09", "subtitle": "",
-            "reason": "Primera entrega guiada", "confirm": "yes",
+            "confirm": "yes",
         }
         rejected = await self.client.post(
             f"/operator/catalogs/{PLAN_ID}/deliver",
@@ -1642,6 +1661,81 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
             self.gateway.decisions[0]["reason"],
             "Nombre y referencia verificados",
         )
+
+    async def test_approving_a_product_needs_no_typed_reason_but_stays_audited(self) -> None:
+        # Aprobar es el camino rutinario: la persona no escribe nada, pero la fila
+        # igual queda auditada con un motivo automático.
+        await self.login()
+        queue = await self.client.get(f"/operator/plans/{PLAN_ID}?state=pending")
+        self.assertNotIn('name="reason"', queue.text.split('data-decision="approve"')[1].split("</form>")[0])
+        csrf = hidden_value(queue.text, "csrf_token")
+        response = await self.client.post(
+            f"/operator/plans/{PLAN_ID}/products/{PRODUCT_ID}/decision",
+            data={
+                "csrf_token": csrf, "fingerprint": FINGERPRINT, "review_sha256": REVIEW_SHA256,
+                "decision": "approve", "confirm": "yes",
+            },
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(len(self.gateway.decisions), 1)
+        self.assertTrue(self.gateway.decisions[0]["reason"])
+
+    async def test_rejecting_a_product_still_requires_a_typed_reason(self) -> None:
+        await self.login()
+        queue = await self.client.get(f"/operator/plans/{PLAN_ID}?state=pending")
+        csrf = hidden_value(queue.text, "csrf_token")
+        response = await self.client.post(
+            f"/operator/plans/{PLAN_ID}/products/{PRODUCT_ID}/decision",
+            data={
+                "csrf_token": csrf, "fingerprint": FINGERPRINT, "review_sha256": REVIEW_SHA256,
+                "decision": "reject", "confirm": "yes",
+            },
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(self.gateway.decisions, [])
+
+    async def test_bulk_approve_needs_no_reason_but_bulk_reject_still_does(self) -> None:
+        await self.login()
+        page = await self.client.get(f"/operator/plans/{PLAN_ID}?state=pending&q=ABC")
+        csrf = hidden_value(page.text, "csrf_token")
+        base = {"csrf_token": csrf, "fingerprint": FINGERPRINT, "query": "ABC", "expected_count": "1"}
+        approved = await self.client.post(
+            f"/operator/plans/{PLAN_ID}/bulk-decision",
+            data={**base, "decision": "approve", "confirm": "approve"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(approved.status_code, 303)
+        self.assertTrue(self.gateway.bulk_decisions[-1]["reason"])
+        rejected_without_reason = await self.client.post(
+            f"/operator/plans/{PLAN_ID}/bulk-decision",
+            data={**base, "decision": "reject", "confirm": "reject"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(rejected_without_reason.status_code, 409)
+
+    async def test_delivering_a_catalog_needs_no_typed_reason(self) -> None:
+        await self.login()
+        self.gateway.plan_data.update({
+            "pending_count": 0, "inconsistent_count": 0, "approved_count": 1,
+            "brand_profile_code": "NATSUKI",
+        })
+        page = await self.client.get("/operator/catalogs")
+        deliver_section = page.text.split('id="deliver-title"')[1].split("</section>")[0]
+        self.assertNotIn("Motivo auditable", deliver_section)
+        self.assertNotIn("name=\"reason\"", deliver_section)
+        csrf = hidden_value(page.text, "csrf_token")
+        response = await self.client.post(
+            f"/operator/catalogs/{PLAN_ID}/deliver",
+            data={
+                "csrf_token": csrf, "fingerprint": FINGERPRINT, "brand": "NATSUKI",
+                "version": "2026.10", "title": "Catálogo 2026.10", "subtitle": "",
+                "confirm": "yes",
+            },
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 303)
 
     async def test_get_never_exposes_a_decision_route(self) -> None:
         await self.login()

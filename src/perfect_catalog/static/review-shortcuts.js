@@ -13,26 +13,27 @@
   function focusCard(index) {
     if (index < 0 || index >= cards.length) return;
     activeIndex = index;
-    const card = cards[activeIndex];
-    card.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    const textarea = card.querySelector('.decision-form textarea[name="reason"]');
-    if (textarea) textarea.focus({ preventScroll: true });
+    cards[activeIndex].scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
 
-  function currentForm() {
+  function decisionForm(value) {
     const card = cards[activeIndex];
-    return card ? card.querySelector('.decision-form') : null;
+    return card ? card.querySelector(`.decision-form[data-decision="${value}"]`) : null;
   }
 
   function submitDecision(value) {
-    const form = currentForm();
+    const form = decisionForm(value);
     if (!form) return;
-    const button = form.querySelector(`button[name="decision"][value="${value}"]`);
-    if (!button) return;
-    // requestSubmit keeps native required-field validation (reason, confirm checkbox);
-    // it never bypasses the audit trail, it just avoids reaching for the mouse.
-    if (form.requestSubmit) form.requestSubmit(button);
-    else button.click();
+    if (value === 'reject') {
+      // El rechazo vive detrás de un <details> colapsado (aprobar es el camino rápido,
+      // sin motivo); ábrelo para que el textarea requerido sea visible y foqueable.
+      const details = form.closest('details');
+      if (details) details.open = true;
+    }
+    // requestSubmit keeps native required-field validation (reason on reject, confirm
+    // checkbox always); it never bypasses the audit trail, it just avoids the mouse.
+    if (form.requestSubmit) form.requestSubmit();
+    else form.submit();
   }
 
   document.addEventListener('keydown', (event) => {
