@@ -2581,9 +2581,12 @@ def create_operator_app(
             return _error(environment, 409, "Modo simple no completado", str(exc), session=session)
         except Exception as exc:
             diagnostic_id = secrets.token_hex(4)
+            diag = getattr(exc, "diag", None)
             LOGGER.error(
-                "simple_mode_failed diagnostic_id=%s error_type=%s sqlstate=%s",
+                "simple_mode_failed diagnostic_id=%s error_type=%s sqlstate=%s constraint=%s table=%s column=%s detail=%s",
                 diagnostic_id, type(exc).__name__, getattr(exc, "sqlstate", None),
+                getattr(diag, "constraint_name", None), getattr(diag, "table_name", None),
+                getattr(diag, "column_name", None), getattr(diag, "message_primary", None),
             )
             return _error(
                 environment, 503, "Modo simple no disponible",
