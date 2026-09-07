@@ -2236,6 +2236,7 @@ def create_operator_app(
                 approved_unmaterialized = int(counts["approved_unmaterialized_count"])
                 total = pending + approved_unmaterialized
                 matched_now = 0
+                capped = total > 500
                 if 0 < total <= 500:
                     if pending:
                         await run_in_threadpool(
@@ -2248,6 +2249,10 @@ def create_operator_app(
                         session.company_id,
                     )
                     matched_now = total
+                plan_counts = dry_run.get("plan_counts", {})
+                images_indexed = int(index_result.get("image_count", 0))
+                ambiguous_images = int(index_result.get("ambiguous_entries", 0))
+                unmatched_images = max(images_indexed - ambiguous_images - total, 0)
         except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
             return _error(environment, 409, "Modo simple no completado", str(exc), session=session)
         except Exception as exc:
@@ -2265,7 +2270,17 @@ def create_operator_app(
             if zip_path is not None and zip_path.exists():
                 zip_path.unlink()
         return RedirectResponse(
-            f"/operator/plans/{plan_id}?{urlencode({'result': 'simple_mode', 'matched': matched_now})}",
+            f"/operator/plans/{plan_id}?{urlencode({
+                'result': 'simple_mode',
+                'created': int(plan_counts.get('create', 0)),
+                'updated': int(plan_counts.get('update', 0)),
+                'unchanged': int(plan_counts.get('no_change', 0)),
+                'matched': matched_now,
+                'images_indexed': images_indexed,
+                'unmatched_images': unmatched_images,
+                'ambiguous_images': ambiguous_images,
+                'capped': '1' if capped else '0',
+            })}",
             status_code=303,
         )
 
@@ -2317,20 +2332,25 @@ def create_operator_app(
             if page * limit < queue["filtered_count"]
             else None
         )
+        def _qp_int(name: str) -> int:
+            raw = request.query_params.get(name, "0")
+            return int(raw) if raw.isdigit() else 0
+
         result = request.query_params.get("result")
+        simple_mode_summary = None
         if result == "simple_mode":
-            matched_raw = request.query_params.get("matched", "0")
-            matched_count = int(matched_raw) if matched_raw.isdigit() else 0
-            photo_phrase = "1 foto vinculada" if matched_count == 1 else f"{matched_count} fotos vinculadas"
-            message = (
-                f"Modo simple: excel procesado, {photo_phrase} automáticamente "
-                "a productos ya aprobados. Revisa aquí las identidades nuevas; las fotos de "
-                "productos nuevos se vincularán solas cuando los apruebes (vuelve a Imágenes después)."
-                if matched_count
-                else "Modo simple: excel procesado. Todavía no hay fotos vinculadas porque los "
-                "productos son nuevos; revisa las identidades y luego entra a Imágenes para "
-                "vincular las fotos automáticamente."
-            )
+            simple_mode_summary = {
+                "created": _qp_int("created"),
+                "updated": _qp_int("updated"),
+                "unchanged": _qp_int("unchanged"),
+                "matched": _qp_int("matched"),
+                "images_indexed": _qp_int("images_indexed"),
+                "unmatched_images": _qp_int("unmatched_images"),
+                "ambiguous_images": _qp_int("ambiguous_images"),
+                "capped": request.query_params.get("capped") == "1",
+                "pending_count": int(queue["filtered_count"]) if state == "pending" else None,
+            }
+            message = None
         else:
             message = {
                 "approved": "Producto aprobado y auditado.",
@@ -2352,6 +2372,7 @@ def create_operator_app(
             previous_url=previous_url,
             next_url=next_url,
             message=message,
+            simple_mode_summary=simple_mode_summary,
             session=session_or_redirect,
             version=OPERATOR_VERSION,
         )

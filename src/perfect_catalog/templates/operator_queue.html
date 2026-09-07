@@ -11,7 +11,37 @@
   <div class="queue-total"><strong>{{ queue.candidate_count }}</strong><span>identidades del plan</span></div>
 </section>
 
-{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if simple_mode_summary %}
+{% set s = simple_mode_summary %}
+<section class="alert alert-success simple-mode-summary">
+  <h2>Actualización procesada</h2>
+  <div class="metric-row">
+    <div><strong>{{ s.created }}</strong><span>Nuevos</span></div>
+    <div><strong>{{ s.updated }}</strong><span>Actualizados</span></div>
+    <div><strong>{{ s.unchanged }}</strong><span>Sin cambios</span></div>
+  </div>
+  <p>
+    {{ s.images_indexed }} foto{{ 's' if s.images_indexed != 1 else '' }} indexada{{ 's' if s.images_indexed != 1 else '' }} ·
+    {{ s.matched }} vinculada{{ 's' if s.matched != 1 else '' }} automáticamente
+    {% if s.unmatched_images %} · {{ s.unmatched_images }} sin identificar{% endif %}
+    {% if s.ambiguous_images %} · {{ s.ambiguous_images }} ambigua{{ 's' if s.ambiguous_images != 1 else '' }}{% endif %}
+  </p>
+  {% if s.capped %}
+  <p class="draft-note">Hay más de 500 fotos por vincular; entra a <a href="/operator/images">Imágenes</a> para procesarlas en lotes.</p>
+  {% endif %}
+  {% if s.unmatched_images or s.ambiguous_images %}
+  <p class="draft-note">Revisa las fotos sin identificar o ambiguas en <a href="/operator/images">Imágenes</a>.</p>
+  {% endif %}
+  {% if s.pending_count == 0 %}
+  <p><strong>No hay productos nuevos que revisar.</strong> La actualización está lista.</p>
+  <a class="primary-button" href="/operator/catalogs">Ir a Catálogos</a>
+  {% else %}
+  <a class="primary-button" href="/operator/plans/{{ plan.import_plan_id }}?state=pending">
+    Revisar {% if s.pending_count is not none %}{{ s.pending_count }} producto{{ 's' if s.pending_count != 1 else '' }} nuevo{{ 's' if s.pending_count != 1 else '' }}{% else %}productos nuevos{% endif %}
+  </a>
+  {% endif %}
+</section>
+{% elif message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
 
 <section class="evidence-strip">
   <span>Fingerprint aplicado</span>

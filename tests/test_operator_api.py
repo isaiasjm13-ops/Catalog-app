@@ -282,7 +282,10 @@ class SyntheticReviewGateway:
         record["import_plan_id"] = str(PLAN_ID)
         return {
             "status": "promoted",
-            "dry_run": {"plan_id": str(PLAN_ID), "approval_fingerprint_sha256": FINGERPRINT},
+            "dry_run": {
+                "plan_id": str(PLAN_ID), "approval_fingerprint_sha256": FINGERPRINT,
+                "plan_counts": {"create": 1, "update": 0, "no_change": 0},
+            },
         }
 
     def index_image_archive(
@@ -298,7 +301,10 @@ class SyntheticReviewGateway:
             "image_count": 2, "ambiguous_count": 1, "indexed_by": actor,
         })
         self.image_indexes.append({"submission_id": submission_id, "intake_root": intake_root, "actor": actor, "reason": reason})
-        return {"status": "indexed", "image_archive_index_id": record["image_archive_index_id"]}
+        return {
+            "status": "indexed", "image_archive_index_id": record["image_archive_index_id"],
+            "image_count": record["image_count"], "ambiguous_entries": record["ambiguous_count"],
+        }
 
     def generate_image_candidates(
         self, image_archive_index_id: uuid.UUID, actor: str, reason: str,
@@ -898,7 +904,9 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(self.gateway.image_candidate_data[0]["approved_image_materialization_id"])
         landing = await self.client.get(location)
         self.assertEqual(landing.status_code, 200)
-        self.assertIn("1 foto vinculada automáticamente", landing.text)
+        self.assertIn("Actualización procesada", landing.text)
+        self.assertIn("2 fotos indexadas", landing.text)
+        self.assertIn("1 vinculada automáticamente", landing.text)
 
     async def test_simple_mode_reads_images_from_a_local_server_folder(self) -> None:
         await self.login()

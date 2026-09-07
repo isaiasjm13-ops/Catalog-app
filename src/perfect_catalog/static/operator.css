@@ -92,6 +92,10 @@ button:active, .primary-button:active, .secondary-button:active { transform: tra
 .alert { border-radius: 12px; padding: 13px 15px; margin: 16px 0; font-size: 13px; }
 .alert-error { color: #7e2721; background: var(--red-soft); border: 1px solid #edcbc5; }
 .alert-success { color: #174f37; background: #e7f4e8; border: 1px solid #c6e1ca; }
+.simple-mode-summary h2 { margin: 0 0 8px; font-size: 19px; }
+.simple-mode-summary .metric-row { background: white; margin: 14px 0; }
+.simple-mode-summary p { color: inherit; }
+.simple-mode-summary .primary-button { margin-top: 6px; }
 
 .page-heading, .queue-heading { display: flex; justify-content: space-between; align-items: end; gap: 24px; padding: 48px 0 30px; }
 .page-heading p { max-width: 650px; margin-bottom: 0; }
