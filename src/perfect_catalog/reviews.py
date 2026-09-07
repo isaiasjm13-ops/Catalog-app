@@ -402,6 +402,12 @@ def _review_queue_page_in_connection(
         connection, plan_id, expected_fingerprint, lock=False
     )
     plan_items = _load_plan_items(connection, plan_id)
+    # Antes lanzaba RuntimeError si el plan no creó ninguna identidad ("candidate_ids"
+    # vacío) — pero un plan aplicado por modo simple puede legítimamente ser solo
+    # actualizaciones (sin ningún 'create'), y eso no es un error: la cola de revisión
+    # simplemente queda vacía. El SQL de abajo (target_ids, WHERE operation_type='create')
+    # ya devuelve cero filas con gracia en ese caso; candidate_ids solo se usa para el
+    # conteo informativo candidate_count.
     candidate_ids = {
         item.get("planned_product_variant_id")
         or item.get("planned_product_template_id")
@@ -409,8 +415,6 @@ def _review_queue_page_in_connection(
         if item["operation_type"] == "create"
     }
     candidate_ids.discard(None)
-    if not candidate_ids:
-        raise RuntimeError("El plan aplicado no creó identidades revisables.")
 
     state_clause = "" if state == "all" else "AND review_state=%s"
     filter_sql = f"""
