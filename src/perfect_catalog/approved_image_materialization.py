@@ -287,19 +287,28 @@ def materialize_approved_image(
 def materialize_approved_images_bulk(
     expected_count: int, intake_root: Path, image_root: Path,
     config: DatabaseConfig, password: str, *, actor: str, reason: str,
-    company_id: uuid.UUID, max_items: int = 500,
+    company_id: uuid.UUID, image_archive_index_id: uuid.UUID | None = None,
+    max_items: int = 500,
 ) -> dict[str, Any]:
-    """Materializa el conjunto exacto de aprobadas pendientes, verificando cada archivo."""
+    """Materializa el conjunto exacto de aprobadas pendientes, verificando cada archivo.
+    Sin image_archive_index_id materializa todo lo aprobado de la compañía; con él, solo
+    lo generado por ese índice (ver decide_image_candidates_bulk)."""
     actor, reason = _actor(actor), _reason(reason)
     if not 1 <= expected_count <= max_items:
         raise ValueError(f"expected_count debe estar entre 1 y {max_items}.")
+    index_filter = "AND i.image_archive_index_id=%s" if image_archive_index_id is not None else ""
+    params: tuple[Any, ...] = (
+        (company_id, image_archive_index_id, max_items + 1)
+        if image_archive_index_id is not None
+        else (company_id, max_items + 1)
+    )
     with psycopg.connect(**config.connection_kwargs(password), row_factory=dict_row) as connection:
         connection.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended(%s, 6))",
             ("perfect_catalog.approved_image_materialization.bulk",),
         )
         rows = connection.execute(
-            """
+            f"""
             SELECT c.image_product_candidate_id, c.evidence_sha256
             FROM perfect_catalog.image_product_candidate AS c
             JOIN perfect_catalog.image_archive_entry AS e
@@ -315,13 +324,13 @@ def materialize_approved_images_bulk(
               ON m.image_product_candidate_id=c.image_product_candidate_id
             LEFT JOIN perfect_catalog.approved_image_variant AS v
               ON v.image_product_candidate_id=c.image_product_candidate_id
-            WHERE s.company_id=%s
+            WHERE s.company_id=%s {index_filter}
               AND ((c.variant_index IS NULL AND m.approved_image_materialization_id IS NULL)
                    OR (c.variant_index IS NOT NULL AND v.approved_image_variant_id IS NULL))
             ORDER BY d.decided_at, c.image_product_candidate_id
             LIMIT %s
             """,
-            (company_id, max_items + 1),
+            params,
         ).fetchall()
     if len(rows) != expected_count:
         raise PermissionError("La cantidad aprobada sin materializar cambió; recarga la página.")

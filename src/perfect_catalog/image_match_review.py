@@ -124,14 +124,20 @@ def generate_image_candidates(
 
 def list_image_candidates(
     config: DatabaseConfig, password: str, *, limit: int = 100, offset: int = 0,
-    company_id: uuid.UUID,
+    company_id: uuid.UUID, image_archive_index_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
     if limit < 1 or limit > 200 or offset < 0:
         raise ValueError("Paginación inválida.")
+    index_filter = "AND i.image_archive_index_id=%s" if image_archive_index_id is not None else ""
+    params: tuple[Any, ...] = (
+        (company_id, image_archive_index_id, limit, offset)
+        if image_archive_index_id is not None
+        else (company_id, limit, offset)
+    )
     with psycopg.connect(**config.connection_kwargs(password)) as connection:
         with connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
-                """
+                f"""
                 SELECT c.image_product_candidate_id, c.evidence_sha256, c.confidence, c.variant_index,
                        e.original_filename, e.member_path, e.lookup_key, e.content_sha256,
                        r.value_original AS reference, p.name_original AS product_name,
@@ -155,11 +161,11 @@ def list_image_candidates(
                 LEFT JOIN perfect_catalog.image_product_decision AS d ON d.image_product_candidate_id=c.image_product_candidate_id
                 LEFT JOIN perfect_catalog.approved_image_materialization AS m ON m.image_product_candidate_id=c.image_product_candidate_id
                 LEFT JOIN perfect_catalog.approved_image_variant AS v ON v.image_product_candidate_id=c.image_product_candidate_id
-                WHERE s.company_id=%s
+                WHERE s.company_id=%s {index_filter}
                 ORDER BY c.generated_at DESC, c.image_product_candidate_id
                 LIMIT %s OFFSET %s
                 """,
-                (company_id, limit, offset),
+                params,
             )
             rows = [dict(row) for row in cursor.fetchall()]
     count = int(rows[0].pop("filtered_count")) if rows else 0
@@ -276,14 +282,23 @@ def decide_image_candidate(
 def decide_image_candidates_bulk(
     expected_count: int, decision: str, actor: str, reason: str,
     config: DatabaseConfig, password: str, *, company_id: uuid.UUID,
-    max_items: int = 500,
+    image_archive_index_id: uuid.UUID | None = None, max_items: int = 500,
 ) -> dict[str, Any]:
-    """Decide el conjunto pendiente exacto en una transacción; nunca materializa archivos."""
+    """Decide el conjunto pendiente exacto en una transacción; nunca materializa archivos.
+    Sin image_archive_index_id decide todo lo pendiente de la compañía (uso manual desde
+    la cola de imágenes); con él, solo lo generado por ese índice (modo simple: nunca
+    aprueba de un tirón fotos pendientes de una carga anterior sin revisar)."""
     actor, reason = _actor(actor), _reason(reason)
     if decision not in {"approved", "rejected"}:
         raise ValueError("Decisión de imagen inválida.")
     if not 1 <= expected_count <= max_items:
         raise ValueError(f"expected_count debe estar entre 1 y {max_items}.")
+    index_filter = "AND i.image_archive_index_id=%s" if image_archive_index_id is not None else ""
+    params: tuple[Any, ...] = (
+        (company_id, image_archive_index_id, max_items + 1)
+        if image_archive_index_id is not None
+        else (company_id, max_items + 1)
+    )
     with psycopg.connect(**config.connection_kwargs(password)) as connection:
         connection.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
         connection.execute(
@@ -292,7 +307,7 @@ def decide_image_candidates_bulk(
         )
         with connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
-                """
+                f"""
                 SELECT c.image_product_candidate_id, c.evidence_sha256
                 FROM perfect_catalog.image_product_candidate AS c
                 JOIN perfect_catalog.image_archive_entry AS e
@@ -303,11 +318,11 @@ def decide_image_candidates_bulk(
                   ON s.intake_submission_id=i.intake_submission_id
                 LEFT JOIN perfect_catalog.image_product_decision AS d
                   ON d.image_product_candidate_id=c.image_product_candidate_id
-                WHERE d.image_product_decision_id IS NULL AND s.company_id=%s
+                WHERE d.image_product_decision_id IS NULL AND s.company_id=%s {index_filter}
                 ORDER BY c.generated_at, c.image_product_candidate_id
                 LIMIT %s
                 """,
-                (company_id, max_items + 1),
+                params,
             )
             candidates = [dict(row) for row in cursor.fetchall()]
             if len(candidates) != expected_count:

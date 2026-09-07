@@ -348,7 +348,10 @@ class SyntheticReviewGateway:
         self, image_archive_index_id: uuid.UUID, actor: str, reason: str,
         company_id: uuid.UUID,
     ) -> dict[str, Any]:
-        if not self.image_candidate_data:
+        if not any(
+            item["image_archive_index_id"] == str(image_archive_index_id)
+            for item in self.image_candidate_data
+        ):
             self.image_candidate_data.append({
                 "image_product_candidate_id": str(uuid.uuid4()), "evidence_sha256": "9" * 64,
                 "confidence": 1, "original_filename": "NK-001.jpg", "member_path": "fotos/NK-001.jpg",
@@ -356,18 +359,29 @@ class SyntheticReviewGateway:
                 "product_name": "Empaque <seguro>", "product_template_id": str(uuid.uuid4()),
                 "product_variant_id": None, "decision": None, "decided_by": None, "decided_at": None,
                 "approved_image_materialization_id": None, "storage_relpath": None,
+                "image_archive_index_id": str(image_archive_index_id),
             })
         return {"status": "generated", "candidate_count": 1, "inserted_count": 1}
 
+    def _image_candidates_scope(self, image_archive_index_id: uuid.UUID | None) -> list[dict[str, Any]]:
+        if image_archive_index_id is None:
+            return self.image_candidate_data
+        return [
+            item for item in self.image_candidate_data
+            if item["image_archive_index_id"] == str(image_archive_index_id)
+        ]
+
     def image_candidates(
         self, *, limit: int = 100, offset: int = 0, company_id: uuid.UUID,
+        image_archive_index_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
-        return {"items": self.image_candidate_data[offset:offset + limit],
-                "filtered_count": len(self.image_candidate_data),
-                "pending_count": sum(item["decision"] is None for item in self.image_candidate_data),
+        scoped = self._image_candidates_scope(image_archive_index_id)
+        return {"items": scoped[offset:offset + limit],
+                "filtered_count": len(scoped),
+                "pending_count": sum(item["decision"] is None for item in scoped),
                 "approved_unmaterialized_count": sum(
                     item["decision"] == "approved" and not item["approved_image_materialization_id"]
-                    for item in self.image_candidate_data
+                    for item in scoped
                 ),
                 "limit": limit, "offset": offset}
 
@@ -389,9 +403,10 @@ class SyntheticReviewGateway:
 
     def decide_image_candidates_bulk(
         self, expected_count: int, decision: str, actor: str, reason: str,
-        company_id: uuid.UUID,
+        company_id: uuid.UUID, image_archive_index_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
-        pending = [item for item in self.image_candidate_data if item["decision"] is None]
+        scoped = self._image_candidates_scope(image_archive_index_id)
+        pending = [item for item in scoped if item["decision"] is None]
         if len(pending) != expected_count:
             raise PermissionError("cantidad pendiente cambió")
         for candidate in pending:
@@ -412,9 +427,10 @@ class SyntheticReviewGateway:
     def materialize_approved_images_bulk(
         self, expected_count: int, intake_root: Path, image_root: Path,
         actor: str, reason: str,
-        company_id: uuid.UUID,
+        company_id: uuid.UUID, image_archive_index_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
-        pending = [item for item in self.image_candidate_data if item["decision"] == "approved" and not item["approved_image_materialization_id"]]
+        scoped = self._image_candidates_scope(image_archive_index_id)
+        pending = [item for item in scoped if item["decision"] == "approved" and not item["approved_image_materialization_id"]]
         if len(pending) != expected_count:
             raise PermissionError("cantidad materializable cambió")
         for candidate in pending:
@@ -946,6 +962,50 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("2 fotos indexadas", landing.text)
         self.assertIn("1 vinculada automáticamente", landing.text)
 
+    async def test_simple_mode_never_auto_approves_pending_photos_from_an_earlier_upload(self) -> None:
+        # Bug real: la auto-aprobación de "modo simple" contaba y decidía TODO lo
+        # pendiente de la compañía, no solo lo generado por esta carga — una foto
+        # ambigua/sin revisar de una carga anterior quedaba aprobada y materializada
+        # de un tirón sin que nadie la revisara.
+        await self.login()
+        old_index_id = str(uuid.uuid4())
+        self.gateway.image_candidate_data.append({
+            "image_product_candidate_id": str(uuid.uuid4()), "evidence_sha256": "1" * 64,
+            "confidence": 1, "original_filename": "OLD-001.jpg", "member_path": "fotos/OLD-001.jpg",
+            "lookup_key": "OLD-001", "content_sha256": "2" * 64, "reference": "OLD-001",
+            "product_name": "Pieza vieja", "product_template_id": str(uuid.uuid4()),
+            "product_variant_id": None, "decision": None, "decided_by": None, "decided_at": None,
+            "approved_image_materialization_id": None, "storage_relpath": None,
+            "image_archive_index_id": old_index_id,
+        })
+        page = await self.client.get("/operator/simple")
+        csrf = hidden_value(page.text, "csrf_token")
+        response = await self.client.post(
+            "/operator/simple",
+            data={
+                "csrf_token": csrf, "brand_code": "NATSUKI",
+                "reason": "Carga guiada de prueba", "confirm": "yes",
+            },
+            files=[
+                ("odoo_file", ("productos.csv", b"ref,name\nA,B\n", "text/csv")),
+                ("images", ("NK-001.jpg", b"contenido-de-prueba", "image/jpeg")),
+            ],
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 303)
+        old_candidate = next(
+            item for item in self.gateway.image_candidate_data
+            if item["image_archive_index_id"] == old_index_id
+        )
+        self.assertIsNone(old_candidate["decision"])
+        self.assertIsNone(old_candidate["approved_image_materialization_id"])
+        new_candidate = next(
+            item for item in self.gateway.image_candidate_data
+            if item["image_archive_index_id"] != old_index_id
+        )
+        self.assertEqual(new_candidate["decision"], "approved")
+        self.assertIsNotNone(new_candidate["approved_image_materialization_id"])
+
     async def test_simple_mode_does_not_require_typing_a_reason(self) -> None:
         # Cargar es el camino rutinario: la persona no escribe un motivo, pero la
         # cadena de pasos (submit, promote, prepare, index, match) sigue auditada.
@@ -1039,6 +1099,18 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(image_index.status_code, 404)
         self.assertEqual(image_candidate_preview.status_code, 404)
         self.assertIn("empresa activa", plan.text)
+
+    async def test_import_plan_routes_are_also_guarded_by_the_active_company(self) -> None:
+        # Bug real: el regex del middleware solo reconocía el prefijo "plans", no
+        # "import-plans" — /operator/import-plans/{plan_id} (ver e importar) quedaba
+        # sin el chequeo de compañía activa, aunque /operator/plans/{plan_id} sí lo tuviera.
+        await self.login()
+        self.gateway.authorize_company_resource = lambda *_: False
+        detail = await self.client.get(f"/operator/import-plans/{PLAN_ID}")
+        prepare = await self.client.post(f"/operator/import-plans/{PLAN_ID}/prepare")
+        self.assertEqual(detail.status_code, 404)
+        self.assertEqual(prepare.status_code, 404)
+        self.assertIn("empresa activa", detail.text)
 
     async def test_login_challenge_cookie_scope_and_missing_cookie_diagnostic(self) -> None:
         login_page = await self.client.get("/operator/login")

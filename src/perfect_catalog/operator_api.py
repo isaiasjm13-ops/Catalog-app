@@ -225,6 +225,7 @@ class ReviewGateway(Protocol):
 
     def image_candidates(
         self, *, limit: int = 100, offset: int = 0, company_id: uuid.UUID,
+        image_archive_index_id: uuid.UUID | None = None,
     ) -> dict[str, Any]: ...
 
     def unlinked_image_entries(
@@ -237,7 +238,7 @@ class ReviewGateway(Protocol):
 
     def decide_image_candidates_bulk(
         self, expected_count: int, decision: str, actor: str, reason: str,
-        company_id: uuid.UUID,
+        company_id: uuid.UUID, image_archive_index_id: uuid.UUID | None = None,
     ) -> dict[str, Any]: ...
 
     def image_candidate_preview(
@@ -247,6 +248,7 @@ class ReviewGateway(Protocol):
     def materialize_approved_images_bulk(
         self, expected_count: int, intake_root: Path, image_root: Path,
         actor: str, reason: str, company_id: uuid.UUID,
+        image_archive_index_id: uuid.UUID | None = None,
     ) -> dict[str, Any]: ...
 
     def catalog_releases(self, *, limit: int = 100, company_id: uuid.UUID | None = None) -> list[dict[str, Any]]: ...
@@ -737,7 +739,7 @@ def create_operator_app(
     async def security_headers(request: Request, call_next: Callable[..., Any]) -> Response:
         response: Response
         match = re.match(
-            r"^/operator/(?:(plans)/([0-9a-fA-F-]{36})(?:/.*)?|(catalogs)/([0-9a-fA-F-]{36})(?:/.*)?|brands/identity/([0-9a-fA-F-]{36})/logo|(intake)/([0-9a-fA-F-]{36})(?:/.*)?|images/(index|candidates)/([0-9a-fA-F-]{36})(?:/.*)?)$",
+            r"^/operator/(?:(plans|import-plans)/([0-9a-fA-F-]{36})(?:/.*)?|(catalogs)/([0-9a-fA-F-]{36})(?:/.*)?|brands/identity/([0-9a-fA-F-]{36})/logo|(intake)/([0-9a-fA-F-]{36})(?:/.*)?|images/(index|candidates)/([0-9a-fA-F-]{36})(?:/.*)?)$",
             request.url.path,
         )
         session = authenticator.get_session(request.cookies.get(SESSION_COOKIE))
@@ -2546,8 +2548,13 @@ def create_operator_app(
                     uuid.UUID(index_result["image_archive_index_id"]), session.actor, reason,
                     session.company_id,
                 )
+                # Limitado a esta carga (image_archive_index_id): una carga nueva sin
+                # coincidencias propias no debe aprobar/materializar de un tirón fotos
+                # pendientes de una carga anterior que nadie revisó todavía.
+                image_archive_index_id = uuid.UUID(index_result["image_archive_index_id"])
                 counts = await run_in_threadpool(
                     gateway.image_candidates, limit=1, offset=0, company_id=session.company_id,
+                    image_archive_index_id=image_archive_index_id,
                 )
                 pending = int(counts["pending_count"])
                 approved_unmaterialized = int(counts["approved_unmaterialized_count"])
@@ -2558,12 +2565,12 @@ def create_operator_app(
                     if pending:
                         await run_in_threadpool(
                             gateway.decide_image_candidates_bulk, pending, "approved",
-                            session.actor, reason, session.company_id,
+                            session.actor, reason, session.company_id, image_archive_index_id,
                         )
                     await run_in_threadpool(
                         gateway.materialize_approved_images_bulk, total,
                         resolved_intake_root, resolved_image_output, session.actor, reason,
-                        session.company_id,
+                        session.company_id, image_archive_index_id,
                     )
                     matched_now = total
                 plan_counts = dry_run.get("plan_counts", {})

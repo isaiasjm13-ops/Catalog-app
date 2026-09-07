@@ -1403,12 +1403,13 @@ class DatabaseReviewGateway:
 
     def image_candidates(
         self, *, limit: int = 100, offset: int = 0, company_id: uuid.UUID,
+        image_archive_index_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
         from .image_match_review import list_image_candidates
 
         return list_image_candidates(
             self._config, self._password, limit=limit, offset=offset,
-            company_id=company_id,
+            company_id=company_id, image_archive_index_id=image_archive_index_id,
         )
 
     def unlinked_image_entries(
@@ -1432,13 +1433,13 @@ class DatabaseReviewGateway:
 
     def decide_image_candidates_bulk(
         self, expected_count: int, decision: str, actor: str, reason: str,
-        company_id: uuid.UUID,
+        company_id: uuid.UUID, image_archive_index_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
         from .image_match_review import decide_image_candidates_bulk
 
         return decide_image_candidates_bulk(
             expected_count, decision, actor, reason, self._config, self._password,
-            company_id=company_id,
+            company_id=company_id, image_archive_index_id=image_archive_index_id,
         )
 
     def image_candidate_preview(
@@ -1453,13 +1454,14 @@ class DatabaseReviewGateway:
     def materialize_approved_images_bulk(
         self, expected_count: int, intake_root: Path, image_root: Path,
         actor: str, reason: str,
-        company_id: uuid.UUID,
+        company_id: uuid.UUID, image_archive_index_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
         from .approved_image_materialization import materialize_approved_images_bulk
 
         return materialize_approved_images_bulk(
             expected_count, intake_root, image_root, self._config, self._password,
             actor=actor, reason=reason, company_id=company_id,
+            image_archive_index_id=image_archive_index_id,
         )
 
     def decide(
