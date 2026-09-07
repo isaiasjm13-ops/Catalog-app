@@ -218,11 +218,26 @@ def materialize_approved_image(
             is_variant = record["variant_index"] is not None
             existing_table = "approved_image_variant" if is_variant else "approved_image_materialization"
             existing_id_column = "approved_image_variant_id" if is_variant else "approved_image_materialization_id"
-            cursor.execute(
-                f"SELECT {existing_id_column}, storage_relpath, content_sha256 "
-                f"FROM perfect_catalog.{existing_table} WHERE image_product_decision_id=%s",
-                (record["image_product_decision_id"],),
-            )
+            # Se busca por product_target_id (la clave que de verdad es única en estas
+            # tablas — uq_approved_image_materialization_target /
+            # uq_approved_image_variant_target_index), no por image_product_decision_id:
+            # reintentar modo simple con el mismo Excel/foto genera una decisión NUEVA
+            # para el mismo producto, y buscar solo por esa decisión nunca la encontraba
+            # "ya materializada" — el INSERT de abajo chocaba con la restricción única
+            # del producto en vez de devolver already_materialized con gracia.
+            target_id = record["product_variant_id"] or record["product_template_id"]
+            if is_variant:
+                cursor.execute(
+                    f"SELECT {existing_id_column}, storage_relpath, content_sha256 "
+                    f"FROM perfect_catalog.{existing_table} WHERE product_target_id=%s AND variant_index=%s",
+                    (target_id, record["variant_index"]),
+                )
+            else:
+                cursor.execute(
+                    f"SELECT {existing_id_column}, storage_relpath, content_sha256 "
+                    f"FROM perfect_catalog.{existing_table} WHERE product_target_id=%s",
+                    (target_id,),
+                )
             existing = cursor.fetchone()
             if existing:
                 return {"status": "already_materialized", **dict(existing)}
