@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ title }}</title>
+<style>
+  :root{--ink:#17231f;--paper:#f4f1e8;--card:#fff;--line:#d9d5c9;--red:#b3261e}
+  body{margin:0;padding:clamp(20px,5vw,48px);color:var(--ink);background:var(--paper);font:15px/1.55 Arial,sans-serif;display:grid;place-items:center;min-height:100vh}
+  main{max-width:480px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:28px}
+  h1{font:600 22px/1.2 Georgia,serif;color:var(--red);margin:0 0 10px}
+  p{margin:0}
+</style>
+</head>
+<body>
+<main>
+  <h1>{{ title }}</h1>
+  <p>{{ detail }}</p>
+</main>
+</body>
+</html>
