@@ -1681,6 +1681,25 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.gateway.decisions), 1)
         self.assertTrue(self.gateway.decisions[0]["reason"])
 
+    async def test_decision_with_invalid_value_is_rejected_clearly_not_as_a_missing_reason(self) -> None:
+        # Bug real encontrado en revisión: antes, decision="" (o cualquier valor que no
+        # fuera "approve") caía en la rama de rechazo y reportaba "falta el motivo" en
+        # vez de señalar que decision es inválida.
+        await self.login()
+        queue = await self.client.get(f"/operator/plans/{PLAN_ID}?state=pending")
+        csrf = hidden_value(queue.text, "csrf_token")
+        response = await self.client.post(
+            f"/operator/plans/{PLAN_ID}/products/{PRODUCT_ID}/decision",
+            data={
+                "csrf_token": csrf, "fingerprint": FINGERPRINT, "review_sha256": REVIEW_SHA256,
+                "decision": "maybe", "confirm": "yes",
+            },
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("decision debe ser", response.text)
+        self.assertEqual(self.gateway.decisions, [])
+
     async def test_rejecting_a_product_still_requires_a_typed_reason(self) -> None:
         await self.login()
         queue = await self.client.get(f"/operator/plans/{PLAN_ID}?state=pending")

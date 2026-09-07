@@ -588,6 +588,19 @@ def _uuid(value: str, label: str) -> uuid.UUID:
         raise ValueError(f"{label} no contiene un UUID válido.") from exc
 
 
+def _decision_reason(form: Any, decision: str, *, auto_reason: str) -> str:
+    """Un motivo escrito a mano siempre gana. Aprobar (el camino rutinario) se
+    autogenera si no hay uno; rechazar (la excepción) exige uno explícito."""
+    if decision not in {"approve", "reject"}:
+        raise ValueError("decision debe ser 'approve' o 'reject'.")
+    typed_reason = str(form.get("reason", "")).strip()
+    if typed_reason:
+        return typed_reason
+    if decision == "approve":
+        return auto_reason
+    raise ValueError("El motivo es obligatorio para rechazar.")
+
+
 def _human_size(value: int) -> str:
     size = float(value)
     for unit in ("B", "KiB", "MiB", "GiB"):
@@ -2719,15 +2732,7 @@ def create_operator_app(
             if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
                 return rejection
             decision = str(form.get("decision", ""))
-            typed_reason = str(form.get("reason", "")).strip()
-            if typed_reason:
-                reason = typed_reason
-            elif decision == "approve":
-                # Aprobar es el camino rutinario: no se le pide a la persona escribir un
-                # motivo cada vez, pero la fila sigue quedando auditada igual (la tabla lo exige).
-                reason = "Aprobado desde la cola de revisión."
-            else:
-                raise ValueError("El motivo es obligatorio para rechazar una identidad.")
+            reason = _decision_reason(form, decision, auto_reason="Aprobado desde la cola de revisión.")
             if len(reason) < 4:
                 raise ValueError("reason debe contener al menos 4 caracteres.")
             if len(reason) > MAX_REASON_LENGTH:
@@ -2779,13 +2784,10 @@ def create_operator_app(
             if len(query) > 200:
                 raise ValueError("La búsqueda no puede superar 200 caracteres.")
             expected_count = int(form["expected_count"])
-            typed_reason = str(form.get("reason", "")).strip()
-            if typed_reason:
-                reason = typed_reason
-            elif decision == "approve":
-                reason = f"Aprobación en lote de {expected_count} identidades desde la cola de revisión."
-            else:
-                raise ValueError("El motivo es obligatorio para rechazar un lote.")
+            reason = _decision_reason(
+                form, decision,
+                auto_reason=f"Aprobación en lote de {expected_count} identidades desde la cola de revisión.",
+            )
             if not 4 <= len(reason) <= MAX_REASON_LENGTH:
                 raise ValueError("reason debe contener entre 4 y 500 caracteres.")
             result = await run_in_threadpool(
