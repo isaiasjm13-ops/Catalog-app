@@ -528,6 +528,14 @@ def _list_review_plans_in_connection(
     target_filter = "" if plan_id is None else "AND i.import_plan_id=%s"
     plan_filter = "" if plan_id is None else "AND p.import_plan_id=%s"
     company_filter = "" if company_id is None else "AND bp.company_id=%s"
+    # El listado general (plan_id=None) usa JOIN: no tiene sentido llenar el
+    # dashboard con planes sin ninguna identidad nueva que revisar. Pero
+    # consultar UN plan puntual (deep link tras aplicar, p. ej. desde modo
+    # simple) debe encontrarlo igual aunque haya sido solo actualizaciones a
+    # productos existentes (operation_type='update'/'no_change', sin ningún
+    # 'create') — si no, "Plan no encontrado" se ve como un fallo cuando en
+    # realidad se aplicó bien y no había nada nuevo que revisar.
+    classified_join = "JOIN" if plan_id is None else "LEFT JOIN"
     sql = f"""
         WITH targets AS (
             SELECT DISTINCT i.import_plan_id,
@@ -597,7 +605,7 @@ def _list_review_plans_in_connection(
         FROM perfect_catalog.import_plan AS p
         JOIN perfect_catalog.import_file AS f ON f.import_file_id=p.import_file_id
         JOIN perfect_catalog.brand_profile AS bp ON bp.brand_profile_id=p.brand_profile_id
-        JOIN classified AS c ON c.import_plan_id=p.import_plan_id
+        {classified_join} classified AS c ON c.import_plan_id=p.import_plan_id
         WHERE p.plan_status='applied' {plan_filter} {company_filter}
         GROUP BY p.import_plan_id, p.approval_fingerprint_sha256,
                  p.contract_version, p.rules_version, p.applied_at, p.applied_by,
