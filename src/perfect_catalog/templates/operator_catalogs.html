@@ -28,7 +28,16 @@
   </article>
 </section>
 
-{% set deliverable_plans = plans | rejectattr('pending_count') | rejectattr('inconsistent_count') | list %}
+{% set resolved_plans = plans | rejectattr('pending_count') | rejectattr('inconsistent_count') | list %}
+{% set deliverable_plans = resolved_plans
+   | selectattr('contract_version', 'equalto', current_contract_version)
+   | selectattr('rules_version', 'in', current_rules_versions) | list %}
+{% set stale_plan_count = resolved_plans | length - deliverable_plans | length %}
+{% if stale_plan_count %}
+<div class="alert alert-error">
+  {{ stale_plan_count }} plan{{ 'es' if stale_plan_count != 1 else '' }} resuelto{{ 's' if stale_plan_count != 1 else '' }} no se puede{{ 'n' if stale_plan_count != 1 else '' }} entregar: se aplicó con una versión anterior del sistema. Genera un plan nuevo (Cargar) para esos productos.
+</div>
+{% endif %}
 {% if deliverable_plans %}
 <section class="transition-panel brand-profile-builder" aria-labelledby="deliver-title">
   <h2 id="deliver-title">Entregar</h2>

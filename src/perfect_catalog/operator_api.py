@@ -53,7 +53,7 @@ from .intake import (
     SecureIntakeService,
     intake_kind_options,
 )
-from .importer import DEFAULT_MAX_PILOT_ROWS
+from .importer import CONTRACT_VERSION, DEFAULT_MAX_PILOT_ROWS, SUPPORTED_RULES_VERSIONS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
@@ -1291,6 +1291,8 @@ def create_operator_app(
             formats=SUPPORTED_FORMATS,
             indesign_templates=INDESIGN_TEMPLATE_PROFILES,
             message=message,
+            current_contract_version=CONTRACT_VERSION,
+            current_rules_versions=list(SUPPORTED_RULES_VERSIONS),
             session=session_or_redirect,
             version=OPERATOR_VERSION,
         )

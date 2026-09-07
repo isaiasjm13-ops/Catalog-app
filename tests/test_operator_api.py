@@ -28,6 +28,7 @@ from perfect_catalog.operator_api import (
     build_parser,
     create_operator_app,
 )
+from perfect_catalog.importer import CONTRACT_VERSION, RULES_VERSION
 
 
 PLAN_ID = uuid.uuid4()
@@ -74,8 +75,8 @@ class SyntheticReviewGateway:
         self.plan_data = {
             "import_plan_id": str(PLAN_ID),
             "approval_fingerprint_sha256": FINGERPRINT,
-            "contract_version": "contract-test",
-            "rules_version": "rules-test",
+            "contract_version": CONTRACT_VERSION,
+            "rules_version": RULES_VERSION,
             "applied_at": "2026-08-24T00:00:00Z",
             "applied_by": "apply-reviewer",
             "original_name": "muestra <script>alert(1)</script>.xlsx",
@@ -161,8 +162,8 @@ class SyntheticReviewGateway:
         return {
             "plan_id": str(plan_id), "plan_status": self.import_plan_status,
             "plan_sha256": "d" * 64, "approval_fingerprint_sha256": FINGERPRINT,
-            "file_sha256": "e" * 64, "contract_version": "contract-test",
-            "rules_version": "rules-test", "item_count": 1,
+            "file_sha256": "e" * 64, "contract_version": CONTRACT_VERSION,
+            "rules_version": RULES_VERSION, "item_count": 1,
             "brand_profile_code": None, "brand_profile_name": None,
             "create_count": 1, "update_count": self.import_plan_update_count, "no_change_count": 0,
             "inventory_snapshot_count": 0,
@@ -1334,6 +1335,22 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["location"], "/operator/catalogs?result=created")
         self.assertEqual(self.gateway.catalog_exports[0]["formats"], ("html-standalone",))
         self.assertEqual(self.gateway.catalog_exports[0]["config"]["group_by"], "category_path")
+
+    async def test_stale_plan_version_is_excluded_from_entregar_and_explained(self) -> None:
+        # Un plan aplicado bajo una versión anterior de CONTRACT_VERSION/RULES_VERSION
+        # siempre falla verify_plan_integrity al entregar ("Las versiones del plan no
+        # coinciden con el código actual"). Antes se listaba igual que un plan vigente,
+        # sin fecha ni versión visibles, así que era indistinguible y fácil de intentar
+        # entregar por error. Ahora debe quedar fuera de "Entregar catálogo" y explicado.
+        await self.login()
+        self.gateway.plan_data.update({
+            "pending_count": 0, "inconsistent_count": 0, "approved_count": 1,
+            "brand_profile_code": "NATSUKI", "contract_version": "perfect-catalog-v0.1",
+        })
+        page = await self.client.get("/operator/catalogs")
+        self.assertNotIn("Entregar catálogo", page.text)
+        self.assertIn("no se puede", page.text)
+        self.assertIn("versión anterior del sistema", page.text)
 
     async def test_deliver_catalog_chains_build_publish_export_and_preview_is_byte_exact(self) -> None:
         await self.login()
