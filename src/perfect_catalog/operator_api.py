@@ -521,6 +521,43 @@ def _set_security_headers(response: Response) -> None:
     response.headers["X-Frame-Options"] = "DENY"
 
 
+_DELIVERED_PAGE_PATH = re.compile(
+    r"^/operator/catalogs/[0-9a-fA-F-]{36}/exports/[0-9a-fA-F-]{36}/delivered$"
+)
+_EXPORT_VIEW_PATH = re.compile(
+    r"^/operator/catalogs/[0-9a-fA-F-]{36}/exports/[0-9a-fA-F-]{36}/[^/]+/view$"
+)
+
+
+def _set_delivered_page_headers(response: Response) -> None:
+    """Igual que _set_security_headers, salvo frame-src 'self': esta página necesita
+    incrustar el iframe de vista previa (mismo origen, ver _EXPORT_VIEW_PATH)."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' blob:; "
+        "frame-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+    )
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+
+
+def _set_export_preview_headers(response: Response) -> None:
+    """El HTML exportado es un documento completo con su propio CSS/JS inline, fuentes
+    y fotos en base64 — la política estricta por defecto (sin 'unsafe-inline', sin
+    data:, frame-ancestors 'none') se lo comería entero y además impediría incrustarlo
+    en el iframe de /delivered. Sigue sin permitir nada externo: nada de red, nada de
+    otros orígenes, solo lo que el propio archivo trae embebido."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+        "img-src data:; font-src data:; frame-ancestors 'self'; form-action 'none'; base-uri 'none'"
+    )
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+
+
 def _origin_tuple(value: str) -> tuple[str, str, int] | None:
     try:
         parsed = urlsplit(value)
@@ -732,7 +769,12 @@ def create_operator_app(
                 )
         else:
             response = await call_next(request)
-        _set_security_headers(response)
+        if _EXPORT_VIEW_PATH.match(request.url.path):
+            _set_export_preview_headers(response)
+        elif _DELIVERED_PAGE_PATH.match(request.url.path):
+            _set_delivered_page_headers(response)
+        else:
+            _set_security_headers(response)
         return response
 
     def current_session(request: Request) -> OperatorSession | None:
@@ -1852,7 +1894,7 @@ def create_operator_app(
             return _unexpected_error(environment, "Exportación no disponible", "No se generó el HTML autónomo. Revisa la consola del servidor operador.", "catalog_quick_export_failed", exc, session=session)
         return RedirectResponse("/operator/catalogs?result=created", status_code=303)
 
-    @app.post("/operator/catalogs/{plan_id}/deliver")
+    @app.post("/operator/plans/{plan_id}/deliver")
     async def deliver_catalog(request: Request, plan_id: str) -> Response:
         """'Entregar' en una sola confirmación: encadena construir + publicar + exportar
         HTML autónomo (mismo patrón que ya usa simple_mode_submit para su propia cadena de

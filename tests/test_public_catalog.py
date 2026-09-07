@@ -147,6 +147,35 @@ class MatchImagesOrderingTests(unittest.TestCase):
             self.assertEqual(matched, 0)
             self.assertEqual(ambiguous, 2)
 
+    def test_two_rows_with_the_same_reference_both_get_the_shared_photo(self) -> None:
+        # Bug real: antes solo la última fila con esa referencia se quedaba con la
+        # foto; las demás apariciones se quedaban sin nada, sin aviso.
+        first_row = self._row("REF-5005")
+        second_row = self._row("REF-5005")
+        with tempfile.TemporaryDirectory() as tmp:
+            matched, ambiguous = _match_images(
+                [first_row, second_row], [("REF-5005.png", _png_bytes())], Path(tmp),
+            )
+            self.assertEqual(matched, 1)
+            self.assertEqual(ambiguous, 0)
+            self.assertTrue(first_row["image_path"])
+            self.assertTrue(second_row["image_path"])
+
+    def test_letter_and_numeric_suffix_claiming_the_same_slot_are_ambiguous(self) -> None:
+        # Bug real: "REF A" y "REF-2" normalizan a claves de texto distintas (no las
+        # atrapa el chequeo por nombre), pero ambas son la misma posición (la primera
+        # foto extra) de la misma referencia — antes aceptaba las dos sin aviso.
+        row = self._row("CKT-507AU-LB")
+        with tempfile.TemporaryDirectory() as tmp:
+            images = [
+                ("CKT-507AU-LB A.png", _png_bytes((1, 1, 1))),
+                ("CKT-507AU-LB-2.png", _png_bytes((2, 2, 2))),
+            ]
+            matched, ambiguous = _match_images([row], images, Path(tmp))
+            self.assertEqual(matched, 0)
+            self.assertEqual(ambiguous, 2)
+            self.assertEqual(row["variant_image_paths"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -141,7 +141,10 @@ class SyntheticReviewGateway:
         if resource_type == "plan":
             return resource_id == PLAN_ID
         if resource_type == "release":
-            return True
+            # Antes devolvía True siempre: eso ocultó un bug real donde /deliver vivía
+            # bajo /operator/catalogs/{plan_id} y el middleware lo autorizaba como si
+            # plan_id fuera un release_id, dejando pasar cualquier UUID sin validar nada.
+            return any(item["catalog_release_id"] == str(resource_id) for item in self.release_data)
         if resource_type in {"intake", "image_index", "image_candidate"}:
             return True
         return resource_type == "identity"
@@ -1248,13 +1251,13 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
             "confirm": "yes",
         }
         rejected = await self.client.post(
-            f"/operator/catalogs/{PLAN_ID}/deliver",
+            f"/operator/plans/{PLAN_ID}/deliver",
             data={**deliver_data, "csrf_token": "wrong"},
             headers={"Origin": "http://testserver"},
         )
         self.assertEqual(rejected.status_code, 403)
         response = await self.client.post(
-            f"/operator/catalogs/{PLAN_ID}/deliver", data=deliver_data,
+            f"/operator/plans/{PLAN_ID}/deliver", data=deliver_data,
             headers={"Origin": "http://testserver"},
         )
         self.assertEqual(response.status_code, 303)
@@ -1267,6 +1270,9 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         delivered = await self.client.get(location)
         self.assertEqual(delivered.status_code, 200)
         self.assertIn("Tu catálogo está listo", delivered.text)
+        # La página que contiene el iframe debe poder cargarlo (mismo origen), a
+        # diferencia de la política por defecto (frame-src cae en default-src 'none').
+        self.assertIn("frame-src 'self'", delivered.headers["content-security-policy"])
         view_match = re.search(r'src="([^"]+/view)"', delivered.text)
         self.assertIsNotNone(view_match)
         view_url = view_match.group(1)
@@ -1274,6 +1280,13 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         preview = await self.client.get(view_url)
         self.assertEqual(preview.status_code, 200)
         self.assertEqual(preview.headers["content-type"].split(";")[0], "text/html")
+        # El archivo exportado no debe rechazar ser incrustado (bug real: X-Frame-Options
+        # DENY + CSP por defecto bloqueaban el iframe aunque los bytes fueran correctos).
+        self.assertNotEqual(preview.headers.get("x-frame-options"), "DENY")
+        preview_csp = preview.headers["content-security-policy"]
+        self.assertIn("frame-ancestors 'self'", preview_csp)
+        self.assertIn("'unsafe-inline'", preview_csp)
+        self.assertIn("img-src data:", preview_csp)
 
         path, _, query = location.partition("?")
         filename = query.removeprefix("filename=")
@@ -1400,6 +1413,15 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         release, items = fixture_release()
         export_id = uuid.uuid4()
+        # Este release se escribe directo en disco (sin pasar por el gateway), así que
+        # no está en release_data; se autoriza puntualmente para esta prueba.
+        original_authorize = self.gateway.authorize_company_resource
+        release_id_text = str(release["catalog_release_id"])
+        self.gateway.authorize_company_resource = (
+            lambda company_id, resource_type, resource_id: True
+            if resource_type == "release" and str(resource_id) == release_id_text
+            else original_authorize(company_id, resource_type, resource_id)
+        )
         output_root = Path(self.temporary.name) / "catalogs"
         build_catalog_bundle(
             release, items,
@@ -1746,7 +1768,7 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("name=\"reason\"", deliver_section)
         csrf = hidden_value(page.text, "csrf_token")
         response = await self.client.post(
-            f"/operator/catalogs/{PLAN_ID}/deliver",
+            f"/operator/plans/{PLAN_ID}/deliver",
             data={
                 "csrf_token": csrf, "fingerprint": FINGERPRINT, "brand": "NATSUKI",
                 "version": "2026.10", "title": "Catálogo 2026.10", "subtitle": "",

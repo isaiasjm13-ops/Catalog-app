@@ -180,39 +180,60 @@ def _match_images(
         })
         entry_files[entry_id] = (filename, content)
 
+    # Varias filas del Excel pueden declarar la misma referencia (variantes listadas
+    # por separado, por ejemplo); todas comparten la misma foto en vez de que la
+    # última fila se quede con ella y las demás se queden sin nada.
     references: list[dict[str, Any]] = []
-    rows_by_reference: dict[str, dict[str, Any]] = {}
+    rows_by_reference: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         reference_id = str(uuid.uuid5(_REFERENCE_NAMESPACE, str(row["internal_reference_normalized"])))
-        rows_by_reference[reference_id] = row
-        references.append({
-            "product_reference_id": reference_id,
-            "product_template_id": reference_id,
-            "product_variant_id": None,
-            "value_original": row["internal_reference_original"],
-            "value_normalized": row["internal_reference_normalized"],
-        })
+        is_first_occurrence = reference_id not in rows_by_reference
+        rows_by_reference.setdefault(reference_id, []).append(row)
+        if is_first_occurrence:
+            references.append({
+                "product_reference_id": reference_id,
+                "product_template_id": reference_id,
+                "product_variant_id": None,
+                "value_original": row["internal_reference_original"],
+                "value_normalized": row["internal_reference_normalized"],
+            })
 
     candidates = exact_image_candidates(entries, references)
+    # Dos convenciones de sufijo distintas ("REF A.jpg" y "REF-2.jpg") normalizan a
+    # claves de texto diferentes, así que el chequeo de arriba no las ve como
+    # duplicadas — pero ambas apuntan a la misma posición (la primera foto extra) de
+    # la misma fila. Se agrupa por (fila, posición) para detectar ese choque también,
+    # no solo el choque de nombre normalizado idéntico.
+    slot_candidates: dict[tuple[int, int | None], list[dict[str, Any]]] = {}
+    for candidate in candidates:
+        matching_rows = rows_by_reference.get(candidate["product_reference_id"]) or []
+        if candidate["image_archive_entry_id"] not in entry_files:
+            continue
+        for row in matching_rows:
+            slot_candidates.setdefault((id(row), candidate["variant_index"]), []).append(candidate)
+
     matched_entry_ids: set[str] = set()
     # Las variantes llegan en el orden en que se subieron los archivos, no en el orden real
     # de las fotos (p. ej. si se sube "B" antes que "A"); se recogen con su variant_index y
     # se ordenan al final para que la galería quede A, B, C... sin importar el orden de carga.
     pending_variants: dict[int, list[tuple[int, str]]] = {}
-    for candidate in candidates:
-        row = rows_by_reference.get(candidate["product_reference_id"])
-        entry = entry_files.get(candidate["image_archive_entry_id"])
-        if row is None or entry is None:
+    rows_by_id = {id(row): row for row in rows}
+    for (row_id, variant_index), slot_list in slot_candidates.items():
+        distinct_entry_ids = {candidate["image_archive_entry_id"] for candidate in slot_list}
+        if len(distinct_entry_ids) > 1:
+            # Dos fotos distintas reclaman la misma posición de la misma referencia:
+            # evidencia contradictoria, no se adivina cuál es la correcta.
+            ambiguous += len(distinct_entry_ids)
             continue
-        matched_entry_ids.add(candidate["image_archive_entry_id"])
-        filename, content = entry
+        row = rows_by_id[row_id]
+        filename, content = entry_files[slot_list[0]["image_archive_entry_id"]]
         stored_name = _safe_filename(filename, seen_names)
         (bundle_dir / stored_name).write_bytes(content)
-        variant_index = candidate["variant_index"]
+        matched_entry_ids.add(slot_list[0]["image_archive_entry_id"])
         if variant_index is None and not row["image_path"]:
             row["image_path"] = stored_name
         else:
-            pending_variants.setdefault(id(row), []).append((variant_index or 0, stored_name))
+            pending_variants.setdefault(row_id, []).append((variant_index or 0, stored_name))
 
     for row in rows:
         variants = pending_variants.get(id(row))

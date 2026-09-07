@@ -34,7 +34,7 @@
   <h2 id="deliver-title">Entregar</h2>
   <p>Construye, publica y exporta el HTML autónomo en una sola confirmación. Los pasos siguen quedando auditados por separado; esto solo evita copiarlos a mano entre pantallas.</p>
   {% for plan in deliverable_plans %}
-  <form method="post" action="/operator/catalogs/{{ plan.import_plan_id }}/deliver" class="builder-form">
+  <form method="post" action="/operator/plans/{{ plan.import_plan_id }}/deliver" class="builder-form">
     <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
     <input type="hidden" name="fingerprint" value="{{ plan.approval_fingerprint_sha256 }}">
     <div class="builder-plan"><strong>{{ plan.original_name }}</strong><span>{{ plan.candidate_count }} identidades aprobadas</span></div>
