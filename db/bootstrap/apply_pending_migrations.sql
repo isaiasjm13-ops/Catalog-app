@@ -282,7 +282,24 @@ SELECT checksum_sha256 <> :'checksum_0027' AS mismatch_0027 FROM perfect_catalog
 \ir ../migrations/0027_image_variant_letter_suffix.sql
 \endif
 
-\echo 'Validando ledger 0017-0027 y contexto Company'
+SELECT (to_regclass('perfect_catalog.public_catalog_link') IS NULL) AS need_0028 \gset
+SELECT EXISTS (SELECT 1 FROM perfect_catalog.schema_migration WHERE migration_id='0028_public_catalog_links') AS ledger_0028 \gset
+\if :ledger_0028
+SELECT checksum_sha256 <> :'checksum_0028' AS mismatch_0028 FROM perfect_catalog.schema_migration WHERE migration_id='0028_public_catalog_links' \gset
+\if :mismatch_0028
+\echo 'CHECKSUM_MISMATCH: 0028_public_catalog_links.'
+\quit 3
+\endif
+\else
+\if :need_0028
+\echo 'MIGRATION_PENDING: 0028 - links y bitacora del generador publico de catalogos'
+\else
+\echo 'SCHEMA_AHEAD_OF_LEDGER: 0028; validando postcondiciones.'
+\endif
+\ir ../migrations/0028_public_catalog_links.sql
+\endif
+
+\echo 'Validando ledger 0017-0028 y contexto Company'
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -318,8 +335,11 @@ BEGIN
     ) OR NOT EXISTS (
         SELECT 1 FROM perfect_catalog.schema_migration
         WHERE migration_id = '0027_image_variant_letter_suffix'
+    ) OR NOT EXISTS (
+        SELECT 1 FROM perfect_catalog.schema_migration
+        WHERE migration_id = '0028_public_catalog_links'
     ) THEN
-        RAISE EXCEPTION 'Validacion del sistema: faltan entradas 0017-0027 en el ledger';
+        RAISE EXCEPTION 'Validacion del sistema: faltan entradas 0017-0028 en el ledger';
     END IF;
 
     IF EXISTS (
@@ -437,6 +457,46 @@ BEGIN
           AND pg_get_constraintdef(oid) LIKE '%exact-approved-reference-v3%'
     ) THEN
         RAISE EXCEPTION 'Validacion de fotos variantes: falta algoritmo v3 (sufijo de letra) 0027';
+    END IF;
+
+    IF to_regclass('perfect_catalog.public_catalog_link') IS NULL
+       OR to_regclass('perfect_catalog.public_catalog_link_revocation_event') IS NULL
+       OR to_regclass('perfect_catalog.public_catalog_generation') IS NULL THEN
+        RAISE EXCEPTION 'Validacion del generador publico: faltan tablas 0028';
+    END IF;
+
+    IF has_table_privilege('perfect_catalog_app', 'perfect_catalog.public_catalog_link', 'UPDATE')
+       OR has_table_privilege('perfect_catalog_app', 'perfect_catalog.public_catalog_link_revocation_event', 'UPDATE')
+       OR has_table_privilege('perfect_catalog_app', 'perfect_catalog.public_catalog_generation', 'UPDATE') THEN
+        RAISE EXCEPTION 'Validacion del generador publico: app conserva UPDATE sobre tablas append-only 0028';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'trg_public_catalog_link_append_only'
+          AND tgrelid = 'perfect_catalog.public_catalog_link'::regclass
+          AND NOT tgisinternal
+    ) OR NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'trg_public_catalog_link_revocation_event_append_only'
+          AND tgrelid = 'perfect_catalog.public_catalog_link_revocation_event'::regclass
+          AND NOT tgisinternal
+    ) OR NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'trg_public_catalog_generation_append_only'
+          AND tgrelid = 'perfect_catalog.public_catalog_generation'::regclass
+          AND NOT tgisinternal
+    ) THEN
+        RAISE EXCEPTION 'Validacion del generador publico: falta guardia append-only 0028';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_indexes
+        WHERE schemaname = 'perfect_catalog'
+          AND tablename = 'public_catalog_link_revocation_event'
+          AND indexname = 'ux_public_catalog_link_revocation_event_link'
+    ) THEN
+        RAISE EXCEPTION 'Validacion del generador publico: falta indice unico de revocacion 0028';
     END IF;
 END
 $$;

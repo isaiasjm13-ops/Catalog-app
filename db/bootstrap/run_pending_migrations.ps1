@@ -12,6 +12,7 @@ $migration0024 = Join-Path $PSScriptRoot '..\migrations\0024_intake_submission_a
 $migration0025 = Join-Path $PSScriptRoot '..\migrations\0025_natsuki_company_restored.sql'
 $migration0026 = Join-Path $PSScriptRoot '..\migrations\0026_product_photo_variants.sql'
 $migration0027 = Join-Path $PSScriptRoot '..\migrations\0027_image_variant_letter_suffix.sql'
+$migration0028 = Join-Path $PSScriptRoot '..\migrations\0028_public_catalog_links.sql'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $logDirectory = Join-Path $projectRoot 'logs'
 $logPath = Join-Path $logDirectory 'actualizar-sistema-ultimo.log'
@@ -28,9 +29,10 @@ $checksum0024 = (Get-FileHash -LiteralPath $migration0024 -Algorithm SHA256).Has
 $checksum0025 = (Get-FileHash -LiteralPath $migration0025 -Algorithm SHA256).Hash.ToLowerInvariant()
 $checksum0026 = (Get-FileHash -LiteralPath $migration0026 -Algorithm SHA256).Hash.ToLowerInvariant()
 $checksum0027 = (Get-FileHash -LiteralPath $migration0027 -Algorithm SHA256).Hash.ToLowerInvariant()
+$checksum0028 = (Get-FileHash -LiteralPath $migration0028 -Algorithm SHA256).Hash.ToLowerInvariant()
 New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
 Write-Host 'ACTUALIZAR SISTEMA - Perfect Catalog'
-Write-Host 'Detecta y aplica solamente los cambios pendientes (0007-0027).'
+Write-Host 'Detecta y aplica solamente los cambios pendientes (0007-0028).'
 Write-Host 'La contrasena de postgres no muestra caracteres mientras se escribe.'
 # psql escribe NOTICE y errores en stderr; el codigo de salida es la senal fiable.
 $ErrorActionPreference = 'Continue'
@@ -40,7 +42,7 @@ $ErrorActionPreference = 'Continue'
     -v "checksum_0021=$checksum0021" -v "checksum_0022=$checksum0022" `
     -v "checksum_0023=$checksum0023" -v "checksum_0024=$checksum0024" `
     -v "checksum_0025=$checksum0025" -v "checksum_0026=$checksum0026" `
-    -v "checksum_0027=$checksum0027" -f $sqlPath 2>&1 |
+    -v "checksum_0027=$checksum0027" -v "checksum_0028=$checksum0028" -f $sqlPath 2>&1 |
     Tee-Object -FilePath $logPath
 $exitCode = $LASTEXITCODE
 if ($exitCode -eq 0) {
