@@ -145,7 +145,7 @@ class SyntheticReviewGateway:
             # bajo /operator/catalogs/{plan_id} y el middleware lo autorizaba como si
             # plan_id fuera un release_id, dejando pasar cualquier UUID sin validar nada.
             return any(item["catalog_release_id"] == str(resource_id) for item in self.release_data)
-        if resource_type in {"intake", "image_index", "image_candidate"}:
+        if resource_type in {"intake", "image_index", "image_candidate", "image_entry"}:
             return True
         return resource_type == "identity"
 
@@ -1006,6 +1006,28 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(new_candidate["decision"], "approved")
         self.assertIsNotNone(new_candidate["approved_image_materialization_id"])
 
+    async def test_simple_mode_summary_links_to_the_update_diff_detail(self) -> None:
+        # Antes no había forma de ver QUÉ cambió en las referencias que ya existían
+        # (solo el conteo) — ahora el resumen enlaza a la vista de diffs que ya
+        # existía en /operator/import-plans/{plan_id}.
+        await self.login()
+        page = await self.client.get(
+            f"/operator/plans/{PLAN_ID}",
+            params={"result": "simple_mode", "updated": "2", "created": "0", "unchanged": "1"},
+        )
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(f"/operator/import-plans/{PLAN_ID}", page.text)
+        self.assertIn("2 actualizaciones", page.text)
+
+    async def test_simple_mode_summary_has_no_diff_link_when_nothing_was_updated(self) -> None:
+        await self.login()
+        page = await self.client.get(
+            f"/operator/plans/{PLAN_ID}",
+            params={"result": "simple_mode", "updated": "0", "created": "1", "unchanged": "0"},
+        )
+        self.assertEqual(page.status_code, 200)
+        self.assertNotIn(f"/operator/import-plans/{PLAN_ID}", page.text)
+
     async def test_simple_mode_does_not_require_typing_a_reason(self) -> None:
         # Cargar es el camino rutinario: la persona no escribe un motivo, pero la
         # cadena de pasos (submit, promote, prepare, index, match) sigue auditada.
@@ -1093,11 +1115,16 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         intake = await self.client.post(f"/operator/intake/{foreign_id}/index-images")
         image_index = await self.client.post(f"/operator/images/index/{foreign_id}/candidates")
         image_candidate_preview = await self.client.get(f"/operator/images/candidates/{foreign_id}/preview")
+        # Bug real de la auditoría: el regex solo reconocía images/(index|candidates),
+        # no images/entries — esta ruta quedaba sin el chequeo de compañía activa (aunque
+        # resolve_image_entry_preview ya filtraba por company_id en su propio SQL).
+        image_entry_preview = await self.client.get(f"/operator/images/entries/{foreign_id}/preview")
         self.assertEqual(plan.status_code, 404)
         self.assertEqual(release.status_code, 404)
         self.assertEqual(intake.status_code, 404)
         self.assertEqual(image_index.status_code, 404)
         self.assertEqual(image_candidate_preview.status_code, 404)
+        self.assertEqual(image_entry_preview.status_code, 404)
         self.assertIn("empresa activa", plan.text)
 
     async def test_import_plan_routes_are_also_guarded_by_the_active_company(self) -> None:
@@ -1367,6 +1394,34 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(download.status_code, 200)
         # La vista previa (iframe) y la descarga deben ser exactamente el mismo archivo.
         self.assertEqual(preview.content, download.content)
+
+    async def test_deliver_catalog_handles_a_missing_html_standalone_file_gracefully(self) -> None:
+        # Hallazgo de la auditoría: si export_catalog alguna vez no trae el archivo
+        # "html-standalone" esperado, buscar con next() sin default lanzaba un
+        # StopIteration sin capturar (500 crudo) en vez del 409 controlado del resto
+        # de la función.
+        await self.login()
+        self.gateway.plan_data.update({
+            "pending_count": 0, "inconsistent_count": 0, "approved_count": 1,
+            "brand_profile_code": "NATSUKI",
+        })
+        original_export_catalog = self.gateway.export_catalog
+        self.gateway.export_catalog = lambda *args, **kwargs: {
+            **original_export_catalog(*args, **kwargs), "files": [],
+        }
+        page = await self.client.get("/operator/catalogs")
+        csrf = hidden_value(page.text, "csrf_token")
+        response = await self.client.post(
+            f"/operator/plans/{PLAN_ID}/deliver",
+            data={
+                "csrf_token": csrf, "fingerprint": FINGERPRINT, "brand": "NATSUKI",
+                "version": "2026.11", "title": "Catálogo 2026.11", "subtitle": "",
+                "confirm": "yes",
+            },
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("HTML autónomo esperado", response.text)
 
     async def test_catalog_workspace_exports_and_downloads_manifest_files(self) -> None:
         await self.login()

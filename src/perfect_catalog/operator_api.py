@@ -739,7 +739,7 @@ def create_operator_app(
     async def security_headers(request: Request, call_next: Callable[..., Any]) -> Response:
         response: Response
         match = re.match(
-            r"^/operator/(?:(plans|import-plans)/([0-9a-fA-F-]{36})(?:/.*)?|(catalogs)/([0-9a-fA-F-]{36})(?:/.*)?|brands/identity/([0-9a-fA-F-]{36})/logo|(intake)/([0-9a-fA-F-]{36})(?:/.*)?|images/(index|candidates)/([0-9a-fA-F-]{36})(?:/.*)?)$",
+            r"^/operator/(?:(plans|import-plans)/([0-9a-fA-F-]{36})(?:/.*)?|(catalogs)/([0-9a-fA-F-]{36})(?:/.*)?|brands/identity/([0-9a-fA-F-]{36})/logo|(intake)/([0-9a-fA-F-]{36})(?:/.*)?|images/(index|candidates|entries)/([0-9a-fA-F-]{36})(?:/.*)?)$",
             request.url.path,
         )
         session = authenticator.get_session(request.cookies.get(SESSION_COOKIE))
@@ -748,7 +748,8 @@ def create_operator_app(
             resource_type = (
                 "plan" if match.group(1) else "release" if match.group(3)
                 else "identity" if match.group(5) else "intake" if match.group(6)
-                else "image_index" if match.group(8) == "index" else "image_candidate"
+                else "image_index" if match.group(8) == "index"
+                else "image_entry" if match.group(8) == "entries" else "image_candidate"
             )
             resource_text = (
                 match.group(2) or match.group(4) or match.group(5)
@@ -1944,6 +1945,11 @@ def create_operator_app(
                     "show_applications": True, "show_engine": True,
                 },
             )
+            html_file = next(
+                (item for item in export["files"] if item["format"] == "html-standalone"), None,
+            )
+            if html_file is None:
+                raise RuntimeError("La exportación no generó el HTML autónomo esperado.")
         except (ValueError, RuntimeError, PermissionError, NotImplementedError, FileExistsError) as exc:
             return _error(environment, 409, "Catálogo no entregado", str(exc), session=session)
         except Exception as exc:
@@ -1952,7 +1958,6 @@ def create_operator_app(
                 "No se completó la entrega. Revisa la consola del servidor operador.",
                 "catalog_deliver_failed", exc, session=session,
             )
-        html_file = next(item for item in export["files"] if item["format"] == "html-standalone")
         return RedirectResponse(
             f"/operator/catalogs/{built['release_id']}/exports/{export['export_id']}/delivered"
             f"?{urlencode({'filename': html_file['filename']})}",

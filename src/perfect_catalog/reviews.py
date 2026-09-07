@@ -1129,6 +1129,13 @@ class DatabaseReviewGateway:
                 JOIN perfect_catalog.intake_submission AS s
                   ON s.intake_submission_id=i.intake_submission_id
                 WHERE i.image_archive_index_id=%s AND s.company_id=%s)""",
+            "image_entry": """SELECT EXISTS (
+                SELECT 1 FROM perfect_catalog.image_archive_entry AS e
+                JOIN perfect_catalog.image_archive_index AS i
+                  ON i.image_archive_index_id=e.image_archive_index_id
+                JOIN perfect_catalog.intake_submission AS s
+                  ON s.intake_submission_id=i.intake_submission_id
+                WHERE e.image_archive_entry_id=%s AND s.company_id=%s)""",
             "image_candidate": """SELECT EXISTS (
                 SELECT 1 FROM perfect_catalog.image_product_candidate AS c
                 JOIN perfect_catalog.image_archive_entry AS e
