@@ -195,6 +195,10 @@ def _match_images(
 
     candidates = exact_image_candidates(entries, references)
     matched_entry_ids: set[str] = set()
+    # Las variantes llegan en el orden en que se subieron los archivos, no en el orden real
+    # de las fotos (p. ej. si se sube "B" antes que "A"); se recogen con su variant_index y
+    # se ordenan al final para que la galería quede A, B, C... sin importar el orden de carga.
+    pending_variants: dict[int, list[tuple[int, str]]] = {}
     for candidate in candidates:
         row = rows_by_reference.get(candidate["product_reference_id"])
         entry = entry_files.get(candidate["image_archive_entry_id"])
@@ -204,10 +208,16 @@ def _match_images(
         filename, content = entry
         stored_name = _safe_filename(filename, seen_names)
         (bundle_dir / stored_name).write_bytes(content)
-        if candidate["variant_index"] is None and not row["image_path"]:
+        variant_index = candidate["variant_index"]
+        if variant_index is None and not row["image_path"]:
             row["image_path"] = stored_name
         else:
-            row["variant_image_paths"].append(stored_name)
+            pending_variants.setdefault(id(row), []).append((variant_index or 0, stored_name))
+
+    for row in rows:
+        variants = pending_variants.get(id(row))
+        if variants:
+            row["variant_image_paths"] = [name for _, name in sorted(variants, key=lambda item: item[0])]
     return len(matched_entry_ids), ambiguous
 
 

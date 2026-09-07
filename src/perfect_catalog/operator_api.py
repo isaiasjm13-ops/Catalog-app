@@ -648,6 +648,7 @@ def create_operator_app(
     catalog_output_dir: Path | None = None,
     image_output_dir: Path | None = None,
     brand_asset_dir: Path | None = None,
+    public_generator_base_url: str = "http://127.0.0.1:8082",
 ) -> FastAPI:
     environment = _templates()
     resolved_intake_root = intake_root or Path("data/intake")
@@ -655,6 +656,7 @@ def create_operator_app(
     resolved_catalog_output = catalog_output_dir or Path("data/exports/catalogs")
     resolved_image_output = image_output_dir or Path("data/images")
     resolved_brand_assets = brand_asset_dir or Path("data/brand-assets")
+    resolved_public_generator_base_url = public_generator_base_url.rstrip("/")
     intake_service = SecureIntakeService(resolved_intake_root, gateway)
 
     @asynccontextmanager
@@ -1386,10 +1388,10 @@ def create_operator_app(
             return _error(environment, 409, "Link no creado", str(exc), session=session)
         except Exception as exc:
             return _unexpected_error(environment, "Link no creado", "PostgreSQL no guardó el link. Revisa la consola.", "public_link_create_failed", exc, session=session)
-        base_url = str(request.base_url).rstrip("/")
         return _render(
             environment, "operator_public_link_created.html",
-            label=created["label"], generator_url=f"{base_url}/generar?ref={created['token']}",
+            label=created["label"],
+            generator_url=f"{resolved_public_generator_base_url}/generar?ref={created['token']}",
             session=session, version=OPERATOR_VERSION,
         )
 
@@ -2639,6 +2641,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--promotion-output-dir", default="data/exports/imports")
     parser.add_argument("--catalog-output-dir", default="data/exports/catalogs")
     parser.add_argument("--image-output-dir", default="data/images")
+    parser.add_argument(
+        "--public-generator-url", default="http://127.0.0.1:8082",
+        help="Dirección donde corre el generador público (perfect-catalog-public), para armar los links compartibles.",
+    )
     parser.add_argument("--prompt-password", action="store_true")
     parser.add_argument("--prompt-operator", action="store_true")
     parser.add_argument("--prompt-access-code", action="store_true")
@@ -2725,6 +2731,7 @@ def main(argv: list[str] | None = None) -> int:
             promotion_output_dir=Path(args.promotion_output_dir),
             catalog_output_dir=Path(args.catalog_output_dir),
             image_output_dir=Path(args.image_output_dir),
+            public_generator_base_url=args.public_generator_url,
         ),
         host=args.host,
         port=args.port,

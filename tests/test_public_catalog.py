@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import io
+import tempfile
 import unittest
+from pathlib import Path
 
 from PIL import Image
 
 from perfect_catalog.public_catalog import (
     MAX_PUBLIC_IMAGE_FILES,
+    _match_images,
     generate_public_catalog,
 )
 
@@ -102,6 +105,47 @@ class GeneratePublicCatalogTests(unittest.TestCase):
         excel = _csv("REF-9009,Kit de embrague,Transmision,\n")
         result = self._call(excel, logo=("logo.png", _png_bytes((5, 5, 200))))
         self.assertIn(b'class="brand-logo"', result.html)
+
+
+class MatchImagesOrderingTests(unittest.TestCase):
+    def _row(self, reference: str) -> dict:
+        return {
+            "internal_reference_original": reference,
+            "internal_reference_normalized": reference,
+            "image_path": None,
+            "variant_image_paths": [],
+        }
+
+    def test_variant_photos_are_ordered_by_letter_regardless_of_upload_order(self) -> None:
+        row = self._row("CKT-507AU-LB")
+        with tempfile.TemporaryDirectory() as tmp:
+            # Subidas fuera de orden: B, luego A, luego la principal.
+            images = [
+                ("CKT-507AU-LB B.png", _png_bytes((1, 1, 1))),
+                ("CKT-507AU-LB A.png", _png_bytes((2, 2, 2))),
+                ("CKT-507AU-LB.png", _png_bytes((3, 3, 3))),
+            ]
+            matched, ambiguous = _match_images([row], images, Path(tmp))
+            self.assertEqual(matched, 3)
+            self.assertEqual(ambiguous, 0)
+            self.assertTrue(row["image_path"])
+            self.assertEqual(len(row["variant_image_paths"]), 2)
+            # A (índice 2) siempre antes que B (índice 3), aunque B se haya subido primero.
+            self.assertIn("A", row["variant_image_paths"][0])
+            self.assertIn("B", row["variant_image_paths"][1])
+
+    def test_letter_and_parenthesized_letter_are_treated_as_the_same_ambiguous_key(self) -> None:
+        # "REF A" y "REF (A)" normalizan a la misma clave: es ambigüedad real (¿cuál es la
+        # foto A verdadera?), no un bug — el sistema interno trata el mismo choque igual.
+        row = self._row("REF-1234")
+        with tempfile.TemporaryDirectory() as tmp:
+            images = [
+                ("REF-1234 A.png", _png_bytes()),
+                ("REF-1234 (A).png", _png_bytes()),
+            ]
+            matched, ambiguous = _match_images([row], images, Path(tmp))
+            self.assertEqual(matched, 0)
+            self.assertEqual(ambiguous, 2)
 
 
 if __name__ == "__main__":

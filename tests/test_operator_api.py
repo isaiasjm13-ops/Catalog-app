@@ -2003,7 +2003,10 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(created.status_code, 200)
         self.assertIn("Repuestos Andina", created.text)
-        self.assertIn("/generar?ref=", created.text)
+        # El link debe apuntar al generador público (proceso y puerto aparte), nunca al
+        # host/puerto propio del operador desde el que se creó (bug real: usaba request.base_url).
+        self.assertIn("http://127.0.0.1:8082/generar?ref=", created.text)
+        self.assertNotIn("http://testserver/generar", created.text)
         link_id = next(iter(self.gateway.public_links))
         token = self.gateway.public_links[link_id]["token"]
         self.assertIn(token, created.text)

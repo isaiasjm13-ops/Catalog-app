@@ -38,8 +38,8 @@ def create_public_catalog_link(
         connection.execute(
             """
             INSERT INTO perfect_catalog.public_catalog_link (
-                public_catalog_link_id, token, label, created_by_actor, created_at, active
-            ) VALUES (%s, %s, %s, %s, %s, true)
+                public_catalog_link_id, token, label, created_by_actor, created_at
+            ) VALUES (%s, %s, %s, %s, %s)
             """,
             (link_id, token, label, actor, now),
         )
