@@ -305,6 +305,16 @@ class ReviewGateway(Protocol):
         group: str = "", page: int = 1, page_size: int = 48,
     ) -> dict[str, Any]: ...
 
+    def public_catalog_links(self) -> list[dict[str, Any]]: ...
+
+    def create_public_catalog_link(self, *, label: str, actor: str) -> dict[str, Any]: ...
+
+    def revoke_public_catalog_link(self, *, link_id: uuid.UUID, actor: str) -> dict[str, Any]: ...
+
+    def public_catalog_generations(
+        self, *, link_id: uuid.UUID, limit: int = 50, offset: int = 0,
+    ) -> list[dict[str, Any]]: ...
+
 
 def _darken_hex(color: str, factor: float = 0.72) -> str:
     """Aproxima un tono mas oscuro del mismo color para estados hover/activos."""
@@ -1311,6 +1321,98 @@ def create_operator_app(
         except Exception as exc:
             return _unexpected_error(environment, "Marca no creada", "PostgreSQL no guardó el perfil. Revisa la consola.", "brand_create_failed", exc, session=session)
         return RedirectResponse("/operator/brands?result=created", status_code=303)
+
+    @app.get("/operator/public-links", response_class=HTMLResponse)
+    async def public_links_page(request: Request) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            links = await run_in_threadpool(gateway.public_catalog_links)
+        except Exception as exc:
+            return _unexpected_error(
+                environment, "Links no disponibles",
+                "Ejecuta ACTUALIZAR-SISTEMA.cmd o revisa PostgreSQL.",
+                "public_links_read_failed", exc, session=session_or_redirect,
+            )
+        message = {
+            "created": "Link creado. Compártelo con la persona externa; el token no se vuelve a mostrar entero aquí.",
+            "revoked": "Link revocado. Ya no puede generar catálogos nuevos.",
+        }.get(request.query_params.get("result"))
+        return _render(
+            environment, "operator_public_links.html", links=links,
+            message=message, session=session_or_redirect, version=OPERATOR_VERSION,
+        )
+
+    @app.get("/operator/public-links/{link_id}", response_class=HTMLResponse)
+    async def public_link_generations_page(request: Request, link_id: str) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            parsed_id = _uuid(link_id, "link_id")
+            links = await run_in_threadpool(gateway.public_catalog_links)
+            link = next((item for item in links if str(item["public_catalog_link_id"]) == str(parsed_id)), None)
+            if link is None:
+                return _error(environment, 404, "Link no encontrado", "No existe un link con ese UUID.", session=session_or_redirect)
+            generations = await run_in_threadpool(gateway.public_catalog_generations, link_id=parsed_id)
+        except (ValueError, RuntimeError) as exc:
+            return _error(environment, 400, "No se pudo abrir el link", str(exc), session=session_or_redirect)
+        except Exception as exc:
+            return _unexpected_error(
+                environment, "Historial no disponible", "Revisa la consola del servidor operador.",
+                "public_link_generations_read_failed", exc, session=session_or_redirect,
+            )
+        return _render(
+            environment, "operator_public_link_detail.html", link=link, generations=generations,
+            session=session_or_redirect, version=OPERATOR_VERSION,
+        )
+
+    @app.post("/operator/public-links")
+    async def create_public_link_route(request: Request) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "label"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
+            label = _require_text(form["label"], "label")
+            created = await run_in_threadpool(gateway.create_public_catalog_link, label=label, actor=session.actor)
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            return _error(environment, 409, "Link no creado", str(exc), session=session)
+        except Exception as exc:
+            return _unexpected_error(environment, "Link no creado", "PostgreSQL no guardó el link. Revisa la consola.", "public_link_create_failed", exc, session=session)
+        base_url = str(request.base_url).rstrip("/")
+        return _render(
+            environment, "operator_public_link_created.html",
+            label=created["label"], generator_url=f"{base_url}/generar?ref={created['token']}",
+            session=session, version=OPERATOR_VERSION,
+        )
+
+    @app.post("/operator/public-links/revoke")
+    async def revoke_public_link_route(request: Request) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "link_id"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
+            await run_in_threadpool(
+                gateway.revoke_public_catalog_link, link_id=_uuid(form["link_id"], "link_id"), actor=session.actor,
+            )
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            return _error(environment, 409, "Link no revocado", str(exc), session=session)
+        except Exception as exc:
+            return _unexpected_error(environment, "Link no revocado", "PostgreSQL no guardó la revocación. Revisa la consola.", "public_link_revoke_failed", exc, session=session)
+        return RedirectResponse("/operator/public-links?result=revoked", status_code=303)
 
     @app.post("/operator/catalogs/releases")
     async def build_catalog_release_route(request: Request) -> Response:

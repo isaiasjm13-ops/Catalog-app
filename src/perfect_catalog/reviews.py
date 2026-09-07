@@ -1483,3 +1483,23 @@ class DatabaseReviewGateway:
             self._config,
             self._password,
         )
+
+    def public_catalog_links(self) -> list[dict[str, Any]]:
+        from .public_catalog_links import list_public_catalog_links
+        return list_public_catalog_links(self._config, self._password)
+
+    def create_public_catalog_link(self, *, label: str, actor: str) -> dict[str, Any]:
+        from .public_catalog_links import create_public_catalog_link
+        return create_public_catalog_link(self._config, self._password, label=label, actor=actor)
+
+    def revoke_public_catalog_link(self, *, link_id: uuid.UUID, actor: str) -> dict[str, Any]:
+        from .public_catalog_links import revoke_public_catalog_link
+        return revoke_public_catalog_link(self._config, self._password, link_id=link_id, actor=actor)
+
+    def public_catalog_generations(
+        self, *, link_id: uuid.UUID, limit: int = 50, offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        from .public_catalog_links import list_public_catalog_generations
+        return list_public_catalog_generations(
+            self._config, self._password, link_id=link_id, limit=limit, offset=offset,
+        )

@@ -26,6 +26,7 @@ test = [
 perfect-catalog = "perfect_catalog.cli:main"
 perfect-catalog-api = "perfect_catalog.api:main"
 perfect-catalog-operator = "perfect_catalog.operator_api:main"
+perfect-catalog-public = "perfect_catalog.public_generator_api:main"
 
 [tool.setuptools]
 packages = ["perfect_catalog", "tools", "tools.odoo_profiler"]

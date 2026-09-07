@@ -57,6 +57,8 @@ class SyntheticReviewGateway:
             "display_name": "Perfect Company", "is_active": True, "brand_count": 1,
         }]
         self.company_changes: list[dict[str, Any]] = []
+        self.public_links: dict[str, dict[str, Any]] = {}
+        self.public_generations: dict[str, list[dict[str, Any]]] = {}
         self.import_plan_status = "awaiting_review"
         self.import_plan_update_count = 0
         self.release_data = [{
@@ -86,6 +88,39 @@ class SyntheticReviewGateway:
 
     def close(self) -> None:
         self.closed = True
+
+    def public_catalog_links(self) -> list[dict[str, Any]]:
+        return sorted(
+            (
+                {**link, "generation_count": len(self.public_generations.get(link_id, []))}
+                for link_id, link in self.public_links.items()
+            ),
+            key=lambda item: item["created_at"], reverse=True,
+        )
+
+    def create_public_catalog_link(self, *, label: str, actor: str) -> dict[str, Any]:
+        link_id = str(uuid.uuid4())
+        token = f"token-{link_id[:8]}"
+        self.public_links[link_id] = {
+            "public_catalog_link_id": link_id, "token": token, "label": label,
+            "created_by_actor": actor, "created_at": "2026-09-01T00:00:00Z",
+            "revoked_at": None, "active": True,
+        }
+        self.public_generations[link_id] = []
+        return {"public_catalog_link_id": link_id, "token": token, "label": label}
+
+    def revoke_public_catalog_link(self, *, link_id: uuid.UUID, actor: str) -> dict[str, Any]:
+        link = self.public_links.get(str(link_id))
+        if link is None or not link["active"]:
+            raise ValueError("El link no existe o ya estaba revocado.")
+        link["active"] = False
+        link["revoked_at"] = "2026-09-02T00:00:00Z"
+        return {"public_catalog_link_id": str(link_id), "label": link["label"]}
+
+    def public_catalog_generations(
+        self, *, link_id: uuid.UUID, limit: int = 50, offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        return self.public_generations.get(str(link_id), [])[offset:offset + limit]
 
     def companies(self) -> list[dict[str, Any]]:
         return self.company_data
@@ -1953,6 +1988,64 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.gateway.intake_records[0]["archived"])
         visible_again = await self.client.get("/operator/intake")
         self.assertIn("manual-viejo.pdf", visible_again.text)
+
+    async def test_public_link_lifecycle_create_list_revoke_and_history(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/public-links")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("Todavía no has creado ningún link", page.text)
+        csrf = hidden_value(page.text, "csrf_token")
+
+        created = await self.client.post(
+            "/operator/public-links",
+            data={"csrf_token": csrf, "label": "Repuestos Andina"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(created.status_code, 200)
+        self.assertIn("Repuestos Andina", created.text)
+        self.assertIn("/generar?ref=", created.text)
+        link_id = next(iter(self.gateway.public_links))
+        token = self.gateway.public_links[link_id]["token"]
+        self.assertIn(token, created.text)
+
+        rejected = await self.client.post(
+            "/operator/public-links",
+            data={"csrf_token": "wrong", "label": "Otro"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(rejected.status_code, 403)
+
+        listing = await self.client.get("/operator/public-links")
+        self.assertIn("Repuestos Andina", listing.text)
+        self.assertIn("Activo", listing.text)
+        self.assertNotIn(token, listing.text)  # el token completo solo se muestra una vez, al crearlo
+        list_csrf = hidden_value(listing.text, "csrf_token")
+
+        self.gateway.public_generations[link_id].append({
+            "declared_name": "Juan Pérez", "product_count": 3, "matched_image_count": 2,
+            "unmatched_image_count": 1, "ambiguous_image_count": 0,
+            "excel_sha256": "a" * 64, "generated_at": "2026-09-03T00:00:00Z",
+        })
+        detail = await self.client.get(f"/operator/public-links/{link_id}")
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn("Juan Pérez", detail.text)
+        self.assertIn("3 producto", detail.text)
+
+        revoked = await self.client.post(
+            "/operator/public-links/revoke",
+            data={"csrf_token": list_csrf, "link_id": link_id},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(revoked.status_code, 303)
+        self.assertIn("result=revoked", revoked.headers["location"])
+        self.assertFalse(self.gateway.public_links[link_id]["active"])
+
+        double_revoke = await self.client.post(
+            "/operator/public-links/revoke",
+            data={"csrf_token": list_csrf, "link_id": link_id},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(double_revoke.status_code, 409)
 
 
 if __name__ == "__main__":
