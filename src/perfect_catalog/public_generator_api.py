@@ -294,7 +294,10 @@ def create_public_generator_app(
 
         response = Response(content=result.html, media_type="text/html")
         response.headers["Content-Disposition"] = f'attachment; filename="{_safe_download_name(company_name)}"'
-        response.delete_cookie(TICKET_COOKIE)
+        # El ticket NO se borra: es anti-CSRF (prueba que el POST vino de una página que
+        # nosotros mismos servimos), no un nonce de un solo uso. Borrarlo rompía generar
+        # un segundo catálogo (ajustar colores y volver a enviar) sin recargar la página,
+        # porque el campo oculto del formulario ya cargado seguía teniendo el valor viejo.
         return response
 
     return app

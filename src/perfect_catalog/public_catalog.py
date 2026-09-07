@@ -151,12 +151,15 @@ def _validate_image_file(filename: str, content: bytes) -> None:
 
 def _match_images(
     rows: list[dict[str, Any]], images: list[tuple[str, bytes]], bundle_dir: Path,
+    reserved_names: set[str] | None = None,
 ) -> tuple[int, int]:
     """Empareja fotos↔SKU en memoria (mismo algoritmo que el operador usa para fotos ya
     aprobadas, `image_match_review.exact_image_candidates`), pero contra las referencias
     del propio Excel — nunca contra el catálogo real. Devuelve (emparejadas, ambiguas).
-    Escribe en `bundle_dir` sólo las fotos que sí se van a usar."""
-    seen_names: set[str] = set()
+    Escribe en `bundle_dir` sólo las fotos que sí se van a usar. `reserved_names` (p. ej.
+    el nombre ya usado por el logo) se pasa para que una foto de producto con el mismo
+    nombre se renombre en vez de sobrescribir ese archivo."""
+    seen_names: set[str] = set(reserved_names) if reserved_names else set()
     keyed: list[tuple[str, bytes, str]] = []
     for filename, content in images:
         _validate_image_file(filename, content)
@@ -293,14 +296,19 @@ def generate_public_catalog(
         rows = [_catalog_row(row) for row in prepared]
         bundle_dir = tmp_dir / "bundle"
         bundle_dir.mkdir()
-        matched_count, ambiguous_count = _match_images(rows, images, bundle_dir)
 
+        # El logo se guarda primero y reserva su nombre: si una foto de producto
+        # coincide por casualidad (p. ej. una referencia "logo" con foto "logo.png"),
+        # la foto se renombra al guardarse en vez de sobrescribir el logo en disco.
         logo_relpath: str | None = None
         if logo is not None:
             logo_filename, logo_content = logo
             _media_type, logo_extension = _validate_logo(logo_filename, logo_content)
             logo_relpath = f"logo.{logo_extension}"
             (bundle_dir / logo_relpath).write_bytes(logo_content)
+
+        reserved_names = {logo_relpath} if logo_relpath else set()
+        matched_count, ambiguous_count = _match_images(rows, images, bundle_dir, reserved_names)
 
         config = {
             "template_profile": "T4",

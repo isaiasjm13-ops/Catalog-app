@@ -120,6 +120,26 @@ class PublicGeneratorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(recorded["matched_image_count"], 1)
         self.assertEqual(str(recorded["link_id"]), str(LINK_ID))
 
+    async def test_generating_a_second_catalog_from_the_same_loaded_form_succeeds(self) -> None:
+        # Bug real: la primera generación borraba la cookie del ticket; ajustar algo
+        # (ej. colores) y volver a enviar sin recargar la página fallaba con 400
+        # porque el campo oculto del formulario ya cargado tenía el valor de un
+        # ticket que el servidor acababa de invalidar.
+        _, csrf = await self._get_form()
+        excel = _csv("REF-6006,Correa,Transmisión\n")
+        form_data = {
+            "csrf_token": csrf, "declared_name": "Juan Pérez", "company_name": "Repuestos Andina",
+            "brand_name": "Andina", "primary_color": "#0b6a53", "secondary_color": "#12355b",
+        }
+        first = await self.client.post("/generar", data=form_data, files=self._multipart_files(excel=excel))
+        self.assertEqual(first.status_code, 200)
+        second = await self.client.post(
+            "/generar", data={**form_data, "primary_color": "#ff0000"},
+            files=self._multipart_files(excel=excel),
+        )
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(len(self.gateway.generations), 2)
+
     async def test_csrf_mismatch_between_cookie_and_field_is_rejected(self) -> None:
         await self._get_form()
         excel = _csv("REF-2002,Filtro,Filtros\n")

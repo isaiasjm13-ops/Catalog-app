@@ -389,6 +389,20 @@ class CatalogExportTests(unittest.TestCase):
         self.assertIn("ABC 99-XY", article)
         self.assertNotIn("<dt>Aplicaciones</dt>", content)
 
+    def test_clearing_the_search_box_still_respects_the_category_brand_vehicle_filters(self) -> None:
+        # Bug real: el botón "Limpiar" junto al buscador solo reseteaba el texto y
+        # volvía a llamar a la función de búsqueda vieja, ignorando categoría/marca/
+        # vehículo seleccionados en el panel de filtros — hacían reaparecer productos
+        # de otras categorías. El botón base ahora también dispara apply(), la misma
+        # función que ya combina texto + categoría + marca + vehículo.
+        release, items = fixture_release()
+        rows = export_rows_from_release(release, items)
+        content = generate_catalog_html(rows, {}, release=release).decode("utf-8")
+        self.assertIn(
+            "document.querySelector('#catalog-clear')?.addEventListener('click',apply);",
+            content,
+        )
+
     def test_standalone_html_embeds_approved_image_as_data_uri(self) -> None:
         release, items = fixture_release()
         rows = export_rows_from_release(release, items)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -105,6 +106,20 @@ class GeneratePublicCatalogTests(unittest.TestCase):
         excel = _csv("REF-9009,Kit de embrague,Transmision,\n")
         result = self._call(excel, logo=("logo.png", _png_bytes((5, 5, 200))))
         self.assertIn(b'class="brand-logo"', result.html)
+
+    def test_logo_does_not_overwrite_a_product_photo_with_the_same_filename(self) -> None:
+        # Bug real: una referencia "LOGO" con foto "logo.png" y un logo corporativo
+        # también subido como "logo.png" compartían el mismo nombre en el bundle —
+        # el que se escribía después pisaba al otro en disco.
+        excel = _csv("LOGO,Producto llamado logo,Varios,\n")
+        result = self._call(
+            excel,
+            images=[("logo.png", _png_bytes((10, 20, 30)))],
+            logo=("logo.png", _png_bytes((200, 100, 50))),
+        )
+        self.assertEqual(result.matched_image_count, 1)
+        data_uris = set(re.findall(rb"data:image/[a-z]+;base64,[A-Za-z0-9+/=]+", result.html))
+        self.assertEqual(len(data_uris), 2, "el logo y la foto del producto deben quedar como archivos distintos")
 
 
 class MatchImagesOrderingTests(unittest.TestCase):
