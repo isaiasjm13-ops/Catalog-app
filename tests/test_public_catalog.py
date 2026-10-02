@@ -97,6 +97,45 @@ class GeneratePublicCatalogTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self._call(excel, images=images)
 
+    @staticmethod
+    def _first_photo_pixels(html: bytes):
+        import base64
+
+        match = re.search(rb"data:image/jpeg;base64,([A-Za-z0-9+/=]+)", html)
+        assert match is not None
+        return Image.open(io.BytesIO(base64.b64decode(match.group(1)))).convert("RGB")
+
+    def test_watermark_changes_the_embedded_photo_and_is_off_by_default(self) -> None:
+        excel = _csv("REF-5050,Disco de freno,Frenos,\n")
+        photos = [("REF-5050.png", _png_bytes((30, 30, 30)))]
+        plain = self._call(excel, images=photos)
+        marked = self._call(excel, images=photos, watermark=True)
+        plain_image, marked_image = self._first_photo_pixels(plain.html), self._first_photo_pixels(marked.html)
+        self.assertEqual(plain_image.size, marked_image.size)
+        self.assertEqual(plain.matched_image_count, marked.matched_image_count)
+        from PIL import ImageChops
+
+        # Con marca de agua hay píxeles distintos a la foto sin ella.
+        self.assertIsNotNone(ImageChops.difference(plain_image, marked_image).getbbox())
+
+    def test_watermark_uses_the_uploaded_png_logo_and_falls_back_to_the_company_name_for_svg(self) -> None:
+        excel = _csv("REF-5051,Pastilla,Frenos,\n")
+        photos = [("REF-5051.png", _png_bytes((30, 30, 30)))]
+        with_png = self._call(excel, images=photos, watermark=True, logo=("logo.png", _png_bytes((250, 250, 250))))
+        svg = b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#fff"/></svg>'
+        with_svg = self._call(excel, images=photos, watermark=True, logo=("logo.svg", svg))
+        from PIL import ImageChops
+
+        plain = self._first_photo_pixels(self._call(excel, images=photos).html)
+        for result in (with_png, with_svg):
+            self.assertIsNotNone(ImageChops.difference(plain, self._first_photo_pixels(result.html)).getbbox())
+
+    def test_watermark_never_touches_the_original_bytes_given_to_the_generator(self) -> None:
+        original = _png_bytes((60, 60, 60))
+        copy = bytes(original)
+        self._call(_csv("REF-5052,Bujia,Motor,\n"), images=[("REF-5052.png", original)], watermark=True)
+        self.assertEqual(original, copy)
+
     def test_whatsapp_number_adds_an_order_button_with_the_reference_prefilled(self) -> None:
         excel = _csv("REF-4040,Bomba de agua,Motor,\n")
         result = self._call(excel, whatsapp_number="507 6123-4567")

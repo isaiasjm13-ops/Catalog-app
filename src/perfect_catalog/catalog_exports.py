@@ -212,9 +212,73 @@ def _safe_bundle_image(row: dict[str, Any], bundle_dir: Path | None) -> Path | N
     return _safe_bundle_path(bundle_dir, row.get("image_path"))
 
 
+WATERMARK_OPACITY = 0.22
+WATERMARK_ANGLE = 25
+_WATERMARK_FONT = "assets/brands/natsuki/fonts/BarlowCondensed-Bold.ttf"
+
+
+def build_photo_watermark(
+    *, logo_path: Path | None = None, text: str = "", opacity: float = WATERMARK_OPACITY,
+) -> PILImage.Image | None:
+    """Prepara la marca de agua (una pieza RGBA ya con su transparencia) una sola vez por catálogo.
+
+    Usa el logo si es una imagen que PIL pueda leer (PNG/JPG/WebP); si no (p. ej. un SVG) o no hay
+    logo, escribe el texto (nombre de la empresa) con la tipografía incluida. None si no hay nada."""
+    from PIL import ImageDraw, ImageFont
+
+    piece: PILImage.Image | None = None
+    if logo_path is not None and logo_path.is_file():
+        try:
+            with PILImage.open(logo_path) as source:
+                piece = ImageOps.exif_transpose(source).convert("RGBA")
+        except Exception:  # noqa: BLE001 - SVG u otro formato: se usa el texto
+            piece = None
+    text = str(text or "").strip()
+    if piece is None and text:
+        font_path = files("perfect_catalog").joinpath(_WATERMARK_FONT)
+        font = ImageFont.truetype(str(font_path), 120)
+        probe = ImageDraw.Draw(PILImage.new("RGBA", (1, 1)))
+        left, top, right, bottom = probe.textbbox((0, 0), text.upper(), font=font)
+        piece = PILImage.new("RGBA", (right - left + 24, bottom - top + 24), (0, 0, 0, 0))
+        ImageDraw.Draw(piece).text((12 - left, 12 - top), text.upper(), font=font, fill=(255, 255, 255, 255))
+    if piece is None:
+        return None
+    alpha = piece.getchannel("A").point(lambda value: int(value * opacity))
+    piece.putalpha(alpha)
+    return piece.rotate(WATERMARK_ANGLE, expand=True, resample=PILImage.Resampling.BICUBIC)
+
+
+def _apply_photo_watermark(jpeg_bytes: bytes, mark: PILImage.Image) -> bytes:
+    """Teselado diagonal de la marca sobre la foto (cubre toda la imagen: no se quita recortando)."""
+    with PILImage.open(io.BytesIO(jpeg_bytes)) as source:
+        base = source.convert("RGBA")
+    width, height = base.size
+    target_width = max(60, int(width * 0.34))
+    scale = target_width / mark.width
+    tile = mark.resize((target_width, max(1, int(mark.height * scale))), PILImage.Resampling.LANCZOS)
+    step_x, step_y = int(tile.width * 1.35), int(tile.height * 1.6)
+    layer = PILImage.new("RGBA", base.size, (0, 0, 0, 0))
+    for row_index, y in enumerate(range(-tile.height // 2, height, step_y)):
+        offset = (step_x // 2) if row_index % 2 else 0
+        for x in range(-tile.width // 2 + offset, width, step_x):
+            if x >= width or y >= height:
+                continue
+            # Se recorta la pieza a la parte que cae dentro de la foto (alpha_composite no admite destino negativo).
+            layer.alpha_composite(
+                tile, (max(x, 0), max(y, 0)),
+                (max(-x, 0), max(-y, 0), min(tile.width, width - x), min(tile.height, height - y)),
+            )
+    output = io.BytesIO()
+    PILImage.alpha_composite(base, layer).convert("RGB").save(
+        output, format="JPEG", quality=82, optimize=True, progressive=True,
+    )
+    return output.getvalue()
+
+
 def _row_gallery_sources(
     row: dict[str, Any], bundle_dir: Path | None, embed_images: bool,
     raster_cache: dict[tuple[str, int, int, int], bytes] | None,
+    watermark: PILImage.Image | None = None,
 ) -> list[str]:
     """Primary photo first, then extra "variant" photos (`REF-1234-2.jpg` etc.), as sources
     ready to drop into an <img src>: filenames when the bundle ships alongside the HTML, data
@@ -233,7 +297,10 @@ def _row_gallery_sources(
                 raise FileNotFoundError(f"No se puede incrustar la imagen segura {filename!r}.")
             continue
         optimized = _optimized_raster(image_path, 1200, 900, quality=82, cache=raster_cache)
-        sources.append("data:image/jpeg;base64," + base64.b64encode(optimized.read()).decode("ascii"))
+        photo = optimized.read()
+        if watermark is not None:
+            photo = _apply_photo_watermark(photo, watermark)
+        sources.append("data:image/jpeg;base64," + base64.b64encode(photo).decode("ascii"))
     return sources
 
 
@@ -683,6 +750,14 @@ def generate_catalog_html(
         if str(make).strip()
     })
     whatsapp_digits = normalize_whatsapp_number(config.get("whatsapp_number"))
+    # Marca de agua sobre cada foto incrustada (config["photo_watermark"] = {"logo_path": ..., "text": ...}).
+    photo_watermark: PILImage.Image | None = None
+    watermark_config = config.get("photo_watermark")
+    if watermark_config and embed_images:
+        photo_watermark = build_photo_watermark(
+            logo_path=_safe_bundle_path(bundle_dir, watermark_config.get("logo_path")),
+            text=str(watermark_config.get("text") or ""),
+        )
 
     def whatsapp_order_link(row: dict[str, Any]) -> str:
         """Botón «Pedir por WhatsApp» con la referencia y el nombre ya escritos en el mensaje.
@@ -705,7 +780,7 @@ def generate_catalog_html(
         cards: list[str] = []
         for card_index, row in enumerate(section_rows, 1):
             image = ""
-            gallery_sources = _row_gallery_sources(row, bundle_dir, embed_images, raster_cache)
+            gallery_sources = _row_gallery_sources(row, bundle_dir, embed_images, raster_cache, photo_watermark)
             if gallery_sources:
                 image_alt = escape(
                     str(row.get("internal_reference_original") or row.get("name_original") or "Producto"),

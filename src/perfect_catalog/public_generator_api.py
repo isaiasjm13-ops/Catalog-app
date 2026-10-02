@@ -274,6 +274,7 @@ def create_public_generator_app(
                 primary_color = str(form.get("primary_color") or "")
                 secondary_color = str(form.get("secondary_color") or "")
                 whatsapp_number = str(form.get("whatsapp_number") or "").strip()[:40]
+                watermark = form.get("watermark") == "yes"
 
                 odoo_upload = form.get("odoo_file")
                 if not isinstance(odoo_upload, UploadFile) or not odoo_upload.filename:
@@ -293,7 +294,7 @@ def create_public_generator_app(
                     excel_bytes=excel_bytes, excel_filename=str(odoo_upload.filename), images=images,
                     company_name=company_name, brand_name=brand_name,
                     primary_color=primary_color, secondary_color=secondary_color, logo=logo,
-                    whatsapp_number=whatsapp_number,
+                    whatsapp_number=whatsapp_number, watermark=watermark,
                 )
                 await run_in_threadpool(
                     gateway.record_generation,

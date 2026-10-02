@@ -265,6 +265,7 @@ def generate_public_catalog(
     logo: tuple[str, bytes] | None = None,
     max_rows: int = DEFAULT_MAX_PILOT_ROWS,
     whatsapp_number: str = "",
+    watermark: bool = False,
 ) -> PublicCatalogResult:
     company_name = _require_text(company_name, "company_name")
     brand_name = _require_text(brand_name, "brand_name", max_length=120)
@@ -327,6 +328,8 @@ def generate_public_catalog(
             "template_profile": "T4",
             "title": f"Catálogo · {company_name}",
             "whatsapp_number": whatsapp_number,
+            # Fotos compartidas con terceros: marca de agua con el logo (o el nombre de la empresa).
+            "photo_watermark": {"logo_path": logo_relpath, "text": company_name} if watermark else None,
             "visual_profile": {
                 "primary_color": primary_color,
                 "secondary_color": secondary_color,
