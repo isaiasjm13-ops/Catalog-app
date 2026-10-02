@@ -122,6 +122,42 @@ def generate_image_candidates(
         return {"status": "generated", "candidate_count": len(candidates), "inserted_count": inserted}
 
 
+def refresh_image_candidates(
+    config: DatabaseConfig, password: str, *, actor: str, reason: str, company_id: uuid.UUID,
+) -> dict[str, Any]:
+    """Vuelve a buscar coincidencias exactas en los paquetes de fotos vigentes de la Company.
+
+    Necesario porque los candidatos solo se generan al cargar: un producto nuevo se aprueba
+    DESPUÉS, y sus fotos (ya indexadas) quedaban sin vincular para siempre. Es idempotente
+    (ON CONFLICT DO NOTHING en generate_image_candidates) y solo agrega propuestas pendientes."""
+    actor, reason = _actor(actor), _reason(reason)
+    with psycopg.connect(**config.connection_kwargs(password)) as connection:
+        index_ids = [
+            row[0] for row in connection.execute(
+                """
+                SELECT i.image_archive_index_id
+                FROM perfect_catalog.image_archive_index AS i
+                JOIN perfect_catalog.intake_submission AS s USING (intake_submission_id)
+                WHERE s.company_id=%s
+                  AND NOT COALESCE((
+                    SELECT e.archived FROM perfect_catalog.intake_submission_archive_event AS e
+                    WHERE e.intake_submission_id=s.intake_submission_id
+                    ORDER BY e.created_at DESC LIMIT 1
+                  ), false)
+                ORDER BY i.indexed_at, i.image_archive_index_id
+                """,
+                (company_id,),
+            ).fetchall()
+        ]
+    inserted = 0
+    for index_id in index_ids:
+        result = generate_image_candidates(
+            index_id, config, password, actor=actor, reason=reason, company_id=company_id,
+        )
+        inserted += int(result["inserted_count"])
+    return {"status": "refreshed", "index_count": len(index_ids), "inserted_count": inserted}
+
+
 def list_image_candidates(
     config: DatabaseConfig, password: str, *, limit: int = 100, offset: int = 0,
     company_id: uuid.UUID, image_archive_index_id: uuid.UUID | None = None,

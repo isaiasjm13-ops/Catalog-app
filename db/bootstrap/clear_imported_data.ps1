@@ -39,7 +39,7 @@ if ($listener) {
 # El lanzador puede mover el revisor/generador a otro puerto si el default esta ocupado;
 # por eso se busca tambien por proceso, no solo por puerto.
 $running = Get-CimInstance Win32_Process | Where-Object {
-    $_.CommandLine -and ($_.CommandLine -like '*perfect-catalog-operator*' -or $_.CommandLine -like '*perfect-catalog-public*' -or $_.CommandLine -like '*perfect-catalog-api*')
+    $_.Name -match '^(python|pythonw|perfect-catalog)' -and $_.CommandLine -and ($_.CommandLine -like '*perfect-catalog-operator*' -or $_.CommandLine -like '*perfect-catalog-public*' -or $_.CommandLine -like '*perfect-catalog-api*')
 }
 if ($running) {
     throw 'Cierra primero el revisor, el generador publico y la API: siguen corriendo y usarian datos que se van a limpiar.'

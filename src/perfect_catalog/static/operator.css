@@ -657,3 +657,7 @@ html[data-view="simple"] .view-toggle { border-color: var(--forest); color: var(
 .manual-results { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .manual-results li { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
 .manual-results form { display: flex; gap: 8px; align-items: center; }
+
+/* Reintento de coincidencias de fotos. */
+.refresh-candidates { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin: 0 0 18px; padding: 14px 18px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.7); }
+.refresh-candidates p { margin: 2px 0 0; color: var(--muted); font-size: 13px; max-width: 62ch; }

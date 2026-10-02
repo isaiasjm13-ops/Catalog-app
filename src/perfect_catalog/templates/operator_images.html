@@ -6,6 +6,16 @@
   <div class="safety-chip"><span>●</span> Revisión humana obligatoria</div>
 </section>
 {% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+<section class="refresh-candidates">
+  <div>
+    <strong>¿Aprobaste productos nuevos?</strong>
+    <p>Las fotos solo se asocian a productos ya aprobados. Si cargaste las fotos antes de aprobar, pulsa el botón para volver a buscar coincidencias.</p>
+  </div>
+  <form method="post" action="/operator/images/refresh-candidates">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+    <button class="primary-button" type="submit">Buscar coincidencias de nuevo</button>
+  </form>
+</section>
 {% set exact_ready_count = candidates.pending_count + candidates.approved_unmaterialized_count %}
 {% if exact_ready_count and exact_ready_count <= 500 %}
 <details class="bulk-review-panel" open>

@@ -238,6 +238,10 @@ class ReviewGateway(Protocol):
         company_id: uuid.UUID,
     ) -> dict[str, Any]: ...
 
+    def refresh_image_candidates(
+        self, actor: str, reason: str, company_id: uuid.UUID,
+    ) -> dict[str, Any]: ...
+
     def image_candidates(
         self, *, limit: int = 100, offset: int = 0, company_id: uuid.UUID,
         image_archive_index_id: uuid.UUID | None = None,
@@ -2434,6 +2438,8 @@ def create_operator_app(
                 LOGGER.exception("Fallo al buscar productos para asignar una foto")
                 search_error = "No se pudo buscar ahora. Intenta de nuevo."
         result_message = {
+            "candidates_refreshed": "Encontré coincidencias nuevas. Revísalas abajo y usa «Preparar coincidencias exactas» para vincularlas.",
+            "candidates_unchanged": "No hay coincidencias nuevas. Si faltan fotos, confirma que los productos ya estén aprobados en Revisar y que el nombre del archivo sea la referencia; también puedes elegir el producto a mano abajo.",
             "photo_assigned": "Foto asignada al producto y aprobada con tu nombre. Usa «Preparar coincidencias exactas» para copiarla al catálogo.",
             "generated": "Candidatos exactos generados. Ninguno fue aprobado automáticamente.",
             "approved": "Candidato de imagen aprobado con su evidencia exacta.",
@@ -2457,6 +2463,32 @@ def create_operator_app(
             message=result_message, page=page, previous_url=previous_url, next_url=next_url,
             session=session_or_redirect, version=OPERATOR_VERSION,
         )
+
+    @app.post("/operator/images/refresh-candidates")
+    async def refresh_image_candidates_route(request: Request) -> Response:
+        """Vuelve a buscar coincidencias de las fotos ya cargadas (p. ej. tras aprobar productos nuevos)."""
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
+            result = await run_in_threadpool(
+                gateway.refresh_image_candidates, session.actor,
+                "Búsqueda de coincidencias de fotos tras aprobar productos.", session.company_id,
+            )
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            return _error(environment, 409, "Coincidencias no actualizadas", str(exc), session=session)
+        except Exception:
+            diagnostic_id = uuid.uuid4().hex[:12]
+            LOGGER.exception("Fallo al actualizar coincidencias de fotos; diagnostico=%s", diagnostic_id)
+            return _error(environment, 503, "Actualización no disponible", f"No se completó. Diagnóstico: {diagnostic_id}.", session=session)
+        suffix = "candidates_refreshed" if result.get("inserted_count") else "candidates_unchanged"
+        return RedirectResponse(f"/operator/images?result={suffix}", status_code=303)
 
     @app.post("/operator/images/entries/{entry_id}/assign")
     async def assign_image_route(request: Request, entry_id: str) -> Response:

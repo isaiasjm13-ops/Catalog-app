@@ -51,6 +51,8 @@ class SyntheticReviewGateway:
         self.image_indexes: list[dict[str, Any]] = []
         self.image_candidate_data: list[dict[str, Any]] = []
         self.unlinked_image_data: list[dict[str, Any]] = []
+        self.candidate_refreshes: list[dict[str, Any]] = []
+        self.refresh_inserted = 2
         self.orphan_profile_data: list[dict[str, Any]] = []
         self.brand_creation_error = ""
         self.reference_search_data: list[dict[str, Any]] = []
@@ -443,6 +445,14 @@ class SyntheticReviewGateway:
             candidate.update({"decision": decision, "decided_by": actor, "decided_at": "2026-08-27"})
         return {"status": "bulk_approved" if decision == "approved" else "bulk_rejected",
                 "count": expected_count}
+
+    def refresh_image_candidates(
+        self, actor: str, reason: str, company_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        if company_id != COMPANY_ID:
+            raise PermissionError("Company incorrecta")
+        self.candidate_refreshes.append({"actor": actor, "reason": reason})
+        return {"status": "refreshed", "index_count": 1, "inserted_count": self.refresh_inserted}
 
     def search_product_references(
         self, query: str, *, company_id: uuid.UUID, limit: int = 8,
@@ -2341,6 +2351,48 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(preview.headers["content-type"], "image/jpeg")
         missing = await self.client.get(f"/operator/images/entries/{uuid.uuid4()}/preview")
         self.assertEqual(missing.status_code, 404)
+
+    async def test_images_page_lets_the_user_search_matches_again_after_approving_new_products(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/images")
+        self.assertIn("Buscar coincidencias de nuevo", page.text)
+        csrf = hidden_value(page.text, "csrf_token")
+        done = await self.client.post(
+            "/operator/images/refresh-candidates", data={"csrf_token": csrf},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(done.status_code, 303)
+        self.assertIn("result=candidates_refreshed", done.headers["location"])
+        self.assertEqual(self.gateway.candidate_refreshes[0]["actor"], "web-reviewer")
+        shown = await self.client.get(done.headers["location"])
+        self.assertIn("Encontré coincidencias nuevas", shown.text)
+
+    async def test_refreshing_matches_explains_what_to_check_when_nothing_new_is_found(self) -> None:
+        await self.login()
+        self.gateway.refresh_inserted = 0
+        page = await self.client.get("/operator/images")
+        csrf = hidden_value(page.text, "csrf_token")
+        done = await self.client.post(
+            "/operator/images/refresh-candidates", data={"csrf_token": csrf},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertIn("result=candidates_unchanged", done.headers["location"])
+        shown = await self.client.get(done.headers["location"])
+        self.assertIn("confirma que los productos ya estén aprobados", shown.text)
+
+    async def test_refreshing_matches_rejects_bad_csrf_and_extra_fields(self) -> None:
+        await self.login()
+        bad = await self.client.post(
+            "/operator/images/refresh-candidates", data={"csrf_token": "wrong"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertNotEqual(bad.status_code, 303)
+        extra = await self.client.post(
+            "/operator/images/refresh-candidates", data={"csrf_token": "x", "company": "otra"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(extra.status_code, 409)
+        self.assertEqual(self.gateway.candidate_refreshes, [])
 
     async def _manual_selection_setup(self) -> tuple[uuid.UUID, uuid.UUID]:
         await self.login()

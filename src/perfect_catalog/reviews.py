@@ -1430,6 +1430,15 @@ class DatabaseReviewGateway:
             actor=actor, reason=reason, company_id=company_id,
         )
 
+    def refresh_image_candidates(
+        self, actor: str, reason: str, company_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        from .image_match_review import refresh_image_candidates
+
+        return refresh_image_candidates(
+            self._config, self._password, actor=actor, reason=reason, company_id=company_id,
+        )
+
     def image_candidates(
         self, *, limit: int = 100, offset: int = 0, company_id: uuid.UUID,
         image_archive_index_id: uuid.UUID | None = None,

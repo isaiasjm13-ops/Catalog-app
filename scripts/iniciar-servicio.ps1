@@ -38,7 +38,7 @@ function Get-Listener($p) {
 # Procesos python (shim del venv + hijo) cuya linea de comandos es este servicio.
 function Get-ServiceProcesses($svc) {
     Get-CimInstance Win32_Process |
-        Where-Object { $_.CommandLine -and $_.CommandLine -like "*perfect-catalog-$svc*" }
+        Where-Object { $_.Name -match '^(python|pythonw|perfect-catalog)' -and $_.CommandLine -and $_.CommandLine -like "*perfect-catalog-$svc*" }
 }
 
 # Ultima modificacion del codigo fuente (py, plantillas, estaticos).
