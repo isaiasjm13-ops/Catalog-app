@@ -18,7 +18,7 @@ import zipfile
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from importlib.resources import files
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Protocol
 from urllib.parse import parse_qs, urlencode, urlsplit
 
@@ -34,6 +34,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import DatabaseConfig, prompt_password
+from .guided_flow import next_step
 from .catalog_export_job import (
     CATALOG_THEMES,
     INDESIGN_TEMPLATE_PROFILES,
@@ -53,7 +54,7 @@ from .intake import (
     SecureIntakeService,
     intake_kind_options,
 )
-from .importer import DEFAULT_MAX_PILOT_ROWS
+from .importer import CONTRACT_VERSION, DEFAULT_MAX_PILOT_ROWS, SUPPORTED_RULES_VERSIONS
 from .reviews import DatabaseReviewGateway, REVIEW_STATES, _require_text
 
 
@@ -65,6 +66,9 @@ LOGIN_COOKIE_PATH = "/operator"
 MAX_FORM_BYTES = 16_384
 MAX_REASON_LENGTH = 500
 SESSION_TTL_SECONDS = 60 * 60
+# App de escritorio: una jornada completa sin pedir el código temporal otra vez.
+APP_SESSION_TTL_SECONDS = 12 * 60 * 60
+LAUNCH_TICKET_TTL_SECONDS = 120
 LOGIN_CHALLENGE_TTL_SECONDS = 10 * 60
 PBKDF2_ITERATIONS = 310_000
 MAX_SIMPLE_IMAGE_FILES = 2000
@@ -90,12 +94,26 @@ def _safe_zip_member_name(filename: str | None, seen: set[str]) -> str | None:
     return candidate
 
 
+def _require_accepted_submission(submission: dict[str, Any], label: str) -> None:
+    """Si el ingreso quedó rechazado, explica POR QUÉ en vez de fallar después con un mensaje genérico."""
+    status = submission.get("validation_status")
+    if status is None or status == "quarantined":
+        return
+    errors = (submission.get("validation_report") or {}).get("errors") or []
+    detail = "; ".join(str(error) for error in errors) or "no pasó la validación"
+    raise ValueError(f"{label} no es válido: {detail}")
+
+
 def _write_images_archive(uploads: list[UploadFile], destination: Path) -> int:
     """Empaqueta las fotos sueltas de una carpeta en un único ZIP determinista."""
     written = 0
     seen: set[str] = set()
     with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:
         for upload in uploads:
+            # Igual que con la ruta local: solo entran fotos de formato admitido. PDF, AI, Thumbs.db
+            # y demás se ignoran en silencio; si no, un solo archivo ajeno hacía rechazar todo el ZIP.
+            if PurePosixPath(str(upload.filename).replace("\\", "/")).suffix.lower() not in IMAGE_EXTENSIONS:
+                continue
             member = _safe_zip_member_name(upload.filename, seen)
             if member is None:
                 continue
@@ -223,8 +241,13 @@ class ReviewGateway(Protocol):
         company_id: uuid.UUID,
     ) -> dict[str, Any]: ...
 
+    def refresh_image_candidates(
+        self, actor: str, reason: str, company_id: uuid.UUID,
+    ) -> dict[str, Any]: ...
+
     def image_candidates(
         self, *, limit: int = 100, offset: int = 0, company_id: uuid.UUID,
+        image_archive_index_id: uuid.UUID | None = None,
     ) -> dict[str, Any]: ...
 
     def unlinked_image_entries(
@@ -237,6 +260,15 @@ class ReviewGateway(Protocol):
 
     def decide_image_candidates_bulk(
         self, expected_count: int, decision: str, actor: str, reason: str,
+        company_id: uuid.UUID, image_archive_index_id: uuid.UUID | None = None,
+    ) -> dict[str, Any]: ...
+
+    def search_product_references(
+        self, query: str, *, company_id: uuid.UUID, limit: int = 8,
+    ) -> list[dict[str, Any]]: ...
+
+    def assign_image_manually(
+        self, entry_id: uuid.UUID, product_reference_id: uuid.UUID, kind: str, actor: str,
         company_id: uuid.UUID,
     ) -> dict[str, Any]: ...
 
@@ -247,6 +279,7 @@ class ReviewGateway(Protocol):
     def materialize_approved_images_bulk(
         self, expected_count: int, intake_root: Path, image_root: Path,
         actor: str, reason: str, company_id: uuid.UUID,
+        image_archive_index_id: uuid.UUID | None = None,
     ) -> dict[str, Any]: ...
 
     def catalog_releases(self, *, limit: int = 100, company_id: uuid.UUID | None = None) -> list[dict[str, Any]]: ...
@@ -256,6 +289,10 @@ class ReviewGateway(Protocol):
     def brands(self, *, company_id: uuid.UUID) -> list[dict[str, Any]]: ...
 
     def link_brand_profile(self, **kwargs: Any) -> dict[str, Any]: ...
+
+    def profiles_without_brand(self, *, company_id: uuid.UUID) -> list[dict[str, Any]]: ...
+
+    def create_brand_for_profile(self, **kwargs: Any) -> dict[str, Any]: ...
 
     def create_brand_profile(
         self, values: dict[str, str], actor: str, reason: str, company_id: uuid.UUID,
@@ -304,6 +341,16 @@ class ReviewGateway(Protocol):
         self, release_id: uuid.UUID, *, group_by: str = "category_path",
         group: str = "", page: int = 1, page_size: int = 48,
     ) -> dict[str, Any]: ...
+
+    def public_catalog_links(self) -> list[dict[str, Any]]: ...
+
+    def create_public_catalog_link(self, *, label: str, actor: str) -> dict[str, Any]: ...
+
+    def revoke_public_catalog_link(self, *, link_id: uuid.UUID, actor: str) -> dict[str, Any]: ...
+
+    def public_catalog_generations(
+        self, *, link_id: uuid.UUID, limit: int = 50, offset: int = 0,
+    ) -> list[dict[str, Any]]: ...
 
 
 def _darken_hex(color: str, factor: float = 0.72) -> str:
@@ -357,6 +404,7 @@ class OperatorAuthenticator:
         self._signing_key = secrets.token_bytes(32)
         self._sessions: dict[str, OperatorSession] = {}
         self._failed_logins: list[float] = []
+        self._launch_tickets: dict[str, float] = {}
         self._lock = threading.Lock()
 
     def _derive(self, value: str) -> bytes:
@@ -428,13 +476,28 @@ class OperatorAuthenticator:
     def authenticate(self, access_code: str) -> bool:
         return self.authenticate_result(access_code) == "accepted"
 
-    def create_session(self) -> tuple[OperatorSession, str]:
+    def issue_launch_ticket(self) -> str:
+        """Boleto de un solo uso para la app de escritorio: entra sin teclear el código temporal.
+        Solo lo conoce el proceso que arrancó el servidor; vence en 2 minutos."""
+        token = secrets.token_urlsafe(24)
+        with self._lock:
+            now = self._now()
+            self._launch_tickets = {t: exp for t, exp in self._launch_tickets.items() if exp > now}
+            self._launch_tickets[token] = now + LAUNCH_TICKET_TTL_SECONDS
+        return token
+
+    def consume_launch_ticket(self, token: str | None) -> bool:
+        with self._lock:
+            expires_at = self._launch_tickets.pop(str(token or ""), None)
+            return expires_at is not None and expires_at > self._now()
+
+    def create_session(self, ttl_seconds: int | None = None) -> tuple[OperatorSession, str]:
         session_id = secrets.token_urlsafe(32)
         session = OperatorSession(
             session_id=session_id,
             actor=self.actor,
             csrf_token=secrets.token_urlsafe(32),
-            expires_at=int(self._now()) + self._ttl,
+            expires_at=int(self._now()) + (ttl_seconds or self._ttl),
         )
         with self._lock:
             self._sessions[session_id] = session
@@ -511,6 +574,43 @@ def _set_security_headers(response: Response) -> None:
     response.headers["X-Frame-Options"] = "DENY"
 
 
+_DELIVERED_PAGE_PATH = re.compile(
+    r"^/operator/catalogs/[0-9a-fA-F-]{36}/exports/[0-9a-fA-F-]{36}/delivered$"
+)
+_EXPORT_VIEW_PATH = re.compile(
+    r"^/operator/catalogs/[0-9a-fA-F-]{36}/exports/[0-9a-fA-F-]{36}/[^/]+/view$"
+)
+
+
+def _set_delivered_page_headers(response: Response) -> None:
+    """Igual que _set_security_headers, salvo frame-src 'self': esta página necesita
+    incrustar el iframe de vista previa (mismo origen, ver _EXPORT_VIEW_PATH)."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' blob:; "
+        "frame-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+    )
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+
+
+def _set_export_preview_headers(response: Response) -> None:
+    """El HTML exportado es un documento completo con su propio CSS/JS inline, fuentes
+    y fotos en base64 — la política estricta por defecto (sin 'unsafe-inline', sin
+    data:, frame-ancestors 'none') se lo comería entero y además impediría incrustarlo
+    en el iframe de /delivered. Sigue sin permitir nada externo: nada de red, nada de
+    otros orígenes, solo lo que el propio archivo trae embebido."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+        "img-src data:; font-src data:; frame-ancestors 'self'; form-action 'none'; base-uri 'none'"
+    )
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+
+
 def _origin_tuple(value: str) -> tuple[str, str, int] | None:
     try:
         parsed = urlsplit(value)
@@ -578,6 +678,19 @@ def _uuid(value: str, label: str) -> uuid.UUID:
         raise ValueError(f"{label} no contiene un UUID válido.") from exc
 
 
+def _decision_reason(form: Any, decision: str, *, auto_reason: str) -> str:
+    """Un motivo escrito a mano siempre gana. Aprobar (el camino rutinario) se
+    autogenera si no hay uno; rechazar (la excepción) exige uno explícito."""
+    if decision not in {"approve", "reject"}:
+        raise ValueError("decision debe ser 'approve' o 'reject'.")
+    typed_reason = str(form.get("reason", "")).strip()
+    if typed_reason:
+        return typed_reason
+    if decision == "approve":
+        return auto_reason
+    raise ValueError("El motivo es obligatorio para rechazar.")
+
+
 def _human_size(value: int) -> str:
     size = float(value)
     for unit in ("B", "KiB", "MiB", "GiB"):
@@ -638,6 +751,7 @@ def create_operator_app(
     catalog_output_dir: Path | None = None,
     image_output_dir: Path | None = None,
     brand_asset_dir: Path | None = None,
+    public_generator_base_url: str = "http://127.0.0.1:8082",
 ) -> FastAPI:
     environment = _templates()
     resolved_intake_root = intake_root or Path("data/intake")
@@ -645,6 +759,7 @@ def create_operator_app(
     resolved_catalog_output = catalog_output_dir or Path("data/exports/catalogs")
     resolved_image_output = image_output_dir or Path("data/images")
     resolved_brand_assets = brand_asset_dir or Path("data/brand-assets")
+    resolved_public_generator_base_url = public_generator_base_url.rstrip("/")
     intake_service = SecureIntakeService(resolved_intake_root, gateway)
 
     @asynccontextmanager
@@ -675,7 +790,7 @@ def create_operator_app(
     async def security_headers(request: Request, call_next: Callable[..., Any]) -> Response:
         response: Response
         match = re.match(
-            r"^/operator/(?:(plans)/([0-9a-fA-F-]{36})(?:/.*)?|(catalogs)/([0-9a-fA-F-]{36})(?:/.*)?|brands/identity/([0-9a-fA-F-]{36})/logo|(intake)/([0-9a-fA-F-]{36})(?:/.*)?|images/(index|candidates)/([0-9a-fA-F-]{36})(?:/.*)?)$",
+            r"^/operator/(?:(plans|import-plans)/([0-9a-fA-F-]{36})(?:/.*)?|(catalogs)/([0-9a-fA-F-]{36})(?:/.*)?|brands/identity/([0-9a-fA-F-]{36})/logo|(intake)/([0-9a-fA-F-]{36})(?:/.*)?|images/(index|candidates|entries)/([0-9a-fA-F-]{36})(?:/.*)?)$",
             request.url.path,
         )
         session = authenticator.get_session(request.cookies.get(SESSION_COOKIE))
@@ -684,7 +799,8 @@ def create_operator_app(
             resource_type = (
                 "plan" if match.group(1) else "release" if match.group(3)
                 else "identity" if match.group(5) else "intake" if match.group(6)
-                else "image_index" if match.group(8) == "index" else "image_candidate"
+                else "image_index" if match.group(8) == "index"
+                else "image_entry" if match.group(8) == "entries" else "image_candidate"
             )
             resource_text = (
                 match.group(2) or match.group(4) or match.group(5)
@@ -707,7 +823,12 @@ def create_operator_app(
                 )
         else:
             response = await call_next(request)
-        _set_security_headers(response)
+        if _EXPORT_VIEW_PATH.match(request.url.path):
+            _set_export_preview_headers(response)
+        elif _DELIVERED_PAGE_PATH.match(request.url.path):
+            _set_delivered_page_headers(response)
+        else:
+            _set_security_headers(response)
         return response
 
     def current_session(request: Request) -> OperatorSession | None:
@@ -786,6 +907,49 @@ def create_operator_app(
         response.delete_cookie(LOGIN_COOKIE, path="/operator/login")
         return response
 
+    async def _complete_login(ttl_seconds: int | None = None) -> Response:
+        """Crea la sesión, elige la Company si solo hay una y fija la cookie de sesión."""
+        _, signed_session = authenticator.create_session(ttl_seconds)
+        destination = "/operator"
+        try:
+            companies = await available_companies()
+            usable = [company for company in companies if company.get("is_active", True)]
+            if len(usable) == 1:
+                company = usable[0]
+                company_id = _uuid(str(company["company_id"]), "company_id")
+                primary_color, secondary_color = await company_accent_colors(company_id)
+                authenticator.select_company(
+                    signed_session, company_id,
+                    str(company["code"]), str(company["display_name"]),
+                    primary_color=primary_color, secondary_color=secondary_color,
+                )
+            elif usable:
+                destination = "/operator/company"
+        except Exception as exc:
+            LOGGER.exception("No se pudo cargar Company durante login: %s", exc)
+            destination = "/operator/company"
+        response = RedirectResponse(destination, status_code=303)
+        response.delete_cookie(LOGIN_COOKIE, path=LOGIN_COOKIE_PATH)
+        response.delete_cookie(LOGIN_COOKIE, path="/operator/login")
+        response.set_cookie(
+            SESSION_COOKIE,
+            signed_session,
+            httponly=True,
+            samesite="strict",
+            secure=False,
+            max_age=ttl_seconds or SESSION_TTL_SECONDS,
+            path="/operator",
+        )
+        return response
+
+    @app.get("/operator/app-login")
+    async def app_login(request: Request, ticket: str = "") -> Response:
+        """Entrada de la app de escritorio: un boleto de un solo uso, generado por el mismo proceso
+        que arrancó el servidor, sustituye al código temporal. Sin boleto válido, login normal."""
+        if not authenticator.consume_launch_ticket(ticket):
+            return RedirectResponse("/operator/login", status_code=303)
+        return await _complete_login(APP_SESSION_TTL_SECONDS)
+
     @app.post("/operator/login", response_class=HTMLResponse)
     async def login(request: Request) -> Response:
         try:
@@ -837,38 +1001,7 @@ def create_operator_app(
             )
             response.delete_cookie(LOGIN_COOKIE, path="/operator/login")
             return response
-        _, signed_session = authenticator.create_session()
-        destination = "/operator"
-        try:
-            companies = await available_companies()
-            usable = [company for company in companies if company.get("is_active", True)]
-            if len(usable) == 1:
-                company = usable[0]
-                company_id = _uuid(str(company["company_id"]), "company_id")
-                primary_color, secondary_color = await company_accent_colors(company_id)
-                authenticator.select_company(
-                    signed_session, company_id,
-                    str(company["code"]), str(company["display_name"]),
-                    primary_color=primary_color, secondary_color=secondary_color,
-                )
-            elif usable:
-                destination = "/operator/company"
-        except Exception as exc:
-            LOGGER.exception("No se pudo cargar Company durante login: %s", exc)
-            destination = "/operator/company"
-        response = RedirectResponse(destination, status_code=303)
-        response.delete_cookie(LOGIN_COOKIE, path=LOGIN_COOKIE_PATH)
-        response.delete_cookie(LOGIN_COOKIE, path="/operator/login")
-        response.set_cookie(
-            SESSION_COOKIE,
-            signed_session,
-            httponly=True,
-            samesite="strict",
-            secure=False,
-            max_age=SESSION_TTL_SECONDS,
-            path="/operator",
-        )
-        return response
+        return await _complete_login()
 
     @app.get("/operator/company", response_class=HTMLResponse)
     async def company_page(request: Request) -> Response:
@@ -973,26 +1106,33 @@ def create_operator_app(
         response.delete_cookie(SESSION_COOKIE, path="/operator")
         return response
 
+    async def _workflow_state(company_id: Any) -> tuple[list[Any], dict[str, int]]:
+        """Planes y conteos del flujo; los comparten el panel y el modo guiado."""
+        plans = await run_in_threadpool(gateway.plans, limit=100, company_id=company_id)
+        intakes = await run_in_threadpool(
+            gateway.intake_submissions, kind="all", status="all", limit=1, offset=0,
+            company_id=company_id,
+        )
+        image_summary = await run_in_threadpool(
+            gateway.image_candidates, limit=1, offset=0, company_id=company_id,
+        )
+        releases = await run_in_threadpool(gateway.catalog_releases, limit=100, company_id=company_id)
+        return plans, {
+            "intake_count": int(intakes["filtered_count"]),
+            "pending_review_count": sum(int(plan["pending_count"]) for plan in plans),
+            "pending_image_count": int(image_summary["pending_count"]),
+            "materialize_image_count": int(image_summary["approved_unmaterialized_count"]),
+            "draft_release_count": sum(release["status"] == "draft" for release in releases),
+            "published_release_count": sum(release["status"] == "published" for release in releases),
+        }
+
     @app.get("/operator", response_class=HTMLResponse)
     async def dashboard(request: Request) -> Response:
         session_or_redirect = require_session(request)
         if isinstance(session_or_redirect, RedirectResponse):
             return session_or_redirect
         try:
-            plans = await run_in_threadpool(
-                gateway.plans, limit=100, company_id=session_or_redirect.company_id,
-            )
-            intakes = await run_in_threadpool(
-                gateway.intake_submissions, kind="all", status="all", limit=1, offset=0,
-                company_id=session_or_redirect.company_id,
-            )
-            image_summary = await run_in_threadpool(
-                gateway.image_candidates, limit=1, offset=0,
-                company_id=session_or_redirect.company_id,
-            )
-            releases = await run_in_threadpool(
-                gateway.catalog_releases, limit=100, company_id=session_or_redirect.company_id,
-            )
+            plans, workflow = await _workflow_state(session_or_redirect.company_id)
         except Exception as exc:
             return _unexpected_error(
                 environment, "PostgreSQL no disponible",
@@ -1003,16 +1143,86 @@ def create_operator_app(
             environment,
             "operator_plans.html",
             plans=plans,
-            workflow={
-                "intake_count": int(intakes["filtered_count"]),
-                "pending_review_count": sum(int(plan["pending_count"]) for plan in plans),
-                "pending_image_count": int(image_summary["pending_count"]),
-                "materialize_image_count": int(image_summary["approved_unmaterialized_count"]),
-                "draft_release_count": sum(release["status"] == "draft" for release in releases),
-                "published_release_count": sum(release["status"] == "published" for release in releases),
-            },
+            workflow=workflow,
             session=session_or_redirect,
             version=OPERATOR_VERSION,
+        )
+
+    @app.get("/operator/guiado", response_class=HTMLResponse)
+    async def guided_mode(request: Request) -> Response:
+        """Modo guiado: un solo paso a la vez, en lenguaje llano, sobre el mismo flujo auditado."""
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            plans, workflow = await _workflow_state(session_or_redirect.company_id)
+        except Exception as exc:
+            return _unexpected_error(
+                environment, "PostgreSQL no disponible",
+                "No se pudo leer el estado del flujo. Revisa la consola del servidor operador.",
+                "guided_read_failed", exc, session=session_or_redirect,
+            )
+        return _render(
+            environment,
+            "operator_guided.html",
+            guided=next_step(workflow, plans),
+            session=session_or_redirect,
+            version=OPERATOR_VERSION,
+        )
+
+    @app.get("/operator/review")
+    async def review_redirect(request: Request) -> Response:
+        """'Revisar' en el nav no tiene una URL propia (la cola vive en /operator/plans/{plan_id}):
+        redirige al plan con pendientes más relevante, igual que ya hace la tarjeta 'Continuar
+        donde quedaste' del dashboard, o de vuelta a Inicio si no hay nada pendiente."""
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            plans = await run_in_threadpool(
+                gateway.plans, limit=100, company_id=session_or_redirect.company_id,
+            )
+        except Exception as exc:
+            return _unexpected_error(
+                environment, "PostgreSQL no disponible",
+                "No se pudo leer la cola. Revisa la consola del servidor operador.",
+                "review_redirect_failed", exc, session=session_or_redirect,
+            )
+        pending_plan = next((plan for plan in plans if plan["pending_count"]), None)
+        if pending_plan is None:
+            return RedirectResponse("/operator", status_code=303)
+        return RedirectResponse(
+            f"/operator/plans/{pending_plan['import_plan_id']}?state=pending", status_code=303,
+        )
+
+    @app.get("/operator/admin", response_class=HTMLResponse)
+    async def admin_index(request: Request) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            intakes = await run_in_threadpool(
+                gateway.intake_submissions, kind="all", status="all", limit=1, offset=0,
+                company_id=session_or_redirect.company_id,
+            )
+            image_summary = await run_in_threadpool(
+                gateway.image_candidates, limit=1, offset=0,
+                company_id=session_or_redirect.company_id,
+            )
+            links = await run_in_threadpool(gateway.public_catalog_links)
+        except Exception as exc:
+            return _unexpected_error(
+                environment, "Administración no disponible",
+                "Revisa la consola del servidor operador.",
+                "admin_index_read_failed", exc, session=session_or_redirect,
+            )
+        return _render(
+            environment, "operator_admin.html",
+            intake_count=int(intakes["filtered_count"]),
+            pending_image_count=int(image_summary["pending_count"]),
+            materialize_image_count=int(image_summary["approved_unmaterialized_count"]),
+            active_link_count=sum(1 for link in links if link["active"]),
+            session=session_or_redirect, version=OPERATOR_VERSION,
         )
 
     @app.get("/operator/intake", response_class=HTMLResponse)
@@ -1077,13 +1287,16 @@ def create_operator_app(
             "rejected": "Archivo rechazado por el validador. No se conservaron sus bytes.",
             "promoted": "Ingreso perfilado; el dry-run quedó pendiente de revisión.",
             "already_promoted": "Este ingreso ya tenía un dry-run enlazado.",
-            "indexed": "ZIP indexado sin extracción. Las asociaciones permanecen pendientes de revisión.",
+            "indexed": "ZIP indexado sin extracción. Siguiente paso: entra a Imágenes y pulsa «Buscar coincidencias de nuevo» para proponer a qué producto pertenece cada foto.",
             "already_indexed": "Este ZIP ya tenía un índice verificable; no se duplicó.",
             "archived": "Ingreso archivado. Deja de aparecer en la lista activa; su evidencia permanece intacta.",
             "already_archived": "Este ingreso ya estaba archivado.",
             "unarchived": "Ingreso restaurado a la lista activa.",
             "already_active": "Este ingreso ya estaba activo.",
         }.get(result)
+        rejection_detail = (request.query_params.get("detail") or "").strip()[:300]
+        if message and result == "rejected" and rejection_detail:
+            message = f"{message} Motivo: {rejection_detail}"
         query_args = {"kind": kind, "status": status, "archived": archived}
         previous_url = (
             f"/operator/intake?{urlencode({**query_args, 'page': page - 1})}"
@@ -1166,6 +1379,8 @@ def create_operator_app(
             formats=SUPPORTED_FORMATS,
             indesign_templates=INDESIGN_TEMPLATE_PROFILES,
             message=message,
+            current_contract_version=CONTRACT_VERSION,
+            current_rules_versions=list(SUPPORTED_RULES_VERSIONS),
             session=session_or_redirect,
             version=OPERATOR_VERSION,
         )
@@ -1182,6 +1397,9 @@ def create_operator_app(
             brands = await run_in_threadpool(
                 gateway.brands, company_id=session_or_redirect.company_id,
             )
+            orphan_profiles = await run_in_threadpool(
+                gateway.profiles_without_brand, company_id=session_or_redirect.company_id,
+            )
             identities = await run_in_threadpool(
                 gateway.visual_identities, company_id=session_or_redirect.company_id,
             )
@@ -1192,14 +1410,40 @@ def create_operator_app(
                 "brand_workspace_read_failed", exc, session=session_or_redirect,
             )
         message = {
-            "created": "Marca creada. Ya está disponible como perfil visual.",
+            "created": "Marca creada: perfil visual y marca real vinculados. Ya puedes cargar productos de esta marca.",
+            "brand_created": "Marca real creada y vinculada a su perfil. Ya puedes cargar productos de esta marca.",
             "identity_created": "Logo y colores guardados como una nueva revisión auditada.",
             "linked": "Vínculo Brand-Perfil guardado. Ya puedes generar un dry-run para esta marca.",
         }.get(request.query_params.get("result"))
         return _render(
             environment, "operator_brands.html", profiles=profiles, brands=brands, identities=identities,
+            orphan_profiles=orphan_profiles,
             message=message, session=session_or_redirect, version=OPERATOR_VERSION,
         )
+
+    @app.post("/operator/brands/create-real")
+    async def create_real_brand_route(request: Request) -> Response:
+        """Crea la marca real (Brand) de un perfil visual que aún no la tiene."""
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "brand_profile_id"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
+            await run_in_threadpool(
+                gateway.create_brand_for_profile,
+                brand_profile_id=_uuid(form["brand_profile_id"], "brand_profile_id"),
+                actor=session.actor, company_id=session.company_id,
+            )
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            return _error(environment, 409, "Marca no creada", str(exc), session=session)
+        except Exception as exc:
+            return _unexpected_error(environment, "Marca no creada", "PostgreSQL no guardó la marca. Revisa la consola.", "brand_real_create_failed", exc, session=session)
+        return RedirectResponse("/operator/brands?result=brand_created", status_code=303)
 
     @app.post("/operator/brands/link")
     async def link_brand_profile_route(request: Request) -> Response:
@@ -1301,7 +1545,7 @@ def create_operator_app(
             if form["confirm"] != "yes":
                 raise ValueError("Debes confirmar la creacion del perfil de marca.")
             reason = _require_text(form["reason"], "reason")
-            await run_in_threadpool(
+            profile = await run_in_threadpool(
                 gateway.create_brand_profile,
                 {key: form[key] for key in profile_fields}, session.actor, reason,
                 session.company_id,
@@ -1310,7 +1554,116 @@ def create_operator_app(
             return _error(environment, 409, "Marca no creada", str(exc), session=session)
         except Exception as exc:
             return _unexpected_error(environment, "Marca no creada", "PostgreSQL no guardó el perfil. Revisa la consola.", "brand_create_failed", exc, session=session)
+        # Un perfil solo no basta para importar: se crea también la marca real en el mismo paso.
+        # Si eso falla, el perfil ya existe y queda en «Perfiles sin marca real» para reintentar.
+        try:
+            await run_in_threadpool(
+                gateway.create_brand_for_profile,
+                brand_profile_id=_uuid(str(profile["brand_profile_id"]), "brand_profile_id"),
+                actor=session.actor, company_id=session.company_id,
+            )
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            return _error(
+                environment, 409, "Perfil creado, falta la marca real",
+                f"El perfil quedó guardado, pero la marca real no se creó: {exc} "
+                "Corrígelo y pulsa «Crear marca real» en «Perfiles sin marca real».",
+                session=session,
+            )
+        except Exception as exc:
+            return _unexpected_error(environment, "Perfil creado, falta la marca real", "El perfil quedó guardado, pero PostgreSQL no creó la marca real. Reintenta desde «Perfiles sin marca real».", "brand_real_create_failed", exc, session=session)
         return RedirectResponse("/operator/brands?result=created", status_code=303)
+
+    @app.get("/operator/public-links", response_class=HTMLResponse)
+    async def public_links_page(request: Request) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            links = await run_in_threadpool(gateway.public_catalog_links)
+        except Exception as exc:
+            return _unexpected_error(
+                environment, "Links no disponibles",
+                "Ejecuta ACTUALIZAR-SISTEMA.cmd o revisa PostgreSQL.",
+                "public_links_read_failed", exc, session=session_or_redirect,
+            )
+        message = {
+            "created": "Link creado. Compártelo con la persona externa; el token no se vuelve a mostrar entero aquí.",
+            "revoked": "Link revocado. Ya no puede generar catálogos nuevos.",
+        }.get(request.query_params.get("result"))
+        return _render(
+            environment, "operator_public_links.html", links=links,
+            message=message, session=session_or_redirect, version=OPERATOR_VERSION,
+        )
+
+    @app.get("/operator/public-links/{link_id}", response_class=HTMLResponse)
+    async def public_link_generations_page(request: Request, link_id: str) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            parsed_id = _uuid(link_id, "link_id")
+            links = await run_in_threadpool(gateway.public_catalog_links)
+            link = next((item for item in links if str(item["public_catalog_link_id"]) == str(parsed_id)), None)
+            if link is None:
+                return _error(environment, 404, "Link no encontrado", "No existe un link con ese UUID.", session=session_or_redirect)
+            generations = await run_in_threadpool(gateway.public_catalog_generations, link_id=parsed_id)
+        except (ValueError, RuntimeError) as exc:
+            return _error(environment, 400, "No se pudo abrir el link", str(exc), session=session_or_redirect)
+        except Exception as exc:
+            return _unexpected_error(
+                environment, "Historial no disponible", "Revisa la consola del servidor operador.",
+                "public_link_generations_read_failed", exc, session=session_or_redirect,
+            )
+        return _render(
+            environment, "operator_public_link_detail.html", link=link, generations=generations,
+            session=session_or_redirect, version=OPERATOR_VERSION,
+        )
+
+    @app.post("/operator/public-links")
+    async def create_public_link_route(request: Request) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "label"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
+            label = _require_text(form["label"], "label")
+            created = await run_in_threadpool(gateway.create_public_catalog_link, label=label, actor=session.actor)
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            return _error(environment, 409, "Link no creado", str(exc), session=session)
+        except Exception as exc:
+            return _unexpected_error(environment, "Link no creado", "PostgreSQL no guardó el link. Revisa la consola.", "public_link_create_failed", exc, session=session)
+        return _render(
+            environment, "operator_public_link_created.html",
+            label=created["label"],
+            generator_url=f"{resolved_public_generator_base_url}/generar?ref={created['token']}",
+            session=session, version=OPERATOR_VERSION,
+        )
+
+    @app.post("/operator/public-links/revoke")
+    async def revoke_public_link_route(request: Request) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "link_id"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
+            await run_in_threadpool(
+                gateway.revoke_public_catalog_link, link_id=_uuid(form["link_id"], "link_id"), actor=session.actor,
+            )
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            return _error(environment, 409, "Link no revocado", str(exc), session=session)
+        except Exception as exc:
+            return _unexpected_error(environment, "Link no revocado", "PostgreSQL no guardó la revocación. Revisa la consola.", "public_link_revoke_failed", exc, session=session)
+        return RedirectResponse("/operator/public-links?result=revoked", status_code=303)
 
     @app.post("/operator/catalogs/releases")
     async def build_catalog_release_route(request: Request) -> Response:
@@ -1680,6 +2033,73 @@ def create_operator_app(
             return _unexpected_error(environment, "Exportación no disponible", "No se generó el HTML autónomo. Revisa la consola del servidor operador.", "catalog_quick_export_failed", exc, session=session)
         return RedirectResponse("/operator/catalogs?result=created", status_code=303)
 
+    @app.post("/operator/plans/{plan_id}/deliver")
+    async def deliver_catalog(request: Request, plan_id: str) -> Response:
+        """'Entregar' en una sola confirmación: encadena construir + publicar + exportar
+        HTML autónomo (mismo patrón que ya usa simple_mode_submit para su propia cadena de
+        pasos). Cada paso sigue siendo una operación auditada por separado en Postgres —
+        esto solo evita copiar snapshot_sha256/fingerprint a mano entre tres pantallas."""
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "fingerprint", "brand", "version", "title", "subtitle", "confirm"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
+            if form["confirm"] != "yes":
+                raise ValueError("Debes confirmar la entrega del catálogo.")
+            # Entregar es el camino rutinario: se audita igual (cada paso queda registrado
+            # por separado en Postgres), pero sin pedirle a la persona que escriba un motivo.
+            reason = f"Entrega guiada — versión {form['version'].strip()[:80] or 'sin nombre'}."
+            brand = _require_text(form["brand"], "brand")
+            title = _require_text(form["title"], "title")
+            subtitle = form["subtitle"].strip()
+            if len(title) > 120 or len(subtitle) > 180:
+                raise ValueError("Título o subtítulo demasiado largo.")
+            parsed_plan_id = _uuid(plan_id, "plan_id")
+            built = await run_in_threadpool(
+                gateway.build_catalog_release, parsed_plan_id, form["fingerprint"],
+                form["version"], session.actor, reason, brand,
+            )
+            release_id = _uuid(built["release_id"], "release_id")
+            await run_in_threadpool(
+                gateway.publish_catalog_release, release_id, built["snapshot_sha256"], session.actor, reason,
+            )
+            export = await run_in_threadpool(
+                gateway.export_catalog, release_id, resolved_catalog_output,
+                formats=("html-standalone",), image_root=resolved_image_output,
+                brand_asset_root=resolved_brand_assets,
+                export_config={
+                    "title": title, "subtitle": subtitle, "group_by": "category_path",
+                    "group_by_secondary": "", "filter_field": "all", "filter_query": "",
+                    "selected_references": "", "columns_per_row": 2,
+                    "template_profile": "T4", "theme": "forest",
+                    "show_category": True, "show_brand": True, "show_oem": True,
+                    "show_applications": True, "show_engine": True,
+                },
+            )
+            html_file = next(
+                (item for item in export["files"] if item["format"] == "html-standalone"), None,
+            )
+            if html_file is None:
+                raise RuntimeError("La exportación no generó el HTML autónomo esperado.")
+        except (ValueError, RuntimeError, PermissionError, NotImplementedError, FileExistsError) as exc:
+            return _error(environment, 409, "Catálogo no entregado", str(exc), session=session)
+        except Exception as exc:
+            return _unexpected_error(
+                environment, "Entrega no disponible",
+                "No se completó la entrega. Revisa la consola del servidor operador.",
+                "catalog_deliver_failed", exc, session=session,
+            )
+        return RedirectResponse(
+            f"/operator/catalogs/{built['release_id']}/exports/{export['export_id']}/delivered"
+            f"?{urlencode({'filename': html_file['filename']})}",
+            status_code=303,
+        )
+
     @app.post("/operator/catalogs/{release_id}/exports/{export_id}/preflight")
     async def upload_indesign_preflight(
         request: Request, release_id: str, export_id: str,
@@ -1727,6 +2147,44 @@ def create_operator_app(
         except Exception as exc:
             return _unexpected_error(environment, "Preflight no disponible", "El reporte no quedó registrado.", "indesign_preflight_record_failed", exc, session=session)
         return RedirectResponse("/operator/catalogs?result=preflight_recorded", status_code=303)
+
+    @app.get("/operator/catalogs/{release_id}/exports/{export_id}/delivered", response_class=HTMLResponse)
+    async def delivered_catalog_page(
+        request: Request, release_id: str, export_id: str, filename: str,
+    ) -> Response:
+        """Vista previa byte-exacta: el iframe carga el mismo archivo, con los mismos bytes,
+        que el botón de descarga entrega — no una aproximación generada por otra plantilla."""
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            await run_in_threadpool(
+                resolve_catalog_download, resolved_catalog_output,
+                _uuid(release_id, "release_id"), _uuid(export_id, "export_id"), filename,
+            )
+        except (ValueError, PermissionError, FileNotFoundError):
+            return _error(environment, 404, "Archivo no encontrado", "La entrega no corresponde a una exportación válida.", session=session_or_redirect)
+        return _render(
+            environment, "operator_catalog_delivered.html",
+            release_id=release_id, export_id=export_id, filename=filename,
+            session=session_or_redirect, version=OPERATOR_VERSION,
+        )
+
+    @app.get("/operator/catalogs/{release_id}/exports/{export_id}/{filename}/view")
+    async def view_catalog_export(
+        request: Request, release_id: str, export_id: str, filename: str,
+    ) -> Response:
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            target = await run_in_threadpool(
+                resolve_catalog_download, resolved_catalog_output,
+                _uuid(release_id, "release_id"), _uuid(export_id, "export_id"), filename,
+            )
+        except (ValueError, PermissionError, FileNotFoundError):
+            return _error(environment, 404, "Archivo no encontrado", "La vista previa no corresponde a una exportación válida.", session=session_or_redirect)
+        return FileResponse(target, media_type="text/html", headers={"Content-Disposition": "inline"})
 
     @app.get("/operator/catalogs/{release_id}/exports/{export_id}/{filename}")
     async def download_catalog_export(
@@ -1864,8 +2322,15 @@ def create_operator_app(
         result = str(submitted["validation_status"])
         if submitted.get("duplicate_content"):
             result = "duplicate"
+        redirect_args = {"result": result}
+        if result == "rejected":
+            # El validador ya sabe por qué rechazó; antes la pantalla solo decía "rechazado".
+            errors = (submitted.get("validation_report") or {}).get("errors") or []
+            reason_text = "; ".join(str(error) for error in errors[:3])[:300]
+            if reason_text:
+                redirect_args["detail"] = reason_text
         return RedirectResponse(
-            f"/operator/intake?{urlencode({'result': result})}", status_code=303
+            f"/operator/intake?{urlencode(redirect_args)}", status_code=303
         )
 
     @app.post("/operator/intake/{submission_id}/promote")
@@ -1996,7 +2461,27 @@ def create_operator_app(
             return _error(environment, 400, "Página inválida", str(exc), session=session_or_redirect)
         except Exception as exc:
             return _unexpected_error(environment, "Revisión de imágenes no disponible", "Verifica que la actualización del sistema esté aplicada y revisa la consola del servidor.", "image_review_read_failed", exc, session=session_or_redirect)
+        # Selección manual: ?find=<entry_id>&q=<texto> muestra productos candidatos para esa foto.
+        search_entry_id = request.query_params.get("find") or ""
+        search_query = (request.query_params.get("q") or "").strip()
+        search_results: list[dict[str, Any]] = []
+        search_error = ""
+        if search_entry_id and search_query:
+            try:
+                _uuid(search_entry_id, "find")
+                search_results = await run_in_threadpool(
+                    gateway.search_product_references, search_query,
+                    company_id=session_or_redirect.company_id,
+                )
+            except ValueError as exc:
+                search_error = str(exc)
+            except Exception:
+                LOGGER.exception("Fallo al buscar productos para asignar una foto")
+                search_error = "No se pudo buscar ahora. Intenta de nuevo."
         result_message = {
+            "candidates_refreshed": "Encontré coincidencias nuevas. Revísalas abajo y usa «Preparar coincidencias exactas» para vincularlas.",
+            "candidates_unchanged": "No hay coincidencias nuevas. Si faltan fotos, confirma que los productos ya estén aprobados en Revisar y que el nombre del archivo sea la referencia; también puedes elegir el producto a mano abajo.",
+            "photo_assigned": "Foto asignada al producto y aprobada con tu nombre. Usa «Preparar coincidencias exactas» para copiarla al catálogo.",
             "generated": "Candidatos exactos generados. Ninguno fue aprobado automáticamente.",
             "approved": "Candidato de imagen aprobado con su evidencia exacta.",
             "rejected": "Candidato de imagen rechazado; la evidencia permanece conservada.",
@@ -2014,9 +2499,63 @@ def create_operator_app(
         return _render(
             environment, "operator_images.html", candidates=candidates,
             unlinked_entries=unlinked_entries,
+            search_entry_id=search_entry_id, search_query=search_query,
+            search_results=search_results, search_error=search_error,
             message=result_message, page=page, previous_url=previous_url, next_url=next_url,
             session=session_or_redirect, version=OPERATOR_VERSION,
         )
+
+    @app.post("/operator/images/refresh-candidates")
+    async def refresh_image_candidates_route(request: Request) -> Response:
+        """Vuelve a buscar coincidencias de las fotos ya cargadas (p. ej. tras aprobar productos nuevos)."""
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
+            result = await run_in_threadpool(
+                gateway.refresh_image_candidates, session.actor,
+                "Búsqueda de coincidencias de fotos tras aprobar productos.", session.company_id,
+            )
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            return _error(environment, 409, "Coincidencias no actualizadas", str(exc), session=session)
+        except Exception:
+            diagnostic_id = uuid.uuid4().hex[:12]
+            LOGGER.exception("Fallo al actualizar coincidencias de fotos; diagnostico=%s", diagnostic_id)
+            return _error(environment, 503, "Actualización no disponible", f"No se completó. Diagnóstico: {diagnostic_id}.", session=session)
+        suffix = "candidates_refreshed" if result.get("inserted_count") else "candidates_unchanged"
+        return RedirectResponse(f"/operator/images?result={suffix}", status_code=303)
+
+    @app.post("/operator/images/entries/{entry_id}/assign")
+    async def assign_image_route(request: Request, entry_id: str) -> Response:
+        """El operador elige a qué producto pertenece una foto ambigua o sin coincidencia."""
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "product_reference_id", "kind"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
+            await run_in_threadpool(
+                gateway.assign_image_manually,
+                _uuid(entry_id, "entry_id"), _uuid(form["product_reference_id"], "product_reference_id"),
+                form["kind"], session.actor, session.company_id,
+            )
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            return _error(environment, 409, "Foto no asignada", str(exc), session=session)
+        except Exception:
+            diagnostic_id = uuid.uuid4().hex[:12]
+            LOGGER.exception("Fallo al asignar foto manualmente; diagnostico=%s", diagnostic_id)
+            return _error(environment, 503, "Asignación no disponible", f"No se pudo asignar la foto. Diagnóstico: {diagnostic_id}.", session=session)
+        return RedirectResponse("/operator/images?result=photo_assigned", status_code=303)
 
     @app.post("/operator/images/index/{index_id}/candidates")
     async def generate_image_candidates_route(request: Request, index_id: str) -> Response:
@@ -2164,10 +2703,12 @@ def create_operator_app(
                     return rejection
                 if form.get("confirm") != "yes":
                     raise ValueError("Debes confirmar el modo simple antes de continuar.")
-                reason = _require_text(str(form.get("reason") or ""), "reason")
+                brand_code = _require_text(str(form.get("brand_code") or ""), "brand_code")
+                # Cargar es el camino rutinario: se audita igual, pero sin pedirle a la
+                # persona que escriba un motivo cada vez que sube un Excel.
+                reason = str(form.get("reason") or "").strip() or f"Carga vía modo simple — marca {brand_code}."
                 if not 4 <= len(reason) <= MAX_REASON_LENGTH:
                     raise ValueError("reason debe contener entre 4 y 500 caracteres.")
-                brand_code = _require_text(str(form.get("brand_code") or ""), "brand_code")
                 odoo_upload = form.get("odoo_file")
                 if not isinstance(odoo_upload, UploadFile) or not odoo_upload.filename:
                     raise ValueError("Selecciona el Excel de productos.")
@@ -2185,6 +2726,7 @@ def create_operator_app(
                     claimed_media_type=odoo_upload.content_type, kind="odoo_data",
                     actor=session.actor, reason=reason, company_id=session.company_id,
                 )
+                _require_accepted_submission(odoo_submission, "El Excel de productos")
 
                 with tempfile.NamedTemporaryFile(
                     dir=resolved_intake_root, prefix="simple-images-", suffix=".zip", delete=False,
@@ -2200,13 +2742,18 @@ def create_operator_app(
                 else:
                     written = await run_in_threadpool(_write_images_archive, image_uploads, zip_path)
                 if written == 0:
-                    raise ValueError("Ninguna foto de la carpeta pudo empaquetarse.")
+                    raise ValueError(
+                        "Ninguna foto de la carpeta tiene un formato admitido "
+                        "(jpg, png, webp, tif, bmp, gif, heic…). Revisa que sea la carpeta correcta."
+                    )
                 with zip_path.open("rb") as zip_stream:
                     image_submission = await run_in_threadpool(
                         intake_service.submit, zip_stream, filename="fotos-modo-simple.zip",
                         claimed_media_type="application/zip", kind="image_archive",
                         actor=session.actor, reason=reason, company_id=session.company_id,
                     )
+                # Antes de preparar nada del Excel: si el paquete de fotos fue rechazado, se dice por qué.
+                _require_accepted_submission(image_submission, "El paquete de fotos")
 
                 promotion = await run_in_threadpool(
                     gateway.promote_intake, uuid.UUID(odoo_submission["intake_submission_id"]),
@@ -2229,32 +2776,45 @@ def create_operator_app(
                     uuid.UUID(index_result["image_archive_index_id"]), session.actor, reason,
                     session.company_id,
                 )
+                # Limitado a esta carga (image_archive_index_id): una carga nueva sin
+                # coincidencias propias no debe aprobar/materializar de un tirón fotos
+                # pendientes de una carga anterior que nadie revisó todavía.
+                image_archive_index_id = uuid.UUID(index_result["image_archive_index_id"])
                 counts = await run_in_threadpool(
                     gateway.image_candidates, limit=1, offset=0, company_id=session.company_id,
+                    image_archive_index_id=image_archive_index_id,
                 )
                 pending = int(counts["pending_count"])
                 approved_unmaterialized = int(counts["approved_unmaterialized_count"])
                 total = pending + approved_unmaterialized
                 matched_now = 0
+                capped = total > 500
                 if 0 < total <= 500:
                     if pending:
                         await run_in_threadpool(
                             gateway.decide_image_candidates_bulk, pending, "approved",
-                            session.actor, reason, session.company_id,
+                            session.actor, reason, session.company_id, image_archive_index_id,
                         )
                     await run_in_threadpool(
                         gateway.materialize_approved_images_bulk, total,
                         resolved_intake_root, resolved_image_output, session.actor, reason,
-                        session.company_id,
+                        session.company_id, image_archive_index_id,
                     )
                     matched_now = total
+                plan_counts = dry_run.get("plan_counts", {})
+                images_indexed = int(index_result.get("image_count", 0))
+                ambiguous_images = int(index_result.get("ambiguous_entries", 0))
+                unmatched_images = max(images_indexed - ambiguous_images - total, 0)
         except (ValueError, RuntimeError, PermissionError, NotImplementedError) as exc:
             return _error(environment, 409, "Modo simple no completado", str(exc), session=session)
         except Exception as exc:
             diagnostic_id = secrets.token_hex(4)
+            diag = getattr(exc, "diag", None)
             LOGGER.error(
-                "simple_mode_failed diagnostic_id=%s error_type=%s sqlstate=%s",
+                "simple_mode_failed diagnostic_id=%s error_type=%s sqlstate=%s constraint=%s table=%s column=%s detail=%s",
                 diagnostic_id, type(exc).__name__, getattr(exc, "sqlstate", None),
+                getattr(diag, "constraint_name", None), getattr(diag, "table_name", None),
+                getattr(diag, "column_name", None), getattr(diag, "message_primary", None),
             )
             return _error(
                 environment, 503, "Modo simple no disponible",
@@ -2265,7 +2825,17 @@ def create_operator_app(
             if zip_path is not None and zip_path.exists():
                 zip_path.unlink()
         return RedirectResponse(
-            f"/operator/plans/{plan_id}?{urlencode({'result': 'simple_mode', 'matched': matched_now})}",
+            f"/operator/plans/{plan_id}?{urlencode({
+                'result': 'simple_mode',
+                'created': int(plan_counts.get('create', 0)),
+                'updated': int(plan_counts.get('update', 0)),
+                'unchanged': int(plan_counts.get('no_change', 0)),
+                'matched': matched_now,
+                'images_indexed': images_indexed,
+                'unmatched_images': unmatched_images,
+                'ambiguous_images': ambiguous_images,
+                'capped': '1' if capped else '0',
+            })}",
             status_code=303,
         )
 
@@ -2317,20 +2887,25 @@ def create_operator_app(
             if page * limit < queue["filtered_count"]
             else None
         )
+        def _qp_int(name: str) -> int:
+            raw = request.query_params.get(name, "0")
+            return int(raw) if raw.isdigit() else 0
+
         result = request.query_params.get("result")
+        simple_mode_summary = None
         if result == "simple_mode":
-            matched_raw = request.query_params.get("matched", "0")
-            matched_count = int(matched_raw) if matched_raw.isdigit() else 0
-            photo_phrase = "1 foto vinculada" if matched_count == 1 else f"{matched_count} fotos vinculadas"
-            message = (
-                f"Modo simple: excel procesado, {photo_phrase} automáticamente "
-                "a productos ya aprobados. Revisa aquí las identidades nuevas; las fotos de "
-                "productos nuevos se vincularán solas cuando los apruebes (vuelve a Imágenes después)."
-                if matched_count
-                else "Modo simple: excel procesado. Todavía no hay fotos vinculadas porque los "
-                "productos son nuevos; revisa las identidades y luego entra a Imágenes para "
-                "vincular las fotos automáticamente."
-            )
+            simple_mode_summary = {
+                "created": _qp_int("created"),
+                "updated": _qp_int("updated"),
+                "unchanged": _qp_int("unchanged"),
+                "matched": _qp_int("matched"),
+                "images_indexed": _qp_int("images_indexed"),
+                "unmatched_images": _qp_int("unmatched_images"),
+                "ambiguous_images": _qp_int("ambiguous_images"),
+                "capped": request.query_params.get("capped") == "1",
+                "pending_count": int(queue["filtered_count"]) if state == "pending" else None,
+            }
+            message = None
         else:
             message = {
                 "approved": "Producto aprobado y auditado.",
@@ -2352,6 +2927,7 @@ def create_operator_app(
             previous_url=previous_url,
             next_url=next_url,
             message=message,
+            simple_mode_summary=simple_mode_summary,
             session=session_or_redirect,
             version=OPERATOR_VERSION,
         )
@@ -2435,7 +3011,8 @@ def create_operator_app(
             form = await _parse_form(request)
             if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
                 return rejection
-            reason = _require_text(form.get("reason", ""), "reason")
+            decision = str(form.get("decision", ""))
+            reason = _decision_reason(form, decision, auto_reason="Aprobado desde la cola de revisión.")
             if len(reason) < 4:
                 raise ValueError("reason debe contener al menos 4 caracteres.")
             if len(reason) > MAX_REASON_LENGTH:
@@ -2450,7 +3027,7 @@ def create_operator_app(
                 parsed_product_id,
                 form.get("fingerprint", ""),
                 form.get("review_sha256", ""),
-                form.get("decision", ""),
+                decision,
                 session.actor,
                 reason,
             )
@@ -2472,20 +3049,27 @@ def create_operator_app(
         session = session_or_redirect
         try:
             form = await _parse_form(request)
-            if set(form) != {"csrf_token", "fingerprint", "query", "expected_count", "decision", "reason", "confirm"}:
+            base_fields = {"csrf_token", "fingerprint", "query", "expected_count", "decision", "confirm"}
+            # Aprobar en lote es el camino rutinario y no pide motivo (el campo ni se
+            # envía); rechazar en lote sigue exigiendo uno escrito, así que su formulario
+            # sí incluye "reason".
+            if set(form) not in (base_fields, base_fields | {"reason"}):
                 raise ValueError("El formulario contiene campos ausentes o desconocidos.")
             if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
                 return rejection
             decision = form["decision"]
             if decision not in {"approve", "reject"} or form["confirm"] != decision:
                 raise ValueError("Debes confirmar exactamente la decisión del lote.")
-            reason = _require_text(form["reason"], "reason")
-            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
-                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
             query = form["query"].strip()
             if len(query) > 200:
                 raise ValueError("La búsqueda no puede superar 200 caracteres.")
             expected_count = int(form["expected_count"])
+            reason = _decision_reason(
+                form, decision,
+                auto_reason=f"Aprobación en lote de {expected_count} identidades desde la cola de revisión.",
+            )
+            if not 4 <= len(reason) <= MAX_REASON_LENGTH:
+                raise ValueError("reason debe contener entre 4 y 500 caracteres.")
             result = await run_in_threadpool(
                 gateway.decide_many, _uuid(plan_id, "plan_id"), form["fingerprint"],
                 decision, session.actor, reason, query=query, expected_count=expected_count,
@@ -2516,6 +3100,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--promotion-output-dir", default="data/exports/imports")
     parser.add_argument("--catalog-output-dir", default="data/exports/catalogs")
     parser.add_argument("--image-output-dir", default="data/images")
+    parser.add_argument(
+        "--public-generator-url", default="http://127.0.0.1:8082",
+        help="Dirección donde corre el generador público (perfect-catalog-public), para armar los links compartibles.",
+    )
     parser.add_argument("--prompt-password", action="store_true")
     parser.add_argument("--prompt-operator", action="store_true")
     parser.add_argument("--prompt-access-code", action="store_true")
@@ -2602,6 +3190,7 @@ def main(argv: list[str] | None = None) -> int:
             promotion_output_dir=Path(args.promotion_output_dir),
             catalog_output_dir=Path(args.catalog_output_dir),
             image_output_dir=Path(args.image_output_dir),
+            public_generator_base_url=args.public_generator_url,
         ),
         host=args.host,
         port=args.port,

@@ -1,0 +1,12 @@
+{% extends "operator_base.html" %}
+{% block title %}Link creado{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><span class="kicker">Self-service externo</span><h1>Link creado para {{ label }}</h1><p>Cópialo ahora: por seguridad, la lista de links no vuelve a mostrar la dirección completa.</p></div>
+</section>
+<section class="transition-panel brand-profile-builder">
+  <label><span>URL para compartir</span><input type="text" value="{{ generator_url }}" readonly onclick="this.select()"></label>
+  <p>Envíasela a la persona externa. Cualquiera con esta URL puede generar catálogos hasta que revoques el link.</p>
+  <a class="primary-button" href="/operator/public-links">Volver a links públicos</a>
+</section>
+{% endblock %}

@@ -50,13 +50,25 @@ def synthetic_row(**overrides: object) -> list[object]:
 
 class CanonicalTests(unittest.TestCase):
     def test_company_brand_policy_is_centralized(self) -> None:
+        # Marcas nuevas en cualquier Company con importación: sin editar listas en el código.
+        for company in ("KMC", "NATSUKI", "PERFECT", "PDM"):
+            self.assertTrue(is_company_brand_allowed(company, "KAZE"), company)
+        self.assertTrue(is_company_brand_allowed("perfect", " kaze "))
         self.assertTrue(is_company_brand_allowed("KMC", "A1"))
-        self.assertFalse(is_company_brand_allowed("KMC", "NATSUKI"))
-        self.assertFalse(is_company_brand_allowed("PERFECT", "NATSUKI"))
         self.assertTrue(is_company_brand_allowed("PERFECT", "MASAKI"))
-        self.assertTrue(is_company_brand_allowed("NATSUKI", "NATSUKI"))
-        self.assertFalse(is_company_brand_allowed("NATSUKI", "MASAKI"))
+        # La separación entre Companies la impone resolve_import_context (Brand.company_id).
+        # MASAKI no importa productos propios, y una marca vacía nunca es válida.
         self.assertFalse(is_company_brand_allowed("MASAKI", "MASAKI"))
+        self.assertFalse(is_company_brand_allowed("MASAKI", "KAZE"))
+        self.assertFalse(is_company_brand_allowed("PERFECT", ""))
+        self.assertFalse(is_company_brand_allowed("PERFECT", "   "))
+
+    def test_import_context_still_ties_the_brand_to_the_active_company(self) -> None:
+        # Aunque la política permita cualquier código, la consulta exige brand.company_id =
+        # Company activa: es lo que impide importar la marca de otra Company.
+        source = (Path(__file__).resolve().parents[1] / "src/perfect_catalog/import_context.py").read_text(encoding="utf-8")
+        self.assertIn("JOIN perfect_catalog.brand AS b ON b.company_id=c.company_id", source)
+        self.assertIn("WHERE c.company_id=%s AND c.is_active=true AND b.code=%s", source)
     def test_hash_is_stable_for_key_order(self) -> None:
         self.assertEqual(canonical_sha256({"b": 2, "a": 1}), canonical_sha256({"a": 1, "b": 2}))
 

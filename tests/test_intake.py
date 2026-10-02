@@ -113,6 +113,27 @@ class IntakeValidationTests(unittest.TestCase):
             archive_path.write_bytes(zip_bytes({"catalog/readme.exe": b"bad"}))
             self.assertFalse(validate_intake(archive_path, "image_archive", ".zip").accepted)
 
+    def test_image_archive_ignores_non_photo_files_but_still_blocks_executables(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            archive_path = Path(directory, "images.zip")
+            archive_path.write_bytes(zip_bytes({
+                "fotos/ABC-1.jpg": b"foto", "fotos/ficha.pdf": b"pdf", "Thumbs.db": b"db",
+                "arte/logo.psd": b"psd", "desktop.ini": b"ini",
+            }))
+            accepted = validate_intake(archive_path, "image_archive", ".zip")
+            self.assertTrue(accepted.accepted)
+            self.assertEqual(accepted.report["image_files"], 1)
+            self.assertEqual(accepted.report["ignored_other_files"], 4)
+            self.assertIn("fotos/ficha.pdf", accepted.report["ignored_other_examples"])
+
+            archive_path.write_bytes(zip_bytes({"ABC-1.jpg": b"foto", "instalar.exe": b"bad", "run.cmd": b"bad"}))
+            blocked = validate_intake(archive_path, "image_archive", ".zip")
+            self.assertFalse(blocked.accepted)
+            self.assertIn("ejecutables bloqueados", blocked.report["errors"][0])
+
+            archive_path.write_bytes(zip_bytes({"ficha.pdf": b"pdf", "Thumbs.db": b"db"}))
+            self.assertFalse(validate_intake(archive_path, "image_archive", ".zip").accepted)
+
     def test_indesign_package_requires_document_and_blocks_executables(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             archive_path = Path(directory, "indesign.zip")

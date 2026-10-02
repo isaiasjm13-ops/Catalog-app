@@ -1,0 +1,37 @@
+{% extends "operator_base.html" %}
+{% block title %}Links públicos{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><span class="kicker">Self-service externo</span><h1>Links públicos del generador de catálogos</h1><p>Cada link deja entrar, sin contraseña, a subir un Excel + fotos y descargar un catálogo HTML propio. No toca el catálogo real: solo tú puedes ver quién generó qué.</p></div>
+  <span class="safety-chip"><span>●</span> Sin acceso a la base de datos del catálogo</span>
+</section>
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+<section class="transition-panel brand-profile-builder">
+  <h2>Crear un link nuevo</h2>
+  <form method="post" action="/operator/public-links">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+    <label><span>¿Para quién es este link?</span><input name="label" maxlength="120" required placeholder="Ej. Repuestos Andina"></label>
+    <button class="primary-button" type="submit">Crear link</button>
+  </form>
+</section>
+<section class="brand-profile-grid">
+{% for link in links %}
+  <article class="brand-profile-card">
+    <small>{{ link.created_at }}</small>
+    <h2>{{ link.label }}</h2>
+    <p>{{ 'Activo' if link.active else 'Revocado' }} · {{ link.generation_count }} catálogo{{ 's' if link.generation_count != 1 else '' }} generado{{ 's' if link.generation_count != 1 else '' }}</p>
+    <code>…{{ link.token[-6:] }}</code>
+    <p><a href="/operator/public-links/{{ link.public_catalog_link_id }}">Ver historial</a></p>
+    {% if link.active %}
+    <details class="materialize-action"><summary>Revocar acceso</summary>
+      <form method="post" action="/operator/public-links/revoke">
+        <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+        <input type="hidden" name="link_id" value="{{ link.public_catalog_link_id }}">
+        <button class="secondary-button" type="submit">Revocar este link</button>
+      </form>
+    </details>
+    {% endif %}
+  </article>
+{% else %}<p>Todavía no has creado ningún link.</p>{% endfor %}
+</section>
+{% endblock %}

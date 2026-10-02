@@ -1,0 +1,22 @@
+{% extends "operator_base.html" %}
+{% block title %}Historial del link{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><span class="kicker">Self-service externo</span><h1>{{ link.label }}</h1><p>Cada tarjeta es un catálogo generado con este link: quién dijo ser, cuántos productos y fotos, y cuándo.</p></div>
+  <span class="safety-chip"><span>●</span> {{ 'Activo' if link.active else 'Revocado' }}</span>
+</section>
+<section class="brand-profile-grid">
+{% for generation in generations %}
+  <article class="brand-profile-card">
+    <small>{{ generation.generated_at }}</small>
+    <h2>{{ generation.declared_name }}</h2>
+    <p>{{ generation.product_count }} producto{{ 's' if generation.product_count != 1 else '' }} · {{ generation.matched_image_count }} foto{{ 's' if generation.matched_image_count != 1 else '' }} vinculada{{ 's' if generation.matched_image_count != 1 else '' }}</p>
+    {% if generation.unmatched_image_count or generation.ambiguous_image_count %}
+    <p>{{ generation.unmatched_image_count }} sin identificar · {{ generation.ambiguous_image_count }} ambigua{{ 's' if generation.ambiguous_image_count != 1 else '' }}</p>
+    {% endif %}
+    <code>{{ generation.excel_sha256[:12] }}…</code>
+  </article>
+{% else %}<p>Todavía no se generó ningún catálogo con este link.</p>{% endfor %}
+</section>
+<p><a href="/operator/public-links">Volver a links públicos</a></p>
+{% endblock %}

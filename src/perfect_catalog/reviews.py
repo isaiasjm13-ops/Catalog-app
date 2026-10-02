@@ -402,6 +402,12 @@ def _review_queue_page_in_connection(
         connection, plan_id, expected_fingerprint, lock=False
     )
     plan_items = _load_plan_items(connection, plan_id)
+    # Antes lanzaba RuntimeError si el plan no creó ninguna identidad ("candidate_ids"
+    # vacío) — pero un plan aplicado por modo simple puede legítimamente ser solo
+    # actualizaciones (sin ningún 'create'), y eso no es un error: la cola de revisión
+    # simplemente queda vacía. El SQL de abajo (target_ids, WHERE operation_type='create')
+    # ya devuelve cero filas con gracia en ese caso; candidate_ids solo se usa para el
+    # conteo informativo candidate_count.
     candidate_ids = {
         item.get("planned_product_variant_id")
         or item.get("planned_product_template_id")
@@ -409,8 +415,6 @@ def _review_queue_page_in_connection(
         if item["operation_type"] == "create"
     }
     candidate_ids.discard(None)
-    if not candidate_ids:
-        raise RuntimeError("El plan aplicado no creó identidades revisables.")
 
     state_clause = "" if state == "all" else "AND review_state=%s"
     filter_sql = f"""
@@ -528,6 +532,14 @@ def _list_review_plans_in_connection(
     target_filter = "" if plan_id is None else "AND i.import_plan_id=%s"
     plan_filter = "" if plan_id is None else "AND p.import_plan_id=%s"
     company_filter = "" if company_id is None else "AND bp.company_id=%s"
+    # El listado general (plan_id=None) usa JOIN: no tiene sentido llenar el
+    # dashboard con planes sin ninguna identidad nueva que revisar. Pero
+    # consultar UN plan puntual (deep link tras aplicar, p. ej. desde modo
+    # simple) debe encontrarlo igual aunque haya sido solo actualizaciones a
+    # productos existentes (operation_type='update'/'no_change', sin ningún
+    # 'create') — si no, "Plan no encontrado" se ve como un fallo cuando en
+    # realidad se aplicó bien y no había nada nuevo que revisar.
+    classified_join = "JOIN" if plan_id is None else "LEFT JOIN"
     sql = f"""
         WITH targets AS (
             SELECT DISTINCT i.import_plan_id,
@@ -597,7 +609,7 @@ def _list_review_plans_in_connection(
         FROM perfect_catalog.import_plan AS p
         JOIN perfect_catalog.import_file AS f ON f.import_file_id=p.import_file_id
         JOIN perfect_catalog.brand_profile AS bp ON bp.brand_profile_id=p.brand_profile_id
-        JOIN classified AS c ON c.import_plan_id=p.import_plan_id
+        {classified_join} classified AS c ON c.import_plan_id=p.import_plan_id
         WHERE p.plan_status='applied' {plan_filter} {company_filter}
         GROUP BY p.import_plan_id, p.approval_fingerprint_sha256,
                  p.contract_version, p.rules_version, p.applied_at, p.applied_by,
@@ -1121,6 +1133,13 @@ class DatabaseReviewGateway:
                 JOIN perfect_catalog.intake_submission AS s
                   ON s.intake_submission_id=i.intake_submission_id
                 WHERE i.image_archive_index_id=%s AND s.company_id=%s)""",
+            "image_entry": """SELECT EXISTS (
+                SELECT 1 FROM perfect_catalog.image_archive_entry AS e
+                JOIN perfect_catalog.image_archive_index AS i
+                  ON i.image_archive_index_id=e.image_archive_index_id
+                JOIN perfect_catalog.intake_submission AS s
+                  ON s.intake_submission_id=i.intake_submission_id
+                WHERE e.image_archive_entry_id=%s AND s.company_id=%s)""",
             "image_candidate": """SELECT EXISTS (
                 SELECT 1 FROM perfect_catalog.image_product_candidate AS c
                 JOIN perfect_catalog.image_archive_entry AS e
@@ -1152,6 +1171,16 @@ class DatabaseReviewGateway:
         from .brand_profiles import link_brand_profile
 
         return link_brand_profile(config=self._config, password=self._password, **kwargs)
+
+    def profiles_without_brand(self, *, company_id: uuid.UUID) -> list[dict[str, Any]]:
+        from .brand_profiles import list_profiles_without_brand
+
+        return list_profiles_without_brand(self._config, self._password, company_id=company_id)
+
+    def create_brand_for_profile(self, **kwargs: Any) -> dict[str, Any]:
+        from .brand_profiles import create_brand_for_profile
+
+        return create_brand_for_profile(config=self._config, password=self._password, **kwargs)
 
     def create_brand_profile(
         self, values: dict[str, str], actor: str, reason: str, company_id: uuid.UUID,
@@ -1401,14 +1430,24 @@ class DatabaseReviewGateway:
             actor=actor, reason=reason, company_id=company_id,
         )
 
+    def refresh_image_candidates(
+        self, actor: str, reason: str, company_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        from .image_match_review import refresh_image_candidates
+
+        return refresh_image_candidates(
+            self._config, self._password, actor=actor, reason=reason, company_id=company_id,
+        )
+
     def image_candidates(
         self, *, limit: int = 100, offset: int = 0, company_id: uuid.UUID,
+        image_archive_index_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
         from .image_match_review import list_image_candidates
 
         return list_image_candidates(
             self._config, self._password, limit=limit, offset=offset,
-            company_id=company_id,
+            company_id=company_id, image_archive_index_id=image_archive_index_id,
         )
 
     def unlinked_image_entries(
@@ -1432,12 +1471,32 @@ class DatabaseReviewGateway:
 
     def decide_image_candidates_bulk(
         self, expected_count: int, decision: str, actor: str, reason: str,
-        company_id: uuid.UUID,
+        company_id: uuid.UUID, image_archive_index_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
         from .image_match_review import decide_image_candidates_bulk
 
         return decide_image_candidates_bulk(
             expected_count, decision, actor, reason, self._config, self._password,
+            company_id=company_id, image_archive_index_id=image_archive_index_id,
+        )
+
+    def search_product_references(
+        self, query: str, *, company_id: uuid.UUID, limit: int = 8,
+    ) -> list[dict[str, Any]]:
+        from .image_manual_selection import search_product_references
+
+        return search_product_references(
+            query, self._config, self._password, company_id=company_id, limit=limit,
+        )
+
+    def assign_image_manually(
+        self, entry_id: uuid.UUID, product_reference_id: uuid.UUID, kind: str, actor: str,
+        company_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        from .image_manual_selection import assign_image_manually
+
+        return assign_image_manually(
+            entry_id, product_reference_id, kind, actor, self._config, self._password,
             company_id=company_id,
         )
 
@@ -1453,13 +1512,14 @@ class DatabaseReviewGateway:
     def materialize_approved_images_bulk(
         self, expected_count: int, intake_root: Path, image_root: Path,
         actor: str, reason: str,
-        company_id: uuid.UUID,
+        company_id: uuid.UUID, image_archive_index_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
         from .approved_image_materialization import materialize_approved_images_bulk
 
         return materialize_approved_images_bulk(
             expected_count, intake_root, image_root, self._config, self._password,
             actor=actor, reason=reason, company_id=company_id,
+            image_archive_index_id=image_archive_index_id,
         )
 
     def decide(
@@ -1482,4 +1542,24 @@ class DatabaseReviewGateway:
             reason,
             self._config,
             self._password,
+        )
+
+    def public_catalog_links(self) -> list[dict[str, Any]]:
+        from .public_catalog_links import list_public_catalog_links
+        return list_public_catalog_links(self._config, self._password)
+
+    def create_public_catalog_link(self, *, label: str, actor: str) -> dict[str, Any]:
+        from .public_catalog_links import create_public_catalog_link
+        return create_public_catalog_link(self._config, self._password, label=label, actor=actor)
+
+    def revoke_public_catalog_link(self, *, link_id: uuid.UUID, actor: str) -> dict[str, Any]:
+        from .public_catalog_links import revoke_public_catalog_link
+        return revoke_public_catalog_link(self._config, self._password, link_id=link_id, actor=actor)
+
+    def public_catalog_generations(
+        self, *, link_id: uuid.UUID, limit: int = 50, offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        from .public_catalog_links import list_public_catalog_generations
+        return list_public_catalog_generations(
+            self._config, self._password, link_id=link_id, limit=limit, offset=offset,
         )

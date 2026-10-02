@@ -6,6 +6,7 @@
   <title>{% block title %}Revisión de catálogo{% endblock %} · {{ session.company_name if session is defined and session and session.company_name else 'Nexo ISA' }}</title>
   <link rel="stylesheet" href="/operator/static/operator.css">
   {% if session %}<link rel="stylesheet" href="/operator/theme.css">{% endif %}
+  {% if session %}<script src="/operator/static/view-mode.js"></script>{% endif %}
 </head>
 <body>
   <a class="skip-link" href="#contenido-principal">Saltar al contenido</a>
@@ -14,22 +15,22 @@
   <div class="app-shell">
     {% if session %}
     <header class="topbar">
-      <a class="brand" href="/operator" aria-label="Volver a planes">
+      <a class="brand" href="/operator" data-home aria-label="Ir al inicio">
         <span class="brand-mark"><img src="/operator/static/nexo-isa-icon.png" alt="Nexo ISA"></span>
         <span><strong>{{ session.company_name if session is defined and session and session.company_name else 'Nexo ISA' }}</strong><small>Control de catálogo</small></span>
       </a>
       <nav class="operator-nav" aria-label="Navegación del operador">
-        <a href="/operator">Revisión</a>
-        <a href="/operator/intake">Ingresos</a>
-        <a href="/operator/simple">Modo simple</a>
-        <a href="/operator/catalogs">Catálogos</a>
-        <a href="/operator/brands">Marcas</a>
-        <a href="/operator/images">Imágenes</a>
+        <a href="/operator" data-home data-section="inicio">Inicio</a>
+        <a href="/operator/simple" data-section="cargar">Cargar</a>
+        <a href="/operator/review" data-section="revisar">Revisar</a>
+        <a href="/operator/catalogs" data-section="entregar">Entregar</a>
+        <a href="/operator/admin" data-section="admin" data-advanced>Administración</a>
       </nav>
       <div class="operator-meta">
         <span class="status-dot"></span>
         {% if session.company_id %}<a class="company-context" href="/operator/company" title="Cambiar empresa">{{ session.company_name }}</a>{% endif %}
         <span>{{ session.actor }}</span>
+        <button class="view-toggle" id="view-toggle" type="button" aria-pressed="false">Vista: Completa</button>
         <form method="post" action="/operator/logout">
           <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
           <button class="link-button" type="submit">Cerrar sesión</button>
@@ -37,15 +38,15 @@
       </div>
     </header>
     <nav class="workflow-rail" aria-label="Flujo de creación del catálogo">
-      <a href="/operator/intake"><span>01</span><b>Ingresar</b><small>Datos e imágenes</small></a>
-      <a href="/operator"><span>02</span><b>Validar</b><small>Identidades</small></a>
-      <a href="/operator/catalogs"><span>03</span><b>Diseñar</b><small>Edición visual</small></a>
-      <a href="/operator/catalogs"><span>04</span><b>Entregar</b><small>Digital · PDF · INDD</small></a>
+      <a href="/operator/simple" data-section="cargar"><span>01</span><b>Cargar</b><small>Datos e imágenes</small></a>
+      <a href="/operator/review" data-section="revisar"><span>02</span><b>Revisar</b><small>Identidades y fotos</small></a>
+      <a href="/operator/catalogs" data-section="entregar"><span>03</span><b>Entregar</b><small>Diseño · Digital · PDF · INDD</small></a>
     </nav>
     {% endif %}
     <main id="contenido-principal" tabindex="-1">{% block content %}{% endblock %}</main>
-    <footer>Consola local · v{{ version }} · Las decisiones quedan auditadas</footer>
+    <footer data-advanced>Consola local · v{{ version }} · Las decisiones quedan auditadas</footer>
   </div>
+  {% if session %}<script src="/operator/static/nav-active.js" defer></script>{% endif %}
   {% block scripts %}{% endblock %}
 </body>
 </html>

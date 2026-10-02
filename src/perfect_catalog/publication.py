@@ -175,28 +175,6 @@ def _load_applied_plan(
     return plan
 
 
-def _resolve_brand(
-    connection: Connection[Any], source_system_id: uuid.UUID, brand_name: str
-) -> dict[str, Any]:
-    with connection.cursor(row_factory=dict_row) as cursor:
-        cursor.execute(
-            """
-            SELECT brand_id, name, normalized_name
-            FROM perfect_catalog.brand
-            WHERE source_system_id=%s AND normalized_name=%s
-            ORDER BY brand_id
-            """,
-            (source_system_id, normalize_name(brand_name)),
-        )
-        rows = [dict(row) for row in cursor.fetchall()]
-    if len(rows) != 1:
-        raise RuntimeError(
-            f"Se esperaba exactamente una marca {brand_name!r} para la fuente del plan; "
-            f"se encontraron {len(rows)}."
-        )
-    return rows[0]
-
-
 def _resolve_plan_brand(connection: Connection[Any], plan: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     from .brand_profiles import visual_profile
     profile_id = plan.get("brand_profile_id")

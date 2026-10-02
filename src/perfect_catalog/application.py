@@ -19,7 +19,6 @@ from .config import DatabaseConfig
 from .importer import (
     CONTRACT_VERSION,
     NAMESPACE,
-    RULES_VERSION,
     SUPPORTED_RULES_VERSIONS,
     approval_fingerprint,
     plan_hash,

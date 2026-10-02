@@ -1,0 +1,29 @@
+{% extends "operator_base.html" %}
+{% block title %}Administración{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><span class="kicker">Mantenimiento</span><h1>Administración</h1><p>Todo lo que no forma parte del recorrido diario (Cargar → Revisar → Entregar): ingresos crudos, marcas, fotos huérfanas y links públicos.</p></div>
+</section>
+<section class="brand-profile-grid">
+  <a class="brand-profile-card" href="/operator/intake">
+    <small>Archivos</small><h2>Ingresos</h2>
+    <p>{{ intake_count }} archivo{{ 's' if intake_count != 1 else '' }} registrado{{ 's' if intake_count != 1 else '' }}.</p>
+  </a>
+  <a class="brand-profile-card" href="/operator/images">
+    <small>Fotos</small><h2>Imágenes</h2>
+    <p>{{ pending_image_count }} por decidir · {{ materialize_image_count }} por materializar.</p>
+  </a>
+  <a class="brand-profile-card" href="/operator/brands">
+    <small>Identidad visual</small><h2>Marcas</h2>
+    <p>Perfiles, logos y colores por marca.</p>
+  </a>
+  <a class="brand-profile-card" href="/operator/public-links">
+    <small>Self-service externo</small><h2>Links públicos</h2>
+    <p>{{ active_link_count }} link{{ 's' if active_link_count != 1 else '' }} activo{{ 's' if active_link_count != 1 else '' }}.</p>
+  </a>
+  <a class="brand-profile-card" href="/operator/catalogs">
+    <small>Formatos secundarios</small><h2>Catálogos (avanzado)</h2>
+    <p>PDF, PPTX, InDesign, archivar versiones publicadas.</p>
+  </a>
+</section>
+{% endblock %}

@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import unittest
 
 
@@ -45,7 +46,7 @@ class CompanyMigrationTests(unittest.TestCase):
 
     def test_updater_enforces_post_migration_company_invariants(self) -> None:
         sql = (ROOT / "db/bootstrap/apply_pending_migrations.sql").read_text(encoding="utf-8")
-        self.assertIn("faltan entradas 0017-0027 en el ledger", sql)
+        self.assertIn("faltan entradas 0017-0029 en el ledger", sql)
         self.assertIn("SELECT 1 FROM perfect_catalog.brand WHERE company_id IS NULL", sql)
         self.assertIn("b.code = 'EXACTCARS' AND c.code <> 'PERFECT'", sql)
         self.assertIn("b.code = 'MASAKI' AND c.code <> 'PERFECT'", sql)
@@ -120,10 +121,69 @@ class CompanyMigrationTests(unittest.TestCase):
         self.assertIn("0025_natsuki_company_restored.sql", script)
         self.assertIn('"checksum_0025=$checksum0025"', script)
 
-    def test_company_brand_policy_reflects_natsuki_as_its_own_company(self) -> None:
+    def test_public_catalog_links_migration_is_append_only_with_no_fk_to_product_data(self) -> None:
+        sql = (ROOT / "db/migrations/0028_public_catalog_links.sql").read_text(encoding="utf-8")
+        self.assertTrue(sql.lstrip().startswith("BEGIN;"))
+        self.assertTrue(sql.rstrip().endswith("COMMIT;"))
+        self.assertIn("CREATE TABLE IF NOT EXISTS perfect_catalog.public_catalog_link", sql)
+        self.assertIn("CREATE TABLE IF NOT EXISTS perfect_catalog.public_catalog_link_revocation_event", sql)
+        self.assertIn("CREATE TABLE IF NOT EXISTS perfect_catalog.public_catalog_generation", sql)
+        self.assertIn("trg_public_catalog_link_append_only", sql)
+        self.assertIn("trg_public_catalog_link_revocation_event_append_only", sql)
+        self.assertIn("trg_public_catalog_generation_append_only", sql)
+        self.assertIn("ux_public_catalog_link_revocation_event_link", sql)
+        self.assertIn("'0028_public_catalog_links', :'checksum_0028'", sql)
+        # Ninguna FK hacia el catálogo real: un link/bitácora nunca puede chocar con productos.
+        self.assertNotIn("REFERENCES perfect_catalog.product_reference", sql)
+        self.assertNotIn("REFERENCES perfect_catalog.company", sql)
+        self.assertNotIn("REFERENCES perfect_catalog.brand", sql)
+        self.assertNotIn("DELETE FROM", sql.upper())
+        self.assertNotIn("UPDATE perfect_catalog.public_catalog_link ", sql)
+
+    def test_public_catalog_links_migration_is_wired_into_the_central_updater(self) -> None:
+        bootstrap = (ROOT / "db/bootstrap/apply_pending_migrations.sql").read_text(encoding="utf-8")
+        self.assertIn("\\ir ../migrations/0028_public_catalog_links.sql", bootstrap)
+        self.assertIn("checksum_0028", bootstrap)
+        self.assertIn("Validacion del generador publico: faltan tablas 0028", bootstrap)
+        self.assertIn("Validacion del generador publico: falta guardia append-only 0028", bootstrap)
+        script = (ROOT / "db/bootstrap/run_pending_migrations.ps1").read_text(encoding="utf-8")
+        self.assertIn("0028_public_catalog_links.sql", script)
+        self.assertIn('"checksum_0028=$checksum0028"', script)
+        self.assertIn("Get-FileHash -LiteralPath $migration0028 -Algorithm SHA256", script)
+
+    def test_manual_image_selection_migration_keeps_older_algorithms_and_is_wired(self) -> None:
+        sql = (ROOT / "db/migrations/0029_manual_image_selection.sql").read_text(encoding="utf-8")
+        self.assertTrue(sql.lstrip().startswith("BEGIN;"))
+        self.assertTrue(sql.rstrip().endswith("COMMIT;"))
+        for algorithm in (
+            "exact-approved-reference-v1", "exact-approved-reference-v2",
+            "exact-approved-reference-v3", "operator-selected-v1",
+        ):
+            self.assertIn(f"'{algorithm}'", sql)
+        self.assertIn("'0029_manual_image_selection', :'checksum_0029'", sql)
+        self.assertNotIn("DELETE FROM", sql.upper())
+        bootstrap = (ROOT / "db/bootstrap/apply_pending_migrations.sql").read_text(encoding="utf-8")
+        self.assertIn("\\ir ../migrations/0029_manual_image_selection.sql", bootstrap)
+        self.assertIn("Validacion de seleccion manual de fotos: falta algoritmo operator-selected-v1 0029", bootstrap)
+        self.assertEqual(
+            len(re.findall(r"^\\if ", bootstrap, re.M)), len(re.findall(r"^\\endif", bootstrap, re.M)),
+            "\\if/\\endif desbalanceados en el actualizador",
+        )
+        script = (ROOT / "db/bootstrap/run_pending_migrations.ps1").read_text(encoding="utf-8")
+        self.assertIn('"checksum_0029=$checksum0029"', script)
+        self.assertIn("Get-FileHash -LiteralPath $migration0029 -Algorithm SHA256", script)
+        source = (ROOT / "src/perfect_catalog/image_manual_selection.py").read_text(encoding="utf-8")
+        self.assertIn('MANUAL_ALGORITHM = "operator-selected-v1"', source)
+
+    def test_company_brand_policy_is_data_driven_and_keeps_company_separation_in_the_query(self) -> None:
+        # 2026-10-02: la politica ya no lista marcas por Company (obligaba a editar el codigo por cada
+        # marca nueva). NATSUKI sigue siendo su propia Company: lo que impide mezclar es que la
+        # consulta exige brand.company_id = Company activa, no una lista fija.
         source = (ROOT / "src/perfect_catalog/import_context.py").read_text(encoding="utf-8")
-        self.assertIn("if company == 'NATSUKI':\n        return brand == 'NATSUKI'", source)
-        self.assertNotIn("'NATSUKI', 'MASAKI'}:\n        return False", source)
+        self.assertNotIn("return brand == 'NATSUKI'", source)
+        self.assertNotIn("return brand in {", source)
+        self.assertIn("COMPANIES_WITHOUT_IMPORTS = {'MASAKI'}", source)
+        self.assertIn("JOIN perfect_catalog.brand AS b ON b.company_id=c.company_id", source)
 
 
 if __name__ == "__main__":

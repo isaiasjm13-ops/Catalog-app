@@ -7,18 +7,21 @@ from psycopg import Connection
 from psycopg.rows import dict_row
 
 
+# Companies que no importan productos propios (sus marcas viven en otra Company).
+COMPANIES_WITHOUT_IMPORTS = {'MASAKI'}
+
+
 def is_company_brand_allowed(company_code: str, brand_code: str) -> bool:
+    """Una marca nueva de una Company no necesita tocar el código: la pertenencia Brand -> Company
+    ya es autoritativa (resolve_import_context exige que la Brand sea de la Company activa, así
+    que PERFECT nunca importa una marca de NATSUKI aunque aquí se permita cualquier código).
+    Antes había listas fijas por Company (PERFECT: 3 marcas, KMC: A1, NATSUKI: NATSUKI) que
+    obligaban a editar el programa por cada marca nueva."""
     company = str(company_code or '').strip().upper()
     brand = str(brand_code or '').strip().upper()
-    if company == 'MASAKI':
+    if not brand or company in COMPANIES_WITHOUT_IMPORTS:
         return False
-    if company == 'NATSUKI':
-        return brand == 'NATSUKI'
-    if company == 'KMC':
-        return brand == 'A1'
-    if company == 'PDM':
-        return bool(brand)
-    return brand in {'PERFECT', 'MASAKI', 'EXACTCARS'}
+    return True
 
 
 def resolve_import_context(

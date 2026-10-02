@@ -113,6 +113,108 @@ def create_brand_profile(
     return dict(row)
 
 
+def list_profiles_without_brand(
+    config: DatabaseConfig, password: str, *, company_id: uuid.UUID,
+) -> list[dict[str, Any]]:
+    """Perfiles visuales de la Company que todavia no tienen una Brand real con su mismo codigo.
+    Un perfil solo no basta para importar: el dry-run exige la Brand."""
+    with psycopg.connect(**config.connection_kwargs(password), row_factory=dict_row) as connection:
+        rows = connection.execute(
+            """
+            SELECT bp.brand_profile_id, bp.code, bp.display_name
+            FROM perfect_catalog.brand_profile AS bp
+            WHERE bp.company_id = %s
+              AND NOT EXISTS (SELECT 1 FROM perfect_catalog.brand AS b WHERE b.code = bp.code)
+            ORDER BY bp.display_name, bp.code
+            """,
+            (company_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def create_brand_for_profile(
+    *, brand_profile_id: uuid.UUID, actor: str, company_id: uuid.UUID,
+    config: DatabaseConfig, password: str,
+) -> dict[str, Any]:
+    """Crea la Brand real de un perfil existente, igual a como la crearia el importador al aplicar
+    un plan (mismo id, nombre normalizado y fuente), para que el dry-run deje de fallar con
+    'La Brand no existe'. Respeta la politica Company/Brand y deja un evento de vinculo auditado."""
+    from .canonical import normalize_name
+    from .import_context import is_company_brand_allowed
+    from .importer import NAMESPACE, SOURCE_CODE, SOURCE_MODEL
+    from psycopg.types.json import Jsonb
+
+    actor = str(actor or "").strip()
+    if not actor or len(actor) > 120:
+        raise ValueError("El operador no es valido.")
+    with psycopg.connect(**config.connection_kwargs(password), row_factory=dict_row) as connection:
+        connection.execute("SELECT pg_advisory_xact_lock(hashtext('perfect_catalog.brand_profile_link'))")
+        profile = connection.execute(
+            """SELECT bp.brand_profile_id, bp.code, bp.display_name, bp.company_id, c.code AS company_code
+               FROM perfect_catalog.brand_profile AS bp
+               JOIN perfect_catalog.company AS c ON c.company_id = bp.company_id
+               WHERE bp.brand_profile_id=%s""",
+            (brand_profile_id,),
+        ).fetchone()
+        if profile is None or profile["company_id"] != company_id:
+            raise ValueError("El perfil de marca no existe en la Company activa.")
+        if not is_company_brand_allowed(profile["company_code"], profile["code"]):
+            raise ValueError(
+                f"La marca {profile['code']} no esta autorizada para la Company {profile['company_code']}. "
+                "Las marcas permitidas por Company se definen en import_context.is_company_brand_allowed."
+            )
+        existing = connection.execute(
+            "SELECT brand_id, company_id, brand_profile_id FROM perfect_catalog.brand WHERE code=%s",
+            (profile["code"],),
+        ).fetchone()
+        if existing is not None:
+            raise ValueError(
+                f"Ya existe una marca con el codigo {profile['code']}; "
+                "vinculala a su perfil desde 'Vincular marca con su perfil visual'."
+            )
+        normalized = normalize_name(profile["display_name"])
+        brand_id = uuid.uuid5(NAMESPACE, f"brand:{normalized}")
+        by_name = connection.execute(
+            "SELECT code FROM perfect_catalog.brand WHERE brand_id=%s", (brand_id,),
+        ).fetchone()
+        if by_name is not None:
+            raise ValueError(
+                f"Ya existe una marca con el nombre {profile['display_name']!r} bajo el codigo {by_name['code']}."
+            )
+        source_system_id = uuid.uuid5(NAMESPACE, "source-system:odoo")  # igual que importer.py
+        source_row = connection.execute(
+            """
+            INSERT INTO perfect_catalog.source_system (
+                source_system_id, code, name, system_type, timezone_name, metadata
+            ) VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (code) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+            RETURNING source_system_id
+            """,
+            (source_system_id, SOURCE_CODE, "Odoo", "erp", "America/Panama",
+             Jsonb({"source_model": SOURCE_MODEL})),
+        ).fetchone()
+        connection.execute(
+            """
+            INSERT INTO perfect_catalog.brand (
+                brand_id, source_system_id, brand_profile_id, company_id, code, name, normalized_name
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s)
+            """,
+            (brand_id, source_row["source_system_id"], brand_profile_id, company_id,
+             profile["code"], profile["display_name"], normalized),
+        )
+        connection.execute(
+            """
+            INSERT INTO perfect_catalog.brand_profile_link_event (
+                brand_profile_link_event_id, brand_id, previous_brand_profile_id,
+                new_brand_profile_id, actor, reason
+            ) VALUES (%s,%s,NULL,%s,%s,%s)
+            """,
+            (uuid.uuid4(), brand_id, brand_profile_id, actor,
+             f"Alta de la marca real {profile['code']} desde su perfil visual"),
+        )
+    return {"status": "created", "brand_id": str(brand_id), "code": profile["code"]}
+
+
 def list_company_brands(
     config: DatabaseConfig, password: str, *, company_id: uuid.UUID,
 ) -> list[dict[str, Any]]:

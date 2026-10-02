@@ -1,0 +1,30 @@
+{% extends "operator_base.html" %}
+{% block title %}Paso a paso{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <span class="kicker">Paso a paso</span>
+    <h1>Tu catálogo, en tres pasos</h1>
+    <p>Te decimos qué sigue en cada momento. Si prefieres ver todo el detalle, usa el panel completo.</p>
+  </div>
+  <a class="secondary-button" href="/operator">Ver panel completo</a>
+</section>
+
+<ol class="guided-steps" aria-label="Progreso">
+  {% for step in guided.progress %}
+  <li class="guided-step guided-{{ step.state }}"{% if step.state == 'current' %} aria-current="step"{% endif %}>
+    <span class="guided-dot" aria-hidden="true">{% if step.state == 'done' %}✓{% else %}{{ loop.index }}{% endif %}</span>
+    <span>{{ step.label }}</span>
+  </li>
+  {% endfor %}
+</ol>
+
+<section class="guided-card" aria-labelledby="guided-title">
+  <h2 id="guided-title">{{ guided.title }}</h2>
+  <p>{{ guided.text }}</p>
+  <div class="guided-actions">
+    <a class="primary-button" href="{{ guided.action_href }}">{{ guided.action_label }}</a>
+    {% if guided.secondary %}<a class="secondary-button" href="{{ guided.secondary.href }}">{{ guided.secondary.label }}</a>{% endif %}
+  </div>
+</section>
+{% endblock %}

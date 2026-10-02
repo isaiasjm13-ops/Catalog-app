@@ -57,6 +57,14 @@ if ([string]::IsNullOrWhiteSpace($chosen)) {
     exit 1
 }
 
+# Puerto libre: si el 8080 esta ocupado por otro programa, usar el siguiente y decirlo.
+$port = 8080
+while (Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue) {
+    $port++
+    if ($port -gt 8100) { throw 'No encontre un puerto libre cerca de 8080.' }
+}
+if ($port -ne 8080) { Write-Host "El puerto 8080 estaba ocupado por otro programa; uso el $port." -ForegroundColor Yellow }
 Write-Host "Abriendo el ultimo release publicado de $chosen en modo solo lectura."
-& $apiPath --host 127.0.0.1 --port 8080 --brand $chosen --prompt-password
+Write-Host "URL: http://127.0.0.1:$port   (el servidor se apaga al cerrar esta ventana)" -ForegroundColor Cyan
+& $apiPath --host 127.0.0.1 --port $port --brand $chosen --prompt-password
 exit $LASTEXITCODE

@@ -3,9 +3,11 @@ from __future__ import annotations
 import io
 import csv
 import base64
+import re
 import uuid
 from collections import defaultdict
 from html import escape
+from urllib.parse import quote
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Iterable
@@ -181,21 +183,6 @@ def _groups(
     return list(grouped.items())
 
 
-def _detail(row: dict[str, Any]) -> str:
-    parts = [escape(str(row.get("name_original") or "")), f"Ref. {escape(str(row.get('internal_reference_original') or ''))}"]
-    if row.get("piece_type") or row.get("category_path"):
-        parts.append("Tipo: " + escape(str(row.get("piece_type") or row["category_path"])))
-    if row.get("brand"):
-        parts.append("Marca: " + escape(str(row["brand"])))
-    if row.get("oem_references"):
-        parts.append("OEM: " + escape(", ".join(map(str, row["oem_references"]))))
-    if row.get("applications"):
-        parts.append("Aplicaciones: " + escape("; ".join(str(value) for value in row["applications"])))
-    if row.get("engine_types"):
-        parts.append("Motor: " + escape(", ".join(map(str, row["engine_types"]))))
-    return "<br/>".join(parts)
-
-
 def _safe_bundle_path(bundle_dir: Path | None, filename: str | None) -> Path | None:
     if bundle_dir is None or not filename:
         return None
@@ -210,9 +197,73 @@ def _safe_bundle_image(row: dict[str, Any], bundle_dir: Path | None) -> Path | N
     return _safe_bundle_path(bundle_dir, row.get("image_path"))
 
 
+WATERMARK_OPACITY = 0.22
+WATERMARK_ANGLE = 25
+_WATERMARK_FONT = "assets/brands/natsuki/fonts/BarlowCondensed-Bold.ttf"
+
+
+def build_photo_watermark(
+    *, logo_path: Path | None = None, text: str = "", opacity: float = WATERMARK_OPACITY,
+) -> PILImage.Image | None:
+    """Prepara la marca de agua (una pieza RGBA ya con su transparencia) una sola vez por catálogo.
+
+    Usa el logo si es una imagen que PIL pueda leer (PNG/JPG/WebP); si no (p. ej. un SVG) o no hay
+    logo, escribe el texto (nombre de la empresa) con la tipografía incluida. None si no hay nada."""
+    from PIL import ImageDraw, ImageFont
+
+    piece: PILImage.Image | None = None
+    if logo_path is not None and logo_path.is_file():
+        try:
+            with PILImage.open(logo_path) as source:
+                piece = ImageOps.exif_transpose(source).convert("RGBA")
+        except Exception:  # noqa: BLE001 - SVG u otro formato: se usa el texto
+            piece = None
+    text = str(text or "").strip()
+    if piece is None and text:
+        font_path = files("perfect_catalog").joinpath(_WATERMARK_FONT)
+        font = ImageFont.truetype(str(font_path), 120)
+        probe = ImageDraw.Draw(PILImage.new("RGBA", (1, 1)))
+        left, top, right, bottom = probe.textbbox((0, 0), text.upper(), font=font)
+        piece = PILImage.new("RGBA", (right - left + 24, bottom - top + 24), (0, 0, 0, 0))
+        ImageDraw.Draw(piece).text((12 - left, 12 - top), text.upper(), font=font, fill=(255, 255, 255, 255))
+    if piece is None:
+        return None
+    alpha = piece.getchannel("A").point(lambda value: int(value * opacity))
+    piece.putalpha(alpha)
+    return piece.rotate(WATERMARK_ANGLE, expand=True, resample=PILImage.Resampling.BICUBIC)
+
+
+def _apply_photo_watermark(jpeg_bytes: bytes, mark: PILImage.Image) -> bytes:
+    """Teselado diagonal de la marca sobre la foto (cubre toda la imagen: no se quita recortando)."""
+    with PILImage.open(io.BytesIO(jpeg_bytes)) as source:
+        base = source.convert("RGBA")
+    width, height = base.size
+    target_width = max(60, int(width * 0.34))
+    scale = target_width / mark.width
+    tile = mark.resize((target_width, max(1, int(mark.height * scale))), PILImage.Resampling.LANCZOS)
+    step_x, step_y = int(tile.width * 1.35), int(tile.height * 1.6)
+    layer = PILImage.new("RGBA", base.size, (0, 0, 0, 0))
+    for row_index, y in enumerate(range(-tile.height // 2, height, step_y)):
+        offset = (step_x // 2) if row_index % 2 else 0
+        for x in range(-tile.width // 2 + offset, width, step_x):
+            if x >= width or y >= height:
+                continue
+            # Se recorta la pieza a la parte que cae dentro de la foto (alpha_composite no admite destino negativo).
+            layer.alpha_composite(
+                tile, (max(x, 0), max(y, 0)),
+                (max(-x, 0), max(-y, 0), min(tile.width, width - x), min(tile.height, height - y)),
+            )
+    output = io.BytesIO()
+    PILImage.alpha_composite(base, layer).convert("RGB").save(
+        output, format="JPEG", quality=82, optimize=True, progressive=True,
+    )
+    return output.getvalue()
+
+
 def _row_gallery_sources(
     row: dict[str, Any], bundle_dir: Path | None, embed_images: bool,
     raster_cache: dict[tuple[str, int, int, int], bytes] | None,
+    watermark: PILImage.Image | None = None,
 ) -> list[str]:
     """Primary photo first, then extra "variant" photos (`REF-1234-2.jpg` etc.), as sources
     ready to drop into an <img src>: filenames when the bundle ships alongside the HTML, data
@@ -231,7 +282,10 @@ def _row_gallery_sources(
                 raise FileNotFoundError(f"No se puede incrustar la imagen segura {filename!r}.")
             continue
         optimized = _optimized_raster(image_path, 1200, 900, quality=82, cache=raster_cache)
-        sources.append("data:image/jpeg;base64," + base64.b64encode(optimized.read()).decode("ascii"))
+        photo = optimized.read()
+        if watermark is not None:
+            photo = _apply_photo_watermark(photo, watermark)
+        sources.append("data:image/jpeg;base64," + base64.b64encode(photo).decode("ascii"))
     return sources
 
 
@@ -601,6 +655,12 @@ def generate_catalog_pptx(
     return output.getvalue()
 
 
+def normalize_whatsapp_number(value: Any) -> str:
+    """Solo dígitos con código de país (p. ej. «507 6123 4567» -> «50761234567»); '' si no es válido."""
+    digits = re.sub(r"\D", "", str(value or ""))
+    return digits if 7 <= len(digits) <= 15 else ""
+
+
 def generate_catalog_html(
     rows: list[dict[str, Any]], config: dict[str, Any] | None = None,
     *, release: dict[str, Any] | None = None, bundle_dir: Path | None = None,
@@ -674,6 +734,30 @@ def generate_catalog_html(
         for make in row_vehicle_makes(row)
         if str(make).strip()
     })
+    whatsapp_digits = normalize_whatsapp_number(config.get("whatsapp_number"))
+    # Marca de agua sobre cada foto incrustada (config["photo_watermark"] = {"logo_path": ..., "text": ...}).
+    photo_watermark: PILImage.Image | None = None
+    watermark_config = config.get("photo_watermark")
+    if watermark_config and embed_images:
+        photo_watermark = build_photo_watermark(
+            logo_path=_safe_bundle_path(bundle_dir, watermark_config.get("logo_path")),
+            text=str(watermark_config.get("text") or ""),
+        )
+
+    def whatsapp_order_link(row: dict[str, Any]) -> str:
+        """Botón «Pedir por WhatsApp» con la referencia y el nombre ya escritos en el mensaje.
+        Solo aparece si el catálogo tiene un número configurado."""
+        if not whatsapp_digits:
+            return ""
+        reference = str(row.get("internal_reference_original") or "").strip()
+        name = str(row.get("name_original") or "").strip()
+        message = f"Hola, quiero pedir: {reference} - {name}".strip(" -")
+        url = f"https://wa.me/{whatsapp_digits}?text={quote(message)}"
+        return (
+            f'<a class="wa-order" href="{escape(url, quote=True)}" target="_blank" rel="noopener noreferrer">'
+            "Pedir por WhatsApp</a>"
+        )
+
     navigation: list[str] = []
     for section_index, (section, section_rows) in enumerate(grouped_rows, 1):
         section_id = f"seccion-{section_index:02d}"
@@ -681,7 +765,7 @@ def generate_catalog_html(
         cards: list[str] = []
         for card_index, row in enumerate(section_rows, 1):
             image = ""
-            gallery_sources = _row_gallery_sources(row, bundle_dir, embed_images, raster_cache)
+            gallery_sources = _row_gallery_sources(row, bundle_dir, embed_images, raster_cache, photo_watermark)
             if gallery_sources:
                 image_alt = escape(
                     str(row.get("internal_reference_original") or row.get("name_original") or "Producto"),
@@ -731,7 +815,8 @@ def generate_catalog_html(
                 + reference_markup
                 + f'<h3>{escape(str(row.get("name_original") or "Sin nombre"))}</h3>'
                 + (f'<p class="meta">{visible_category}{" · " if visible_category and visible_brand else ""}{visible_brand}</p>' if visible_category or visible_brand else "")
-                + (f'<dl class="specifications">{specifications}</dl>' if specifications else "") + "</article>"
+                + (f'<dl class="specifications">{specifications}</dl>' if specifications else "")
+                + whatsapp_order_link(row) + "</article>"
             )
         section_logo = vehicle_logo_source(section) if str(config.get("group_by") or "") == "vehicle_make" else ""
         sections.append(
@@ -775,10 +860,10 @@ def generate_catalog_html(
 :root{{--secondary:{palette['secondary']};--company-primary:{company_palette['primary']};--company-secondary:{company_palette['secondary']}}}.hero:before{{border-color:var(--secondary)!important;opacity:.45!important}}
 :root{{--ink:{palette['ink']};--forest:{palette['primary']};--paper:{palette['paper']};--card:{palette['card']};--line:#d9d5c9;--muted:#65716b}}*{{box-sizing:border-box}}html{{scroll-behavior:smooth}}body{{margin:0;color:var(--ink);background:var(--paper);font:15px/1.55 Arial,sans-serif}}main{{max-width:1280px;margin:auto;padding:clamp(24px,5vw,72px)}}.hero{{position:relative;min-height:48vh;display:grid;align-content:end;padding:8vw clamp(0px,2vw,28px) 4vw;border-bottom:4px solid var(--ink)}}.hero:before{{content:"";position:absolute;top:12%;right:2%;width:clamp(90px,14vw,190px);aspect-ratio:1;border:1px solid var(--forest);border-radius:50%;opacity:.22}}.hero small{{color:var(--forest);font-weight:800;letter-spacing:.16em;text-transform:uppercase}}h1{{position:relative;max-width:900px;margin:.2em 0;font:500 clamp(44px,8vw,104px)/.9 Georgia,serif;letter-spacing:-.035em}}.hero p{{max-width:700px;font-size:18px}}.contents{{display:flex;gap:8px;padding:20px 0;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:thin}}.contents a{{min-height:44px;display:inline-flex;gap:9px;align-items:center;flex:0 0 auto;padding:8px 13px;border:1px solid var(--line);border-radius:999px;color:var(--ink);background:var(--card);text-decoration:none}}.contents a:hover,.contents a:focus-visible{{border-color:var(--forest)}}.contents span{{color:var(--forest);font-weight:800}}section{{scroll-margin-top:18px;padding:clamp(38px,6vw,72px) 0}}section>header{{display:flex;justify-content:space-between;gap:20px;align-items:end;border-bottom:1px solid var(--line)}}h2{{margin:.25em 0;font:500 clamp(27px,4vw,48px) Georgia,serif;letter-spacing:-.02em}}section>header span{{padding-bottom:1.2em;color:var(--muted)}}.products{{display:grid;grid-template-columns:repeat({columns},minmax(0,1fr));gap:20px;padding-top:24px}}.product{{min-width:0;padding:20px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(20,42,34,.06);overflow:hidden}}.photo{{height:210px;margin:-20px -20px 20px;padding:10px;background:#f8f8f5;display:grid;place-items:center;overflow:hidden;border-bottom:1px solid var(--line)}}.photo img{{display:block;width:100%;height:100%;object-fit:contain;object-position:center center}}code{{color:var(--forest);font-weight:800;letter-spacing:.035em}}h3{{margin:.5em 0;font:500 22px/1.15 Georgia,serif}}.meta{{color:var(--muted);font-size:13px}}.specifications{{display:grid;gap:8px;margin:15px 0 0}}.specifications div{{display:grid;grid-template-columns:minmax(92px,.34fr) 1fr;gap:10px;padding-top:8px;border-top:1px solid var(--line)}}.specifications dt{{color:var(--forest);font-weight:800}}.specifications dd{{margin:0;overflow-wrap:anywhere}}.proof{{padding:28px 0;border-top:1px solid var(--line);overflow-wrap:anywhere;color:var(--muted);font-size:12px}}@media(max-width:760px){{html{{scroll-behavior:auto}}.products{{grid-template-columns:1fr}}.hero{{min-height:38vh}}section>header{{align-items:start;flex-direction:column;gap:0}}section>header span{{padding-bottom:1em}}}}@media(prefers-reduced-motion:reduce){{html{{scroll-behavior:auto}}}}@media print{{@page{{size:A4;margin:12mm}}body{{background:#fff}}main{{max-width:none;padding:0}}.hero{{min-height:245mm;break-after:page}}.contents{{display:none}}section{{break-before:page;padding:0}}.product{{break-inside:avoid;box-shadow:none}}.products{{gap:6mm}}}}
 /* Visor ampliado sin JavaScript: mantiene el catálogo autónomo y portable. */
-.photo{{position:relative;width:calc(100% + 40px);border:0;color:var(--ink);font:inherit;text-decoration:none;cursor:zoom-in}}.zoom-hint{{position:absolute;right:12px;bottom:12px;padding:6px 10px;border-radius:999px;color:#fff;background:rgba(17,30,25,.78);font-size:12px;font-weight:800;opacity:0;transform:translateY(4px);transition:.18s ease}}.gallery-hint{{position:absolute;left:12px;bottom:12px;padding:6px 10px;border-radius:999px;color:#fff;background:rgba(17,30,25,.78);font-size:12px;font-weight:800}}.photo:hover .zoom-hint,.photo:focus-visible .zoom-hint{{opacity:1;transform:none}}.photo-viewer{{position:relative;width:min(94vw,1400px);height:min(92vh,1000px);padding:16px;border:0;border-radius:16px;background:var(--card);box-shadow:0 24px 80px rgba(0,0,0,.45)}}.photo-viewer::backdrop{{background:rgba(8,15,12,.9)}}.photo-viewer[open]{{display:grid;grid-template-columns:1fr auto;grid-template-rows:minmax(0,1fr) auto;gap:12px}}.photo-viewer img{{grid-column:1/-1;width:100%;height:100%;min-height:0;object-fit:contain;object-position:center;background:#f8f8f5}}.photo-viewer p{{align-self:center;margin:0;overflow-wrap:anywhere}}.photo-viewer form{{align-self:center}}.photo-viewer-close{{min-height:44px;padding:10px 16px;border:1px solid var(--line);border-radius:999px;color:var(--ink);background:var(--card);font:inherit;font-weight:800}}.photo-viewer-gallery{{position:absolute;left:28px;bottom:28px;right:28px;display:flex;gap:8px;overflow-x:auto;padding:10px;border-radius:12px;background:linear-gradient(to top,rgba(8,15,12,.72),rgba(8,15,12,0))}}.photo-viewer-thumb{{all:unset;cursor:pointer;flex:0 0 auto;width:56px;height:56px;border:2px solid rgba(255,255,255,.55);border-radius:8px;overflow:hidden;background:#f8f8f5}}.photo-viewer-thumb img{{display:block;width:100%;height:100%;object-fit:cover}}.photo-viewer-thumb.active{{border-color:#fff}}@media(max-width:760px){{.zoom-hint{{opacity:1;transform:none}}}}@media(prefers-reduced-motion:reduce){{.zoom-hint{{transition:none}}}}@media print{{.photo-viewer{{display:none!important}}}}
+.photo{{position:relative;width:calc(100% + 40px);border:0;color:var(--ink);font:inherit;text-decoration:none;cursor:zoom-in}}.zoom-hint{{position:absolute;right:12px;bottom:12px;padding:6px 10px;border-radius:999px;color:#fff;background:rgba(17,30,25,.78);font-size:12px;font-weight:800;opacity:0;transform:translateY(4px);transition:.18s ease}}.gallery-hint{{position:absolute;left:12px;bottom:12px;padding:6px 10px;border-radius:999px;color:#fff;background:rgba(17,30,25,.78);font-size:12px;font-weight:800}}.photo:hover .zoom-hint,.photo:focus-visible .zoom-hint{{opacity:1;transform:none}}.photo-viewer{{position:fixed;inset:0;margin:auto;width:min(94vw,1400px);height:min(92vh,1000px);height:min(92dvh,1000px);max-height:calc(100dvh - 16px);padding:16px;border:0;border-radius:16px;background:var(--card);box-shadow:0 24px 80px rgba(0,0,0,.45)}}.photo-viewer::backdrop{{background:rgba(8,15,12,.9)}}.photo-viewer[open]{{display:grid;grid-template-columns:1fr auto;grid-template-rows:minmax(0,1fr) auto;gap:12px}}.photo-viewer img{{grid-column:1/-1;width:100%;height:100%;min-height:0;object-fit:contain;object-position:center;background:#f8f8f5}}.photo-viewer p{{align-self:center;margin:0;overflow-wrap:anywhere}}.photo-viewer form{{align-self:center}}.photo-viewer-close{{min-height:44px;padding:10px 16px;border:1px solid var(--line);border-radius:999px;color:var(--ink);background:var(--card);font:inherit;font-weight:800}}.photo-viewer-gallery{{position:absolute;left:28px;bottom:28px;right:28px;display:flex;gap:8px;overflow-x:auto;padding:10px;border-radius:12px;background:linear-gradient(to top,rgba(8,15,12,.72),rgba(8,15,12,0))}}.photo-viewer-thumb{{all:unset;cursor:pointer;flex:0 0 auto;width:56px;height:56px;border:2px solid rgba(255,255,255,.55);border-radius:8px;overflow:hidden;background:#f8f8f5}}.photo-viewer-thumb img{{display:block;width:100%;height:100%;object-fit:cover}}.photo-viewer-thumb.active{{border-color:#fff}}@media(max-width:760px){{.zoom-hint{{opacity:1;transform:none}}}}@media(prefers-reduced-motion:reduce){{.zoom-hint{{transition:none}}}}@media print{{.photo-viewer{{display:none!important}}}}
 .catalog-search{{position:sticky;top:0;z-index:20;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;padding:14px 0;background:color-mix(in srgb,var(--paper) 94%,transparent);backdrop-filter:blur(12px)}}.catalog-search label{{grid-column:1/-1;color:var(--forest);font-weight:800}}.catalog-search input{{width:100%;min-height:48px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit}}.catalog-search input:focus{{outline:3px solid color-mix(in srgb,var(--forest) 24%,transparent);border-color:var(--forest)}}.catalog-search button{{min-height:48px;padding:10px 16px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit;font-weight:800}}.search-status{{grid-column:1/-1;margin:0;color:var(--muted)}}[hidden]{{display:none!important}}@media(max-width:760px){{.catalog-search{{margin-inline:-10px;padding:12px 10px}}}}@media print{{.catalog-search{{display:none}}}}
 .vehicle-make-logo{{display:inline-block;width:auto;height:1.05em;max-width:3.2em;margin-left:.3em;object-fit:contain;vertical-align:-.08em}}.corporate-signature{{display:flex;justify-content:space-between;gap:20px;align-items:center;padding:18px 0;border-top:3px solid var(--company-primary);box-shadow:inset 0 1px 0 var(--company-secondary);color:var(--company-primary);font-weight:800}}.corporate-signature small{{color:var(--muted);font-weight:400}}
-</style></head><body><main><header class="hero"><small>Perfect Trading · edición {version}</small><h1>{title}</h1><p>{subtitle}</p></header><form class="catalog-search" role="search" onsubmit="return false"><label for="catalog-query">Buscar en este catálogo</label><input id="catalog-query" type="search" inputmode="search" autocomplete="off" placeholder="Referencia, pieza, vehículo, motor u OEM"><button id="catalog-clear" type="button" hidden>Limpiar</button><p id="catalog-status" class="search-status" role="status" aria-live="polite">{len(rows)} productos disponibles</p></form><nav class="contents" aria-label="Secciones del catálogo">{''.join(navigation)}</nav>{''.join(sections)}<footer class="proof">Release SHA-256: {checksum}</footer></main><dialog class="photo-viewer" id="photo-viewer"><img alt=""><p></p><form method="dialog"><button class="photo-viewer-close" value="close">Cerrar</button></form></dialog><script>(()=>{{const q=document.querySelector('#catalog-query'),clear=document.querySelector('#catalog-clear'),status=document.querySelector('#catalog-status'),cards=[...document.querySelectorAll('.product')],sections=[...document.querySelectorAll('main>section')],viewer=document.querySelector('#photo-viewer'),viewerImage=viewer.querySelector('img'),viewerCaption=viewer.querySelector('p'),fold=value=>value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es');for(const card of cards)card.dataset.search=fold(card.textContent);function filter(){{const term=fold(q.value.trim());let visible=0;for(const card of cards){{const match=!term||card.dataset.search.includes(term);card.hidden=!match;if(match)visible++}}for(const section of sections)section.hidden=![...section.querySelectorAll('.product')].some(card=>!card.hidden);clear.hidden=!term;status.textContent=term?`${{visible}} de ${{cards.length}} productos encontrados`:`${{cards.length}} productos disponibles`}}q.addEventListener('input',filter);clear.addEventListener('click',()=>{{q.value='';filter();q.focus()}});for(const trigger of document.querySelectorAll('.photo'))trigger.addEventListener('click',()=>{{const source=trigger.querySelector('img');viewerImage.src=source.currentSrc||source.src;viewerImage.alt=source.alt;viewerCaption.textContent=source.alt;viewer.showModal()}});viewer.addEventListener('click',event=>{{if(event.target===viewer)viewer.close()}})}})();</script></body></html>"""
+</style></head><body><main><header class="hero"><small>Perfect Trading · edición {version}</small><h1>{title}</h1><p>{subtitle}</p></header><form class="catalog-search" role="search" onsubmit="return false"><label for="catalog-query">Buscar en este catálogo</label><input id="catalog-query" type="search" inputmode="search" autocomplete="off" placeholder="Referencia, pieza, vehículo, motor u OEM"><button id="catalog-clear" type="button" hidden>Limpiar</button><p id="catalog-status" class="search-status" role="status" aria-live="polite">{len(rows)} productos disponibles</p></form><nav class="contents" aria-label="Secciones del catálogo">{''.join(navigation)}</nav>{''.join(sections)}<footer class="proof">Release SHA-256: {checksum}</footer></main><dialog class="photo-viewer" id="photo-viewer"><img alt=""><p></p><form method="dialog"><button class="photo-viewer-close" value="close">Cerrar</button></form></dialog><script>(()=>{{const q=document.querySelector('#catalog-query'),clear=document.querySelector('#catalog-clear'),status=document.querySelector('#catalog-status'),cards=[...document.querySelectorAll('.product')],sections=[...document.querySelectorAll('main>section')],viewer=document.querySelector('#photo-viewer'),viewerImage=viewer.querySelector('img'),viewerCaption=viewer.querySelector('p'),fold=value=>value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es');for(const card of cards)card.dataset.search=fold(card.textContent);function filter(){{const term=fold(q.value.trim());let visible=0;for(const card of cards){{const match=!term||card.dataset.search.includes(term);card.hidden=!match;if(match)visible++}}for(const section of sections)section.hidden=![...section.querySelectorAll('.product')].some(card=>!card.hidden);clear.hidden=!term;status.textContent=term?`${{visible}} de ${{cards.length}} productos encontrados`:`${{cards.length}} productos disponibles`}}q.addEventListener('input',filter);clear.addEventListener('click',()=>{{q.value='';filter();q.focus()}});for(const trigger of document.querySelectorAll('.photo'))trigger.addEventListener('click',()=>{{const source=trigger.querySelector('img');viewerImage.src=source.currentSrc||source.src;viewerImage.alt=source.alt;viewerCaption.textContent=source.alt;if(viewer.showModal){{viewer.showModal()}}else{{viewer.setAttribute('open','')}}}});viewer.addEventListener('click',event=>{{if(event.target===viewer)viewer.close()}})}})();</script></body></html>"""
     html = html.replace("Perfect Trading · edición", f"{company_name} · edición", 1)
     html = html.replace(
         f'<footer class="proof">Release SHA-256: {checksum}</footer>',
@@ -805,17 +890,32 @@ def generate_catalog_html(
         base64.b64encode(files("perfect_catalog").joinpath("assets/brands/natsuki/fonts/BarlowCondensed-Bold.ttf").read_bytes()).decode("ascii"),
     )
     html = html.replace("</style>", brand_css + "</style>", 1)
-    detail_css = """.photo-viewer-details{min-width:0;align-self:start;padding:4px 8px 8px}.photo-viewer-details code{display:block;margin-bottom:4px;font-size:16px}.photo-viewer-details h3{margin:.15em 0;font-size:clamp(24px,4vw,38px)}.photo-viewer-details .meta{margin:.2em 0 12px;font-weight:700}.photo-viewer-details .specifications{margin-top:10px}@media(min-width:820px){.photo-viewer[open]{grid-template-columns:minmax(0,1.45fr) minmax(300px,.55fr);grid-template-rows:minmax(0,1fr) auto}.photo-viewer img{grid-column:1;grid-row:1/-1}.photo-viewer-details{grid-column:2;grid-row:1}.photo-viewer form{grid-column:2;grid-row:2}}@media(max-width:819px){.photo-viewer[open]{grid-template-columns:1fr;grid-template-rows:minmax(42vh,1fr) auto auto}.photo-viewer img{grid-column:1;grid-row:1}.photo-viewer-details{grid-column:1;grid-row:2;max-height:34vh;overflow:auto}.photo-viewer form{grid-column:1;grid-row:3}}"""
+    # Logo de la empresa dentro del encabezado, en el flujo (antes flotaba arriba a la derecha y se
+    # montaba con el círculo decorativo y, en móvil, con el título) y sin deformarse.
+    placement_css = """.hero .brand-logo{position:static;order:-1;justify-self:start;align-self:start;width:auto;height:auto;max-width:min(240px,62vw);max-height:84px;object-fit:contain;margin:0 0 1.2rem;z-index:auto}@media(max-width:560px){.hero .brand-logo{max-height:64px;margin-bottom:.9rem}.hero:before{display:none}}.hero{overflow:hidden}dialog.photo-viewer:not([open]){display:none}"""
+    html = html.replace("</style>", placement_css + "</style>", 1)
+    detail_css =""".photo-viewer-details{min-width:0;align-self:start;padding:4px 8px 8px}.photo-viewer-details code{display:block;margin-bottom:4px;font-size:16px}.photo-viewer-details h3{margin:.15em 0;font-size:clamp(24px,4vw,38px)}.photo-viewer-details .meta{margin:.2em 0 12px;font-weight:700}.photo-viewer-details .specifications{margin-top:10px}@media(min-width:820px){.photo-viewer[open]{grid-template-columns:minmax(0,1.45fr) minmax(300px,.55fr);grid-template-rows:minmax(0,1fr) auto}.photo-viewer img{grid-column:1;grid-row:1/-1}.photo-viewer-details{grid-column:2;grid-row:1}.photo-viewer form{grid-column:2;grid-row:2}}@media(max-width:819px){.photo-viewer[open]{grid-template-columns:1fr;grid-template-rows:minmax(42vh,1fr) auto auto}.photo-viewer img{grid-column:1;grid-row:1}.photo-viewer-details{grid-column:1;grid-row:2;max-height:34vh;overflow:auto}.photo-viewer form{grid-column:1;grid-row:3}}"""
     html = html.replace("</style>", detail_css + "</style>", 1)
+    # Las miniaturas de la galería flotaban encima de la ficha y del botón Cerrar en el móvil;
+    # ahora ocupan su propia fila bajo la foto y, en escritorio, quedan sobre la foto sin invadir la ficha.
+    gallery_css = """@media(max-width:819px){.photo-viewer[open]{grid-template-rows:minmax(26vh,1fr) auto minmax(0,auto) auto}.photo-viewer-gallery{position:static;grid-column:1;grid-row:2;padding:2px 0;background:none}.photo-viewer-details{grid-row:3}.photo-viewer form{grid-row:4}.photo-viewer-close{width:100%}}@media(min-width:820px){.photo-viewer-gallery{right:auto;max-width:calc(72% - 48px)}}"""
+    html = html.replace("</style>", gallery_css + "</style>", 1)
+    if whatsapp_digits:
+        whatsapp_css = """.wa-order{display:inline-flex;align-items:center;justify-content:center;min-height:44px;margin-top:12px;padding:8px 16px;border-radius:999px;background:#128c7e;color:#fff;font-weight:800;text-decoration:none}.wa-order:hover,.wa-order:focus-visible{background:#0e6f64}.photo-viewer-details .wa-order{width:100%}@media print{.wa-order{display:none}}"""
+        html = html.replace("</style>", whatsapp_css + "</style>", 1)
     detail_script = """<script>(()=>{const viewer=document.querySelector('#photo-viewer'),caption=viewer.querySelector('p'),details=document.createElement('div'),mainImage=viewer.querySelector('img'),gallery=document.createElement('div');details.className='photo-viewer-details';details.setAttribute('aria-live','polite');caption.replaceWith(details);gallery.className='photo-viewer-gallery';gallery.hidden=true;mainImage.insertAdjacentElement('afterend',gallery);for(const trigger of document.querySelectorAll('.photo'))trigger.addEventListener('click',()=>{const card=trigger.closest('.product');details.replaceChildren(...[...card.children].filter(node=>!node.classList.contains('photo')).map(node=>node.cloneNode(true)));const sources=(trigger.dataset.gallery||'').split('|').filter(Boolean);gallery.replaceChildren();gallery.hidden=sources.length<2;sources.forEach((source,index)=>{const thumb=document.createElement('button');thumb.type='button';thumb.className='photo-viewer-thumb'+(index===0?' active':'');thumb.innerHTML=`<img src="${source}" alt="">`;thumb.addEventListener('click',()=>{mainImage.src=source;gallery.querySelectorAll('.photo-viewer-thumb').forEach(node=>node.classList.remove('active'));thumb.classList.add('active')});gallery.appendChild(thumb)})})})();</script>"""
     html = html.replace("</body>", detail_script + "</body>", 1)
+    # Navegadores sin <dialog> (iPhone/Android antiguos, visores de adjuntos): "Cerrar" no debe
+    # enviar el formulario; se cierra el visor a mano.
+    close_script = """<script>(()=>{const viewer=document.querySelector('#photo-viewer'),button=viewer&&viewer.querySelector('.photo-viewer-close');if(!button)return;button.addEventListener('click',event=>{event.preventDefault();if(viewer.close){viewer.close()}else{viewer.removeAttribute('open')}})})();</script>"""
+    html = html.replace("</body>", close_script + "</body>", 1)
     filter_css = """.catalog-filter-panel{margin:18px 0;border:1px solid var(--line);border-radius:14px;background:var(--card)}.catalog-filter-panel summary{min-height:48px;padding:13px 16px;color:var(--forest);font-weight:800;cursor:pointer}.catalog-filter-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:12px;padding:0 16px 16px}.catalog-filter-grid label{display:grid;gap:5px;color:var(--muted);font-size:12px;font-weight:800}.catalog-filter-grid select,.catalog-filter-grid button{min-height:44px;padding:8px 11px;border:1px solid var(--line);border-radius:10px;color:var(--ink);background:var(--card);font:inherit}.catalog-filter-grid fieldset{display:flex;gap:6px;align-items:end;margin:0;padding:0;border:0}.catalog-filter-grid legend{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}.catalog-filter-grid button[aria-pressed=true]{border-color:var(--forest);color:var(--forest);box-shadow:inset 0 0 0 1px var(--forest)}.filters-clear{align-self:end}.catalog-list-view .products{grid-template-columns:1fr}.catalog-list-view .product{display:grid;grid-template-columns:minmax(150px,220px) minmax(120px,.35fr) minmax(0,1fr);gap:8px 18px;align-items:start}.catalog-list-view .photo{grid-row:1/5;width:auto;height:150px;margin:-10px 0 -10px -10px}.catalog-list-view .product h3,.catalog-list-view .product .meta{margin:0}.catalog-list-view .specifications{grid-column:3;grid-row:1/5;margin:0}@media(max-width:760px){.catalog-filter-grid{grid-template-columns:1fr 1fr}.catalog-filter-grid fieldset,.filters-clear{align-self:auto}.catalog-list-view .product{grid-template-columns:110px minmax(0,1fr);gap:6px 12px;padding:12px}.catalog-list-view .photo{grid-row:1/5;width:auto;height:110px;margin:0}.catalog-list-view .specifications{grid-column:1/-1;grid-row:auto;margin-top:8px}}@media print{.catalog-filter-panel{display:none}.catalog-list-view .product{display:block}}"""
     html = html.replace("</style>", filter_css + "</style>", 1)
     copy_css = """.ref-copy{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:8px;padding:4px 2px;border-radius:6px}.ref-copy .copy-hint{font-size:10px;font-weight:800;color:var(--muted);opacity:0;transition:opacity .15s}.ref-copy:hover .copy-hint,.ref-copy:focus-visible .copy-hint{opacity:1}.ref-copy.copied .copy-hint{opacity:1;color:var(--forest)}.ref-copy:focus-visible{outline:2px solid var(--forest);outline-offset:2px}@media print{.copy-hint{display:none}}"""
     html = html.replace("</style>", copy_css + "</style>", 1)
     copy_script = """<script>(()=>{function fallbackCopy(value){const area=document.createElement('textarea');area.value=value;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.focus();area.select();try{document.execCommand('copy')}catch(ignored){}area.remove()}document.addEventListener('click',event=>{const button=event.target.closest('.ref-copy');if(!button)return;const value=button.dataset.ref||'',hint=button.querySelector('.copy-hint'),original=hint.textContent,mark=()=>{hint.textContent='Copiado';button.classList.add('copied');clearTimeout(button._resetTimer);button._resetTimer=setTimeout(()=>{hint.textContent=original;button.classList.remove('copied')},1500)};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(value).then(mark).catch(()=>{fallbackCopy(value);mark()})}else{fallbackCopy(value);mark()}})})();</script>"""
     html = html.replace("</body>", copy_script + "</body>", 1)
-    filter_script = f"""<script>(()=>{{const q=document.querySelector('#catalog-query'),status=document.querySelector('#catalog-status'),main=document.querySelector('main'),cards=[...document.querySelectorAll('.product')],sections=[...document.querySelectorAll('main>section')],category=document.querySelector('#filter-category'),brand=document.querySelector('#filter-brand'),vehicle=document.querySelector('#filter-vehicle'),cardsButton=document.querySelector('#view-cards'),listButton=document.querySelector('#view-list'),clear=document.querySelector('#filters-clear'),fold=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es'),stateKey='perfect-catalog-state:{checksum or version or "working"}';let view='cards';function save(){{try{{localStorage.setItem(stateKey,JSON.stringify({{query:q.value,category:category.value,brand:brand.value,vehicle:vehicle.value,view:view,scrollY:window.scrollY}}))}}catch(ignored){{}}}}function apply(){{const terms=fold(q.value.trim()).split(/\\s+/).filter(Boolean),wantedCategory=fold(category.value),wantedBrand=fold(brand.value),wantedVehicle=fold(vehicle.value);let visible=0;for(const card of cards){{const search=card.dataset.search||'',matchQuery=!terms.length||terms.every(term=>search.includes(term)||search.replace(/[^a-z0-9]+/g,'').includes(term.replace(/[^a-z0-9]+/g,''))),matchCategory=!wantedCategory||fold(card.dataset.category)===wantedCategory,matchBrand=!wantedBrand||fold(card.dataset.brand)===wantedBrand,matchVehicle=!wantedVehicle||fold(card.dataset.vehicle).split('|').includes(wantedVehicle),match=matchQuery&&matchCategory&&matchBrand&&matchVehicle;card.hidden=!match;if(match)visible++}}for(const section of sections)section.hidden=![...section.querySelectorAll('.product')].some(card=>!card.hidden);status.textContent=`${{visible}} de ${{cards.length}} productos encontrados`;save()}}function setView(next){{view=next==='list'?'list':'cards';main.classList.toggle('catalog-list-view',view==='list');cardsButton.setAttribute('aria-pressed',String(view==='cards'));listButton.setAttribute('aria-pressed',String(view==='list'));save()}}for(const control of [q,category,brand,vehicle])control.addEventListener(control===q?'input':'change',apply);cardsButton.addEventListener('click',()=>setView('cards'));listButton.addEventListener('click',()=>setView('list'));clear.addEventListener('click',()=>{{category.value='';brand.value='';vehicle.value='';apply()}});let restored=null;try{{restored=JSON.parse(localStorage.getItem(stateKey)||'null')}}catch(ignored){{}}if(restored){{q.value=restored.query||'';category.value=restored.category||'';brand.value=restored.brand||'';vehicle.value=restored.vehicle||'';setView(restored.view);apply();requestAnimationFrame(()=>scrollTo(0,Number(restored.scrollY)||0))}}else apply();let timer;addEventListener('scroll',()=>{{clearTimeout(timer);timer=setTimeout(save,180)}},{{passive:true}})}})();</script>"""
+    filter_script = f"""<script>(()=>{{const q=document.querySelector('#catalog-query'),status=document.querySelector('#catalog-status'),main=document.querySelector('main'),cards=[...document.querySelectorAll('.product')],sections=[...document.querySelectorAll('main>section')],category=document.querySelector('#filter-category'),brand=document.querySelector('#filter-brand'),vehicle=document.querySelector('#filter-vehicle'),cardsButton=document.querySelector('#view-cards'),listButton=document.querySelector('#view-list'),clear=document.querySelector('#filters-clear'),fold=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es'),stateKey='perfect-catalog-state:{checksum or version or "working"}';let view='cards';function save(){{try{{localStorage.setItem(stateKey,JSON.stringify({{query:q.value,category:category.value,brand:brand.value,vehicle:vehicle.value,view:view,scrollY:window.scrollY}}))}}catch(ignored){{}}}}function apply(){{const terms=fold(q.value.trim()).split(/\\s+/).filter(Boolean),wantedCategory=fold(category.value),wantedBrand=fold(brand.value),wantedVehicle=fold(vehicle.value);let visible=0;for(const card of cards){{const search=card.dataset.search||'',matchQuery=!terms.length||terms.every(term=>search.includes(term)||search.replace(/[^a-z0-9]+/g,'').includes(term.replace(/[^a-z0-9]+/g,''))),matchCategory=!wantedCategory||fold(card.dataset.category)===wantedCategory,matchBrand=!wantedBrand||fold(card.dataset.brand)===wantedBrand,matchVehicle=!wantedVehicle||fold(card.dataset.vehicle).split('|').includes(wantedVehicle),match=matchQuery&&matchCategory&&matchBrand&&matchVehicle;card.hidden=!match;if(match)visible++}}for(const section of sections)section.hidden=![...section.querySelectorAll('.product')].some(card=>!card.hidden);status.textContent=`${{visible}} de ${{cards.length}} productos encontrados`;save()}}function setView(next){{view=next==='list'?'list':'cards';main.classList.toggle('catalog-list-view',view==='list');cardsButton.setAttribute('aria-pressed',String(view==='cards'));listButton.setAttribute('aria-pressed',String(view==='list'));save()}}for(const control of [q,category,brand,vehicle])control.addEventListener(control===q?'input':'change',apply);cardsButton.addEventListener('click',()=>setView('cards'));listButton.addEventListener('click',()=>setView('list'));clear.addEventListener('click',()=>{{category.value='';brand.value='';vehicle.value='';apply()}});document.querySelector('#catalog-clear')?.addEventListener('click',apply);let restored=null;try{{restored=JSON.parse(localStorage.getItem(stateKey)||'null')}}catch(ignored){{}}if(restored){{q.value=restored.query||'';category.value=restored.category||'';brand.value=restored.brand||'';vehicle.value=restored.vehicle||'';setView(restored.view);apply();requestAnimationFrame(()=>scrollTo(0,Number(restored.scrollY)||0))}}else apply();let timer;addEventListener('scroll',()=>{{clearTimeout(timer);timer=setTimeout(save,180)}},{{passive:true}})}})();</script>"""
     html = html.replace("</body>", filter_script + "</body>", 1)
     if company_logo_uri or brand_logo_uri:
         marks = ((f'<img class="brand-logo" src="{company_logo_uri}" alt="{company_name}">' if company_logo_uri else "")

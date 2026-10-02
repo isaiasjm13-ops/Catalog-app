@@ -25,9 +25,12 @@ from perfect_catalog.operator_api import (
     _operator_actor,
     _safe_zip_member_name,
     _write_local_images_archive,
+    _write_images_archive,
+    _require_accepted_submission,
     build_parser,
     create_operator_app,
 )
+from perfect_catalog.importer import CONTRACT_VERSION, RULES_VERSION
 
 
 PLAN_ID = uuid.uuid4()
@@ -48,6 +51,13 @@ class SyntheticReviewGateway:
         self.image_indexes: list[dict[str, Any]] = []
         self.image_candidate_data: list[dict[str, Any]] = []
         self.unlinked_image_data: list[dict[str, Any]] = []
+        self.candidate_refreshes: list[dict[str, Any]] = []
+        self.refresh_inserted = 2
+        self.orphan_profile_data: list[dict[str, Any]] = []
+        self.brand_creation_error = ""
+        self.reference_search_data: list[dict[str, Any]] = []
+        self.reference_searches: list[str] = []
+        self.manual_assignments: list[dict[str, Any]] = []
         self.catalog_exports: list[dict[str, Any]] = []
         self.release_changes: list[dict[str, Any]] = []
         self.visual_identity_records: list[dict[str, Any]] = []
@@ -57,6 +67,8 @@ class SyntheticReviewGateway:
             "display_name": "Perfect Company", "is_active": True, "brand_count": 1,
         }]
         self.company_changes: list[dict[str, Any]] = []
+        self.public_links: dict[str, dict[str, Any]] = {}
+        self.public_generations: dict[str, list[dict[str, Any]]] = {}
         self.import_plan_status = "awaiting_review"
         self.import_plan_update_count = 0
         self.release_data = [{
@@ -72,8 +84,8 @@ class SyntheticReviewGateway:
         self.plan_data = {
             "import_plan_id": str(PLAN_ID),
             "approval_fingerprint_sha256": FINGERPRINT,
-            "contract_version": "contract-test",
-            "rules_version": "rules-test",
+            "contract_version": CONTRACT_VERSION,
+            "rules_version": RULES_VERSION,
             "applied_at": "2026-08-24T00:00:00Z",
             "applied_by": "apply-reviewer",
             "original_name": "muestra <script>alert(1)</script>.xlsx",
@@ -86,6 +98,39 @@ class SyntheticReviewGateway:
 
     def close(self) -> None:
         self.closed = True
+
+    def public_catalog_links(self) -> list[dict[str, Any]]:
+        return sorted(
+            (
+                {**link, "generation_count": len(self.public_generations.get(link_id, []))}
+                for link_id, link in self.public_links.items()
+            ),
+            key=lambda item: item["created_at"], reverse=True,
+        )
+
+    def create_public_catalog_link(self, *, label: str, actor: str) -> dict[str, Any]:
+        link_id = str(uuid.uuid4())
+        token = f"token-{link_id[:8]}"
+        self.public_links[link_id] = {
+            "public_catalog_link_id": link_id, "token": token, "label": label,
+            "created_by_actor": actor, "created_at": "2026-09-01T00:00:00Z",
+            "revoked_at": None, "active": True,
+        }
+        self.public_generations[link_id] = []
+        return {"public_catalog_link_id": link_id, "token": token, "label": label}
+
+    def revoke_public_catalog_link(self, *, link_id: uuid.UUID, actor: str) -> dict[str, Any]:
+        link = self.public_links.get(str(link_id))
+        if link is None or not link["active"]:
+            raise ValueError("El link no existe o ya estaba revocado.")
+        link["active"] = False
+        link["revoked_at"] = "2026-09-02T00:00:00Z"
+        return {"public_catalog_link_id": str(link_id), "label": link["label"]}
+
+    def public_catalog_generations(
+        self, *, link_id: uuid.UUID, limit: int = 50, offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        return self.public_generations.get(str(link_id), [])[offset:offset + limit]
 
     def companies(self) -> list[dict[str, Any]]:
         return self.company_data
@@ -106,8 +151,11 @@ class SyntheticReviewGateway:
         if resource_type == "plan":
             return resource_id == PLAN_ID
         if resource_type == "release":
-            return True
-        if resource_type in {"intake", "image_index", "image_candidate"}:
+            # Antes devolvía True siempre: eso ocultó un bug real donde /deliver vivía
+            # bajo /operator/catalogs/{plan_id} y el middleware lo autorizaba como si
+            # plan_id fuera un release_id, dejando pasar cualquier UUID sin validar nada.
+            return any(item["catalog_release_id"] == str(resource_id) for item in self.release_data)
+        if resource_type in {"intake", "image_index", "image_candidate", "image_entry"}:
             return True
         return resource_type == "identity"
 
@@ -123,8 +171,8 @@ class SyntheticReviewGateway:
         return {
             "plan_id": str(plan_id), "plan_status": self.import_plan_status,
             "plan_sha256": "d" * 64, "approval_fingerprint_sha256": FINGERPRINT,
-            "file_sha256": "e" * 64, "contract_version": "contract-test",
-            "rules_version": "rules-test", "item_count": 1,
+            "file_sha256": "e" * 64, "contract_version": CONTRACT_VERSION,
+            "rules_version": RULES_VERSION, "item_count": 1,
             "brand_profile_code": None, "brand_profile_name": None,
             "create_count": 1, "update_count": self.import_plan_update_count, "no_change_count": 0,
             "inventory_snapshot_count": 0,
@@ -149,6 +197,28 @@ class SyntheticReviewGateway:
         if company_id != COMPANY_ID:
             raise PermissionError("Company incorrecta")
         return [{"brand_id": str(uuid.uuid4()), "code": "NATSUKI", "name": "Natsuki", "is_active": True, "brand_profile_id": None, "linked_profile_code": None, "linked_profile_name": None}]
+
+    def profiles_without_brand(self, *, company_id: uuid.UUID) -> list[dict[str, Any]]:
+        if company_id != COMPANY_ID:
+            raise PermissionError("Company incorrecta")
+        return self.orphan_profile_data
+
+    def create_brand_profile(
+        self, values: dict[str, str], actor: str, reason: str, company_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        if company_id != COMPANY_ID:
+            raise PermissionError("Company incorrecta")
+        profile_id = uuid.uuid4()
+        self.company_changes.append({"action": "brand_profile_create", "code": values["code"], "actor": actor})
+        return {"brand_profile_id": str(profile_id), "code": values["code"]}
+
+    def create_brand_for_profile(self, **kwargs: Any) -> dict[str, Any]:
+        if kwargs["company_id"] != COMPANY_ID:
+            raise PermissionError("Company incorrecta")
+        if self.brand_creation_error:
+            raise ValueError(self.brand_creation_error)
+        self.company_changes.append({"action": "brand_real_create", **kwargs})
+        return {"status": "created"}
 
     def link_brand_profile(self, **kwargs: Any) -> dict[str, Any]:
         self.company_changes.append({"action": "brand_profile_link", **kwargs})
@@ -282,7 +352,10 @@ class SyntheticReviewGateway:
         record["import_plan_id"] = str(PLAN_ID)
         return {
             "status": "promoted",
-            "dry_run": {"plan_id": str(PLAN_ID), "approval_fingerprint_sha256": FINGERPRINT},
+            "dry_run": {
+                "plan_id": str(PLAN_ID), "approval_fingerprint_sha256": FINGERPRINT,
+                "plan_counts": {"create": 1, "update": 0, "no_change": 0},
+            },
         }
 
     def index_image_archive(
@@ -298,13 +371,19 @@ class SyntheticReviewGateway:
             "image_count": 2, "ambiguous_count": 1, "indexed_by": actor,
         })
         self.image_indexes.append({"submission_id": submission_id, "intake_root": intake_root, "actor": actor, "reason": reason})
-        return {"status": "indexed", "image_archive_index_id": record["image_archive_index_id"]}
+        return {
+            "status": "indexed", "image_archive_index_id": record["image_archive_index_id"],
+            "image_count": record["image_count"], "ambiguous_entries": record["ambiguous_count"],
+        }
 
     def generate_image_candidates(
         self, image_archive_index_id: uuid.UUID, actor: str, reason: str,
         company_id: uuid.UUID,
     ) -> dict[str, Any]:
-        if not self.image_candidate_data:
+        if not any(
+            item["image_archive_index_id"] == str(image_archive_index_id)
+            for item in self.image_candidate_data
+        ):
             self.image_candidate_data.append({
                 "image_product_candidate_id": str(uuid.uuid4()), "evidence_sha256": "9" * 64,
                 "confidence": 1, "original_filename": "NK-001.jpg", "member_path": "fotos/NK-001.jpg",
@@ -312,18 +391,29 @@ class SyntheticReviewGateway:
                 "product_name": "Empaque <seguro>", "product_template_id": str(uuid.uuid4()),
                 "product_variant_id": None, "decision": None, "decided_by": None, "decided_at": None,
                 "approved_image_materialization_id": None, "storage_relpath": None,
+                "image_archive_index_id": str(image_archive_index_id),
             })
         return {"status": "generated", "candidate_count": 1, "inserted_count": 1}
 
+    def _image_candidates_scope(self, image_archive_index_id: uuid.UUID | None) -> list[dict[str, Any]]:
+        if image_archive_index_id is None:
+            return self.image_candidate_data
+        return [
+            item for item in self.image_candidate_data
+            if item["image_archive_index_id"] == str(image_archive_index_id)
+        ]
+
     def image_candidates(
         self, *, limit: int = 100, offset: int = 0, company_id: uuid.UUID,
+        image_archive_index_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
-        return {"items": self.image_candidate_data[offset:offset + limit],
-                "filtered_count": len(self.image_candidate_data),
-                "pending_count": sum(item["decision"] is None for item in self.image_candidate_data),
+        scoped = self._image_candidates_scope(image_archive_index_id)
+        return {"items": scoped[offset:offset + limit],
+                "filtered_count": len(scoped),
+                "pending_count": sum(item["decision"] is None for item in scoped),
                 "approved_unmaterialized_count": sum(
                     item["decision"] == "approved" and not item["approved_image_materialization_id"]
-                    for item in self.image_candidate_data
+                    for item in scoped
                 ),
                 "limit": limit, "offset": offset}
 
@@ -345,15 +435,44 @@ class SyntheticReviewGateway:
 
     def decide_image_candidates_bulk(
         self, expected_count: int, decision: str, actor: str, reason: str,
-        company_id: uuid.UUID,
+        company_id: uuid.UUID, image_archive_index_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
-        pending = [item for item in self.image_candidate_data if item["decision"] is None]
+        scoped = self._image_candidates_scope(image_archive_index_id)
+        pending = [item for item in scoped if item["decision"] is None]
         if len(pending) != expected_count:
             raise PermissionError("cantidad pendiente cambió")
         for candidate in pending:
             candidate.update({"decision": decision, "decided_by": actor, "decided_at": "2026-08-27"})
         return {"status": "bulk_approved" if decision == "approved" else "bulk_rejected",
                 "count": expected_count}
+
+    def refresh_image_candidates(
+        self, actor: str, reason: str, company_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        if company_id != COMPANY_ID:
+            raise PermissionError("Company incorrecta")
+        self.candidate_refreshes.append({"actor": actor, "reason": reason})
+        return {"status": "refreshed", "index_count": 1, "inserted_count": self.refresh_inserted}
+
+    def search_product_references(
+        self, query: str, *, company_id: uuid.UUID, limit: int = 8,
+    ) -> list[dict[str, Any]]:
+        if len(query.strip()) < 2:
+            raise ValueError("Escribe al menos 2 caracteres para buscar.")
+        self.reference_searches.append(query)
+        return [item for item in self.reference_search_data if query.lower() in item["reference"].lower()]
+
+    def assign_image_manually(
+        self, entry_id: uuid.UUID, product_reference_id: uuid.UUID, kind: str, actor: str,
+        company_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        if kind not in {"main", "additional"}:
+            raise ValueError("Tipo de foto inválido.")
+        self.manual_assignments.append({
+            "entry_id": str(entry_id), "product_reference_id": str(product_reference_id),
+            "kind": kind, "actor": actor,
+        })
+        return {"status": "assigned"}
 
     def image_candidate_preview(
         self, candidate_id: uuid.UUID, intake_root: Path, company_id: uuid.UUID,
@@ -368,9 +487,10 @@ class SyntheticReviewGateway:
     def materialize_approved_images_bulk(
         self, expected_count: int, intake_root: Path, image_root: Path,
         actor: str, reason: str,
-        company_id: uuid.UUID,
+        company_id: uuid.UUID, image_archive_index_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
-        pending = [item for item in self.image_candidate_data if item["decision"] == "approved" and not item["approved_image_materialization_id"]]
+        scoped = self._image_candidates_scope(image_archive_index_id)
+        pending = [item for item in scoped if item["decision"] == "approved" and not item["approved_image_materialization_id"]]
         if len(pending) != expected_count:
             raise PermissionError("cantidad materializable cambió")
         for candidate in pending:
@@ -458,7 +578,7 @@ class SyntheticReviewGateway:
             "created_at": "2026-08-26T02:00:00Z", "created_by": actor,
             "published_at": None, "published_by": None, "item_count": 1,
         })
-        return {"status": "built", "release_id": str(release_id)}
+        return {"status": "built", "release_id": str(release_id), "snapshot_sha256": "e" * 64}
 
     def publish_catalog_release(
         self, release_id: uuid.UUID, snapshot_sha256: str, actor: str, reason: str,
@@ -626,6 +746,37 @@ class SimpleModeZipNamingTests(unittest.TestCase):
             finally:
                 destination.unlink(missing_ok=True)
 
+    def test_browser_folder_upload_ignores_non_photo_files_instead_of_poisoning_the_zip(self) -> None:
+        import io
+        from starlette.datastructures import UploadFile
+
+        uploads = [
+            UploadFile(file=io.BytesIO(b"foto"), filename="NK-001.jpg"),
+            UploadFile(file=io.BytesIO(b"pdf"), filename="ficha.pdf"),
+            UploadFile(file=io.BytesIO(b"basura"), filename="Thumbs.db"),
+            UploadFile(file=io.BytesIO(b"arte"), filename="logo.ai"),
+            UploadFile(file=io.BytesIO(b"otra"), filename="sub\\NK-002.PNG"),
+        ]
+        with tempfile.TemporaryDirectory() as folder:
+            destination = Path(folder) / "salida.zip"
+            written = _write_images_archive(uploads, destination)
+            with zipfile.ZipFile(destination) as archive:
+                names = set(archive.namelist())
+        self.assertEqual(written, 2)
+        self.assertEqual(names, {"NK-001.jpg", "sub/NK-002.PNG"})
+
+    def test_rejected_submission_explains_why_instead_of_failing_later(self) -> None:
+        _require_accepted_submission({"validation_status": "quarantined"}, "El paquete de fotos")
+        _require_accepted_submission({}, "El paquete de fotos")  # sin estado: no se inventa un rechazo
+        with self.assertRaisesRegex(ValueError, "El paquete de fotos no es válido: El ZIP no contiene imágenes"):
+            _require_accepted_submission(
+                {"validation_status": "rejected",
+                 "validation_report": {"errors": ["El ZIP no contiene imágenes con extensiones admitidas."]}},
+                "El paquete de fotos",
+            )
+        with self.assertRaisesRegex(ValueError, "no pasó la validación"):
+            _require_accepted_submission({"validation_status": "rejected"}, "El Excel de productos")
+
     def test_local_folder_archive_enforces_file_count_limit(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -659,6 +810,32 @@ class OperatorAuthenticatorTests(unittest.TestCase):
         session, cookie = auth.create_session()
         clock[0] += 60
         self.assertIsNone(auth.get_session(cookie))
+
+    def test_launch_ticket_is_single_use_and_expires(self) -> None:
+        clock = [1_000.0]
+        auth = OperatorAuthenticator(
+            "qa-user", "temporary-123", now=lambda: clock[0], pbkdf2_iterations=1,
+        )
+        ticket = auth.issue_launch_ticket()
+        self.assertTrue(auth.consume_launch_ticket(ticket))
+        self.assertFalse(auth.consume_launch_ticket(ticket), "un boleto no se reutiliza")
+        self.assertFalse(auth.consume_launch_ticket("inventado"))
+        self.assertFalse(auth.consume_launch_ticket(None))
+        self.assertFalse(auth.consume_launch_ticket(""))
+        late = auth.issue_launch_ticket()
+        clock[0] += 121
+        self.assertFalse(auth.consume_launch_ticket(late), "vence a los 2 minutos")
+
+    def test_app_sessions_can_last_a_full_workday(self) -> None:
+        clock = [1_000.0]
+        auth = OperatorAuthenticator(
+            "qa-user", "temporary-123", session_ttl_seconds=60, now=lambda: clock[0], pbkdf2_iterations=1,
+        )
+        _, normal = auth.create_session()
+        _, long_lived = auth.create_session(12 * 3600)
+        clock[0] += 3600
+        self.assertIsNone(auth.get_session(normal))
+        self.assertIsNotNone(auth.get_session(long_lived))
 
     def test_company_selection_is_bound_to_existing_signed_session(self) -> None:
         auth = OperatorAuthenticator("qa-user", "temporary-123", pbkdf2_iterations=1)
@@ -824,6 +1001,80 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(deactivated.status_code, 303)
         self.assertFalse(self.gateway.company_changes[-1]["active"])
 
+    async def test_profile_without_real_brand_offers_creating_it_and_records_the_actor(self) -> None:
+        await self.login()
+        profile_id = uuid.uuid4()
+        self.gateway.orphan_profile_data = [
+            {"brand_profile_id": str(profile_id), "code": "KAZE", "display_name": "Kaze"},
+        ]
+        page = await self.client.get("/operator/brands")
+        self.assertIn("Perfiles sin marca real", page.text)
+        self.assertIn("Crear marca real KAZE", page.text)
+        csrf = hidden_value(page.text, "csrf_token")
+        done = await self.client.post(
+            "/operator/brands/create-real",
+            data={"csrf_token": csrf, "brand_profile_id": str(profile_id)},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(done.status_code, 303)
+        self.assertIn("result=brand_created", done.headers["location"])
+        change = self.gateway.company_changes[-1]
+        self.assertEqual(change["action"], "brand_real_create")
+        self.assertEqual(change["actor"], "web-reviewer")
+        self.assertEqual(str(change["brand_profile_id"]), str(profile_id))
+
+    async def test_creating_the_real_brand_shows_the_policy_error_instead_of_failing_silently(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/brands")
+        csrf = hidden_value(page.text, "csrf_token")
+        self.gateway.brand_creation_error = "La marca XYZ no esta autorizada para la Company PERFECT."
+        refused = await self.client.post(
+            "/operator/brands/create-real",
+            data={"csrf_token": csrf, "brand_profile_id": str(uuid.uuid4())},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(refused.status_code, 409)
+        self.assertIn("no esta autorizada", refused.text)
+
+    def _new_brand_form(self, csrf: str) -> dict[str, str]:
+        return {
+            "csrf_token": csrf, "code": "KAZE", "display_name": "Kaze", "tagline": "",
+            "primary_color": "#1F2937", "secondary_color": "#374151", "ink_color": "#111827",
+            "paper_color": "#FFFFFF", "public_base_url": "", "reason": "Alta de la marca Kaze", "confirm": "yes",
+        }
+
+    async def test_adding_a_brand_creates_the_profile_and_the_real_brand_in_one_step(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/brands")
+        csrf = hidden_value(page.text, "csrf_token")
+        done = await self.client.post(
+            "/operator/brands", data=self._new_brand_form(csrf), headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(done.status_code, 303)
+        actions = [change["action"] for change in self.gateway.company_changes]
+        self.assertEqual(actions[-2:], ["brand_profile_create", "brand_real_create"])
+        self.assertEqual(self.gateway.company_changes[-1]["actor"], "web-reviewer")
+        shown = await self.client.get(done.headers["location"])
+        self.assertIn("perfil visual y marca real vinculados", shown.text)
+
+    async def test_when_the_real_brand_fails_the_profile_is_kept_and_the_user_is_told_how_to_retry(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/brands")
+        csrf = hidden_value(page.text, "csrf_token")
+        self.gateway.brand_creation_error = "Ya existe una marca con el codigo KAZE."
+        failed = await self.client.post(
+            "/operator/brands", data=self._new_brand_form(csrf), headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(failed.status_code, 409)
+        self.assertIn("El perfil quedó guardado", failed.text)
+        self.assertIn("Ya existe una marca con el codigo KAZE.", failed.text)
+        self.assertEqual(self.gateway.company_changes[-1]["action"], "brand_profile_create")
+
+    async def test_brands_page_hides_the_orphan_section_when_every_profile_has_a_brand(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/brands")
+        self.assertNotIn("Perfiles sin marca real", page.text)
+
     async def test_brands_page_offers_linking_unlinked_brand_to_a_profile(self) -> None:
         await self.login()
         page = await self.client.get("/operator/brands")
@@ -898,7 +1149,94 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(self.gateway.image_candidate_data[0]["approved_image_materialization_id"])
         landing = await self.client.get(location)
         self.assertEqual(landing.status_code, 200)
-        self.assertIn("1 foto vinculada automáticamente", landing.text)
+        self.assertIn("Actualización procesada", landing.text)
+        self.assertIn("2 fotos indexadas", landing.text)
+        self.assertIn("1 vinculada automáticamente", landing.text)
+
+    async def test_simple_mode_never_auto_approves_pending_photos_from_an_earlier_upload(self) -> None:
+        # Bug real: la auto-aprobación de "modo simple" contaba y decidía TODO lo
+        # pendiente de la compañía, no solo lo generado por esta carga — una foto
+        # ambigua/sin revisar de una carga anterior quedaba aprobada y materializada
+        # de un tirón sin que nadie la revisara.
+        await self.login()
+        old_index_id = str(uuid.uuid4())
+        self.gateway.image_candidate_data.append({
+            "image_product_candidate_id": str(uuid.uuid4()), "evidence_sha256": "1" * 64,
+            "confidence": 1, "original_filename": "OLD-001.jpg", "member_path": "fotos/OLD-001.jpg",
+            "lookup_key": "OLD-001", "content_sha256": "2" * 64, "reference": "OLD-001",
+            "product_name": "Pieza vieja", "product_template_id": str(uuid.uuid4()),
+            "product_variant_id": None, "decision": None, "decided_by": None, "decided_at": None,
+            "approved_image_materialization_id": None, "storage_relpath": None,
+            "image_archive_index_id": old_index_id,
+        })
+        page = await self.client.get("/operator/simple")
+        csrf = hidden_value(page.text, "csrf_token")
+        response = await self.client.post(
+            "/operator/simple",
+            data={
+                "csrf_token": csrf, "brand_code": "NATSUKI",
+                "reason": "Carga guiada de prueba", "confirm": "yes",
+            },
+            files=[
+                ("odoo_file", ("productos.csv", b"ref,name\nA,B\n", "text/csv")),
+                ("images", ("NK-001.jpg", b"contenido-de-prueba", "image/jpeg")),
+            ],
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 303)
+        old_candidate = next(
+            item for item in self.gateway.image_candidate_data
+            if item["image_archive_index_id"] == old_index_id
+        )
+        self.assertIsNone(old_candidate["decision"])
+        self.assertIsNone(old_candidate["approved_image_materialization_id"])
+        new_candidate = next(
+            item for item in self.gateway.image_candidate_data
+            if item["image_archive_index_id"] != old_index_id
+        )
+        self.assertEqual(new_candidate["decision"], "approved")
+        self.assertIsNotNone(new_candidate["approved_image_materialization_id"])
+
+    async def test_simple_mode_summary_links_to_the_update_diff_detail(self) -> None:
+        # Antes no había forma de ver QUÉ cambió en las referencias que ya existían
+        # (solo el conteo) — ahora el resumen enlaza a la vista de diffs que ya
+        # existía en /operator/import-plans/{plan_id}.
+        await self.login()
+        page = await self.client.get(
+            f"/operator/plans/{PLAN_ID}",
+            params={"result": "simple_mode", "updated": "2", "created": "0", "unchanged": "1"},
+        )
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(f"/operator/import-plans/{PLAN_ID}", page.text)
+        self.assertIn("2 actualizaciones", page.text)
+
+    async def test_simple_mode_summary_has_no_diff_link_when_nothing_was_updated(self) -> None:
+        await self.login()
+        page = await self.client.get(
+            f"/operator/plans/{PLAN_ID}",
+            params={"result": "simple_mode", "updated": "0", "created": "1", "unchanged": "0"},
+        )
+        self.assertEqual(page.status_code, 200)
+        self.assertNotIn(f"/operator/import-plans/{PLAN_ID}", page.text)
+
+    async def test_simple_mode_does_not_require_typing_a_reason(self) -> None:
+        # Cargar es el camino rutinario: la persona no escribe un motivo, pero la
+        # cadena de pasos (submit, promote, prepare, index, match) sigue auditada.
+        await self.login()
+        page = await self.client.get("/operator/simple")
+        self.assertNotIn("Motivo auditable", page.text)
+        self.assertNotIn('name="reason"', page.text)
+        csrf = hidden_value(page.text, "csrf_token")
+        response = await self.client.post(
+            "/operator/simple",
+            data={"csrf_token": csrf, "brand_code": "NATSUKI", "confirm": "yes"},
+            files=[
+                ("odoo_file", ("productos.csv", b"ref,name\nA,B\n", "text/csv")),
+                ("images", ("NK-001.jpg", b"contenido-de-prueba", "image/jpeg")),
+            ],
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 303)
 
     async def test_simple_mode_reads_images_from_a_local_server_folder(self) -> None:
         await self.login()
@@ -968,12 +1306,29 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         intake = await self.client.post(f"/operator/intake/{foreign_id}/index-images")
         image_index = await self.client.post(f"/operator/images/index/{foreign_id}/candidates")
         image_candidate_preview = await self.client.get(f"/operator/images/candidates/{foreign_id}/preview")
+        # Bug real de la auditoría: el regex solo reconocía images/(index|candidates),
+        # no images/entries — esta ruta quedaba sin el chequeo de compañía activa (aunque
+        # resolve_image_entry_preview ya filtraba por company_id en su propio SQL).
+        image_entry_preview = await self.client.get(f"/operator/images/entries/{foreign_id}/preview")
         self.assertEqual(plan.status_code, 404)
         self.assertEqual(release.status_code, 404)
         self.assertEqual(intake.status_code, 404)
         self.assertEqual(image_index.status_code, 404)
         self.assertEqual(image_candidate_preview.status_code, 404)
+        self.assertEqual(image_entry_preview.status_code, 404)
         self.assertIn("empresa activa", plan.text)
+
+    async def test_import_plan_routes_are_also_guarded_by_the_active_company(self) -> None:
+        # Bug real: el regex del middleware solo reconocía el prefijo "plans", no
+        # "import-plans" — /operator/import-plans/{plan_id} (ver e importar) quedaba
+        # sin el chequeo de compañía activa, aunque /operator/plans/{plan_id} sí lo tuviera.
+        await self.login()
+        self.gateway.authorize_company_resource = lambda *_: False
+        detail = await self.client.get(f"/operator/import-plans/{PLAN_ID}")
+        prepare = await self.client.post(f"/operator/import-plans/{PLAN_ID}/prepare")
+        self.assertEqual(detail.status_code, 404)
+        self.assertEqual(prepare.status_code, 404)
+        self.assertIn("empresa activa", detail.text)
 
     async def test_login_challenge_cookie_scope_and_missing_cookie_diagnostic(self) -> None:
         login_page = await self.client.get("/operator/login")
@@ -1022,6 +1377,65 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(REVIEW_SHA256, queue.text)
         self.assertNotIn("<script>incorrecto</script>", queue.text)
 
+    async def test_guided_mode_requires_login_and_shows_the_next_step(self) -> None:
+        anonymous = await self.client.get("/operator/guiado")
+        self.assertEqual(anonymous.status_code, 303)
+        await self.login()
+        guided = await self.client.get("/operator/guiado")
+        self.assertEqual(guided.status_code, 200)
+        self.assertIn("Tu catálogo, en tres pasos", guided.text)
+        self.assertIn('aria-current="step"', guided.text)
+        self.assertIn('href="/operator"', guided.text)  # salida al panel completo
+
+    async def test_desktop_app_logs_in_with_a_single_use_ticket_and_a_workday_cookie(self) -> None:
+        ticket = self.auth.issue_launch_ticket()
+        entered = await self.client.get("/operator/app-login", params={"ticket": ticket})
+        self.assertEqual(entered.status_code, 303)
+        self.assertEqual(entered.headers["location"], "/operator")
+        cookie = entered.headers["set-cookie"]
+        self.assertIn("pc_operator_session=", cookie)
+        self.assertIn(f"Max-Age={12 * 60 * 60}", cookie)
+        self.assertIn("HttpOnly", cookie)
+        dashboard = await self.client.get("/operator")
+        self.assertEqual(dashboard.status_code, 200)
+        # El mismo boleto no sirve dos veces: vuelve al login normal.
+        self.client.cookies.clear()
+        reused = await self.client.get("/operator/app-login", params={"ticket": ticket})
+        self.assertEqual(reused.status_code, 303)
+        self.assertEqual(reused.headers["location"], "/operator/login")
+        self.assertNotIn("pc_operator_session=", reused.headers.get("set-cookie", ""))
+
+    async def test_app_login_without_or_with_a_wrong_ticket_never_creates_a_session(self) -> None:
+        for params in ({}, {"ticket": "inventado"}, {"ticket": ""}):
+            denied = await self.client.get("/operator/app-login", params=params)
+            self.assertEqual(denied.status_code, 303)
+            self.assertEqual(denied.headers["location"], "/operator/login")
+        self.assertEqual((await self.client.get("/operator")).headers["location"], "/operator/login")
+
+    async def test_view_toggle_is_offered_and_defaults_do_not_hide_anything(self) -> None:
+        await self.login()
+        dashboard = await self.client.get("/operator")
+        self.assertIn('id="view-toggle"', dashboard.text)
+        self.assertIn("/operator/static/view-mode.js", dashboard.text)
+        # La vista completa es la de siempre: el panel de administración sigue en el HTML.
+        self.assertIn('href="/operator/admin"', dashboard.text)
+        script = await self.client.get("/operator/static/view-mode.js")
+        self.assertEqual(script.status_code, 200)
+        self.assertIn("pc_view", script.text)
+
+    async def test_simple_mode_explanation_is_collapsed_but_still_present(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/simple")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn('<details class="how-it-works">', page.text)
+        self.assertIn("Qué hace este modo automáticamente", page.text)
+
+    async def test_dashboard_links_to_guided_mode_without_losing_the_upload_cta(self) -> None:
+        await self.login()
+        dashboard = await self.client.get("/operator")
+        self.assertIn('href="/operator/guiado"', dashboard.text)
+        self.assertIn("Cargar catálogo nuevo", dashboard.text)
+
     async def test_dashboard_guides_resolved_plan_to_catalog_design(self) -> None:
         await self.login()
         self.gateway.plan_data.update({
@@ -1032,6 +1446,37 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Construir la siguiente versión", dashboard.text)
         self.assertIn('href="/operator/catalogs"', dashboard.text)
         self.assertIn("Diseñar catálogo", dashboard.text)
+
+    async def test_dashboard_offers_a_direct_way_to_start_a_new_upload(self) -> None:
+        # Antes del rediseño no existía ningún link de vuelta a "cargar" desde el
+        # dashboard una vez resuelta la revisión; ahora es la acción principal.
+        await self.login()
+        dashboard = await self.client.get("/operator")
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertIn("Cargar catálogo nuevo", dashboard.text)
+        self.assertIn('href="/operator/simple"', dashboard.text)
+
+    async def test_review_nav_redirects_to_the_most_relevant_pending_plan(self) -> None:
+        await self.login()
+        redirected = await self.client.get("/operator/review")
+        self.assertEqual(redirected.status_code, 303)
+        self.assertEqual(redirected.headers["location"], f"/operator/plans/{PLAN_ID}?state=pending")
+
+    async def test_review_nav_falls_back_to_home_when_nothing_is_pending(self) -> None:
+        await self.login()
+        self.gateway.plan_data.update({"pending_count": 0, "approved_count": 1})
+        redirected = await self.client.get("/operator/review")
+        self.assertEqual(redirected.status_code, 303)
+        self.assertEqual(redirected.headers["location"], "/operator")
+
+    async def test_admin_index_links_to_maintenance_screens_with_live_counts(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/admin")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn('href="/operator/intake"', page.text)
+        self.assertIn('href="/operator/images"', page.text)
+        self.assertIn('href="/operator/brands"', page.text)
+        self.assertIn('href="/operator/public-links"', page.text)
 
     async def test_dashboard_failure_has_safe_correlated_diagnostic(self) -> None:
         await self.login()
@@ -1139,6 +1584,110 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["location"], "/operator/catalogs?result=created")
         self.assertEqual(self.gateway.catalog_exports[0]["formats"], ("html-standalone",))
         self.assertEqual(self.gateway.catalog_exports[0]["config"]["group_by"], "category_path")
+
+    async def test_stale_plan_version_is_excluded_from_entregar_and_explained(self) -> None:
+        # Un plan aplicado bajo una versión anterior de CONTRACT_VERSION/RULES_VERSION
+        # siempre falla verify_plan_integrity al entregar ("Las versiones del plan no
+        # coinciden con el código actual"). Antes se listaba igual que un plan vigente,
+        # sin fecha ni versión visibles, así que era indistinguible y fácil de intentar
+        # entregar por error. Ahora debe quedar fuera de "Entregar catálogo" y explicado.
+        await self.login()
+        self.gateway.plan_data.update({
+            "pending_count": 0, "inconsistent_count": 0, "approved_count": 1,
+            "brand_profile_code": "NATSUKI", "contract_version": "perfect-catalog-v0.1",
+        })
+        page = await self.client.get("/operator/catalogs")
+        self.assertNotIn("Entregar catálogo", page.text)
+        self.assertIn("no se puede", page.text)
+        self.assertIn("versión anterior del sistema", page.text)
+
+    async def test_deliver_catalog_chains_build_publish_export_and_preview_is_byte_exact(self) -> None:
+        await self.login()
+        self.gateway.plan_data.update({
+            "pending_count": 0, "inconsistent_count": 0, "approved_count": 1,
+            "brand_profile_code": "NATSUKI",
+        })
+        page = await self.client.get("/operator/catalogs")
+        self.assertIn("Entregar catálogo", page.text)
+        csrf = hidden_value(page.text, "csrf_token")
+        deliver_data = {
+            "csrf_token": csrf, "fingerprint": FINGERPRINT, "brand": "NATSUKI",
+            "version": "2026.09", "title": "Catálogo 2026.09", "subtitle": "",
+            "confirm": "yes",
+        }
+        rejected = await self.client.post(
+            f"/operator/plans/{PLAN_ID}/deliver",
+            data={**deliver_data, "csrf_token": "wrong"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(rejected.status_code, 403)
+        response = await self.client.post(
+            f"/operator/plans/{PLAN_ID}/deliver", data=deliver_data,
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 303)
+        location = response.headers["location"]
+        self.assertIn("/delivered?filename=", location)
+        self.assertEqual(self.gateway.release_changes[-2]["operation"], "build")
+        self.assertEqual(self.gateway.release_changes[-1]["operation"], "publish")
+        self.assertEqual(self.gateway.catalog_exports[-1]["formats"], ("html-standalone",))
+
+        delivered = await self.client.get(location)
+        self.assertEqual(delivered.status_code, 200)
+        self.assertIn("Tu catálogo está listo", delivered.text)
+        # La página que contiene el iframe debe poder cargarlo (mismo origen), a
+        # diferencia de la política por defecto (frame-src cae en default-src 'none').
+        self.assertIn("frame-src 'self'", delivered.headers["content-security-policy"])
+        view_match = re.search(r'src="([^"]+/view)"', delivered.text)
+        self.assertIsNotNone(view_match)
+        view_url = view_match.group(1)
+
+        preview = await self.client.get(view_url)
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.headers["content-type"].split(";")[0], "text/html")
+        # El archivo exportado no debe rechazar ser incrustado (bug real: X-Frame-Options
+        # DENY + CSP por defecto bloqueaban el iframe aunque los bytes fueran correctos).
+        self.assertNotEqual(preview.headers.get("x-frame-options"), "DENY")
+        preview_csp = preview.headers["content-security-policy"]
+        self.assertIn("frame-ancestors 'self'", preview_csp)
+        self.assertIn("'unsafe-inline'", preview_csp)
+        self.assertIn("img-src data:", preview_csp)
+
+        path, _, query = location.partition("?")
+        filename = query.removeprefix("filename=")
+        download_url = path.replace("/delivered", f"/{filename}")
+        download = await self.client.get(download_url)
+        self.assertEqual(download.status_code, 200)
+        # La vista previa (iframe) y la descarga deben ser exactamente el mismo archivo.
+        self.assertEqual(preview.content, download.content)
+
+    async def test_deliver_catalog_handles_a_missing_html_standalone_file_gracefully(self) -> None:
+        # Hallazgo de la auditoría: si export_catalog alguna vez no trae el archivo
+        # "html-standalone" esperado, buscar con next() sin default lanzaba un
+        # StopIteration sin capturar (500 crudo) en vez del 409 controlado del resto
+        # de la función.
+        await self.login()
+        self.gateway.plan_data.update({
+            "pending_count": 0, "inconsistent_count": 0, "approved_count": 1,
+            "brand_profile_code": "NATSUKI",
+        })
+        original_export_catalog = self.gateway.export_catalog
+        self.gateway.export_catalog = lambda *args, **kwargs: {
+            **original_export_catalog(*args, **kwargs), "files": [],
+        }
+        page = await self.client.get("/operator/catalogs")
+        csrf = hidden_value(page.text, "csrf_token")
+        response = await self.client.post(
+            f"/operator/plans/{PLAN_ID}/deliver",
+            data={
+                "csrf_token": csrf, "fingerprint": FINGERPRINT, "brand": "NATSUKI",
+                "version": "2026.11", "title": "Catálogo 2026.11", "subtitle": "",
+                "confirm": "yes",
+            },
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("HTML autónomo esperado", response.text)
 
     async def test_catalog_workspace_exports_and_downloads_manifest_files(self) -> None:
         await self.login()
@@ -1257,6 +1806,15 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         await self.login()
         release, items = fixture_release()
         export_id = uuid.uuid4()
+        # Este release se escribe directo en disco (sin pasar por el gateway), así que
+        # no está en release_data; se autoriza puntualmente para esta prueba.
+        original_authorize = self.gateway.authorize_company_resource
+        release_id_text = str(release["catalog_release_id"])
+        self.gateway.authorize_company_resource = (
+            lambda company_id, resource_type, resource_id: True
+            if resource_type == "release" and str(resource_id) == release_id_text
+            else original_authorize(company_id, resource_type, resource_id)
+        )
         output_root = Path(self.temporary.name) / "catalogs"
         build_catalog_bundle(
             release, items,
@@ -1519,6 +2077,100 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
             "Nombre y referencia verificados",
         )
 
+    async def test_approving_a_product_needs_no_typed_reason_but_stays_audited(self) -> None:
+        # Aprobar es el camino rutinario: la persona no escribe nada, pero la fila
+        # igual queda auditada con un motivo automático.
+        await self.login()
+        queue = await self.client.get(f"/operator/plans/{PLAN_ID}?state=pending")
+        self.assertNotIn('name="reason"', queue.text.split('data-decision="approve"')[1].split("</form>")[0])
+        csrf = hidden_value(queue.text, "csrf_token")
+        response = await self.client.post(
+            f"/operator/plans/{PLAN_ID}/products/{PRODUCT_ID}/decision",
+            data={
+                "csrf_token": csrf, "fingerprint": FINGERPRINT, "review_sha256": REVIEW_SHA256,
+                "decision": "approve", "confirm": "yes",
+            },
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(len(self.gateway.decisions), 1)
+        self.assertTrue(self.gateway.decisions[0]["reason"])
+
+    async def test_decision_with_invalid_value_is_rejected_clearly_not_as_a_missing_reason(self) -> None:
+        # Bug real encontrado en revisión: antes, decision="" (o cualquier valor que no
+        # fuera "approve") caía en la rama de rechazo y reportaba "falta el motivo" en
+        # vez de señalar que decision es inválida.
+        await self.login()
+        queue = await self.client.get(f"/operator/plans/{PLAN_ID}?state=pending")
+        csrf = hidden_value(queue.text, "csrf_token")
+        response = await self.client.post(
+            f"/operator/plans/{PLAN_ID}/products/{PRODUCT_ID}/decision",
+            data={
+                "csrf_token": csrf, "fingerprint": FINGERPRINT, "review_sha256": REVIEW_SHA256,
+                "decision": "maybe", "confirm": "yes",
+            },
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("decision debe ser", response.text)
+        self.assertEqual(self.gateway.decisions, [])
+
+    async def test_rejecting_a_product_still_requires_a_typed_reason(self) -> None:
+        await self.login()
+        queue = await self.client.get(f"/operator/plans/{PLAN_ID}?state=pending")
+        csrf = hidden_value(queue.text, "csrf_token")
+        response = await self.client.post(
+            f"/operator/plans/{PLAN_ID}/products/{PRODUCT_ID}/decision",
+            data={
+                "csrf_token": csrf, "fingerprint": FINGERPRINT, "review_sha256": REVIEW_SHA256,
+                "decision": "reject", "confirm": "yes",
+            },
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(self.gateway.decisions, [])
+
+    async def test_bulk_approve_needs_no_reason_but_bulk_reject_still_does(self) -> None:
+        await self.login()
+        page = await self.client.get(f"/operator/plans/{PLAN_ID}?state=pending&q=ABC")
+        csrf = hidden_value(page.text, "csrf_token")
+        base = {"csrf_token": csrf, "fingerprint": FINGERPRINT, "query": "ABC", "expected_count": "1"}
+        approved = await self.client.post(
+            f"/operator/plans/{PLAN_ID}/bulk-decision",
+            data={**base, "decision": "approve", "confirm": "approve"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(approved.status_code, 303)
+        self.assertTrue(self.gateway.bulk_decisions[-1]["reason"])
+        rejected_without_reason = await self.client.post(
+            f"/operator/plans/{PLAN_ID}/bulk-decision",
+            data={**base, "decision": "reject", "confirm": "reject"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(rejected_without_reason.status_code, 409)
+
+    async def test_delivering_a_catalog_needs_no_typed_reason(self) -> None:
+        await self.login()
+        self.gateway.plan_data.update({
+            "pending_count": 0, "inconsistent_count": 0, "approved_count": 1,
+            "brand_profile_code": "NATSUKI",
+        })
+        page = await self.client.get("/operator/catalogs")
+        deliver_section = page.text.split('id="deliver-title"')[1].split("</section>")[0]
+        self.assertNotIn("Motivo auditable", deliver_section)
+        self.assertNotIn("name=\"reason\"", deliver_section)
+        csrf = hidden_value(page.text, "csrf_token")
+        response = await self.client.post(
+            f"/operator/plans/{PLAN_ID}/deliver",
+            data={
+                "csrf_token": csrf, "fingerprint": FINGERPRINT, "brand": "NATSUKI",
+                "version": "2026.10", "title": "Catálogo 2026.10", "subtitle": "",
+                "confirm": "yes",
+            },
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(response.status_code, 303)
+
     async def test_get_never_exposes_a_decision_route(self) -> None:
         await self.login()
         response = await self.client.get(
@@ -1751,6 +2403,128 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         missing = await self.client.get(f"/operator/images/entries/{uuid.uuid4()}/preview")
         self.assertEqual(missing.status_code, 404)
 
+    async def test_images_page_lets_the_user_search_matches_again_after_approving_new_products(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/images")
+        self.assertIn("Buscar coincidencias de nuevo", page.text)
+        csrf = hidden_value(page.text, "csrf_token")
+        done = await self.client.post(
+            "/operator/images/refresh-candidates", data={"csrf_token": csrf},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(done.status_code, 303)
+        self.assertIn("result=candidates_refreshed", done.headers["location"])
+        self.assertEqual(self.gateway.candidate_refreshes[0]["actor"], "web-reviewer")
+        shown = await self.client.get(done.headers["location"])
+        self.assertIn("Encontré coincidencias nuevas", shown.text)
+
+    async def test_refreshing_matches_explains_what_to_check_when_nothing_new_is_found(self) -> None:
+        await self.login()
+        self.gateway.refresh_inserted = 0
+        page = await self.client.get("/operator/images")
+        csrf = hidden_value(page.text, "csrf_token")
+        done = await self.client.post(
+            "/operator/images/refresh-candidates", data={"csrf_token": csrf},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertIn("result=candidates_unchanged", done.headers["location"])
+        shown = await self.client.get(done.headers["location"])
+        self.assertIn("confirma que los productos ya estén aprobados", shown.text)
+
+    async def test_refreshing_matches_rejects_bad_csrf_and_extra_fields(self) -> None:
+        await self.login()
+        bad = await self.client.post(
+            "/operator/images/refresh-candidates", data={"csrf_token": "wrong"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertNotEqual(bad.status_code, 303)
+        extra = await self.client.post(
+            "/operator/images/refresh-candidates", data={"csrf_token": "x", "company": "otra"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(extra.status_code, 409)
+        self.assertEqual(self.gateway.candidate_refreshes, [])
+
+    async def _manual_selection_setup(self) -> tuple[uuid.UUID, uuid.UUID]:
+        await self.login()
+        entry_id, reference_id = uuid.uuid4(), uuid.uuid4()
+        self.gateway.unlinked_image_data = [
+            {"image_archive_entry_id": str(entry_id), "original_filename": "REF-999.jpg",
+             "lookup_key": "REF-999", "match_status": "unmatched", "conflict_count": 1,
+             "content_sha256": "c" * 64, "indexed_at": "2026-09-04T00:00:00+00:00"},
+        ]
+        self.gateway.reference_search_data = [
+            {"product_reference_id": str(reference_id), "reference": "CKT-507AU",
+             "product_name": "Empaque <seguro>", "has_main_photo": False},
+            {"product_reference_id": str(uuid.uuid4()), "reference": "CKT-507BU",
+             "product_name": "Otro", "has_main_photo": True},
+        ]
+        return entry_id, reference_id
+
+    async def test_unlinked_photo_offers_a_product_search_and_lists_results(self) -> None:
+        entry_id, reference_id = await self._manual_selection_setup()
+        plain = await self.client.get("/operator/images")
+        self.assertIn("¿De qué producto es esta foto?", plain.text)
+        self.assertNotIn("Asignar", plain.text)
+        found = await self.client.get("/operator/images", params={"find": str(entry_id), "q": "CKT-507"})
+        self.assertEqual(found.status_code, 200)
+        self.assertEqual(self.gateway.reference_searches, ["CKT-507"])
+        self.assertIn("CKT-507AU", found.text)
+        self.assertIn("Empaque &lt;seguro&gt;", found.text)  # escapado, no HTML crudo
+        self.assertIn("ya tiene foto principal", found.text)
+        self.assertIn(f'action="/operator/images/entries/{entry_id}/assign"', found.text)
+        self.assertIn(str(reference_id), found.text)
+
+    async def test_search_with_too_short_text_shows_an_inline_error_not_a_failed_page(self) -> None:
+        entry_id, _ = await self._manual_selection_setup()
+        found = await self.client.get("/operator/images", params={"find": str(entry_id), "q": "x"})
+        self.assertEqual(found.status_code, 200)
+        self.assertIn("al menos 2 caracteres", found.text)
+
+    async def test_assigning_a_photo_records_the_logged_in_actor_and_redirects(self) -> None:
+        entry_id, reference_id = await self._manual_selection_setup()
+        found = await self.client.get("/operator/images", params={"find": str(entry_id), "q": "CKT-507"})
+        csrf = hidden_value(found.text, "csrf_token")
+        done = await self.client.post(
+            f"/operator/images/entries/{entry_id}/assign",
+            data={"csrf_token": csrf, "product_reference_id": str(reference_id), "kind": "main"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(done.status_code, 303)
+        self.assertIn("result=photo_assigned", done.headers["location"])
+        self.assertEqual(self.gateway.manual_assignments[0]["actor"], "web-reviewer")
+        self.assertEqual(self.gateway.manual_assignments[0]["kind"], "main")
+        page = await self.client.get(done.headers["location"])
+        self.assertIn("Foto asignada al producto", page.text)
+
+    async def test_assigning_a_photo_rejects_bad_csrf_extra_fields_and_anonymous_users(self) -> None:
+        entry_id, reference_id = await self._manual_selection_setup()
+        body = {"product_reference_id": str(reference_id), "kind": "main"}
+        bad_csrf = await self.client.post(
+            f"/operator/images/entries/{entry_id}/assign", data={"csrf_token": "wrong", **body},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertNotEqual(bad_csrf.status_code, 303)
+        extra = await self.client.post(
+            f"/operator/images/entries/{entry_id}/assign",
+            data={"csrf_token": "x", "reason": "no permitido", **body},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(extra.status_code, 409)
+        self.assertEqual(self.gateway.manual_assignments, [])
+        anonymous = httpx.AsyncClient(
+            transport=self.client._transport, base_url="http://testserver", follow_redirects=False,
+        )
+        try:
+            denied = await anonymous.post(
+                f"/operator/images/entries/{entry_id}/assign", data={"csrf_token": "x", **body},
+                headers={"Origin": "http://testserver"},
+            )
+        finally:
+            await anonymous.aclose()
+        self.assertEqual(denied.status_code, 303)
+        self.assertEqual(self.gateway.manual_assignments, [])
+
     async def test_image_candidate_generation_shows_a_previewable_thumbnail(self) -> None:
         await self.login()
         page = await self.client.get("/operator/images")
@@ -1894,6 +2668,28 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         invalid_filter = await self.client.get("/operator/intake?kind=executable")
         self.assertEqual(invalid_filter.status_code, 400)
 
+    async def test_rejected_intake_shows_the_validator_reason_escaped(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/intake")
+        csrf = hidden_value(page.text, "csrf_token")
+        rejected = await self.client.post(
+            "/operator/intake",
+            data={"csrf_token": csrf, "kind": "manual_pdf", "reason": "Manual con problema", "confirm": "yes"},
+            files={"file": ("manual.pdf", b"not-pdf", "application/pdf")},
+            headers={"Origin": "http://testserver"},
+        )
+        self.gateway.intake_records[-1]["validation_report"] = {"errors": ["El ZIP contiene archivos no admitidos: ficha.pdf"]}
+        location = rejected.headers["location"]
+        self.assertIn("result=rejected", location)
+        # El motivo viaja en la redirección solo si el validador lo informó.
+        shown = await self.client.get("/operator/intake?result=rejected&detail=%3Cb%3Ex%3C%2Fb%3E+ficha.pdf")
+        self.assertIn("Archivo rechazado por el validador.", shown.text)
+        self.assertIn("Motivo: &lt;b&gt;x&lt;/b&gt; ficha.pdf", shown.text)
+        self.assertNotIn("<b>x</b>", shown.text)
+        # Sin detalle, el mensaje de siempre, sin "Motivo:" vacío.
+        plain = await self.client.get("/operator/intake?result=rejected")
+        self.assertNotIn("Motivo:", plain.text.split("Archivo rechazado")[1][:120])
+
     async def test_intake_submission_can_be_archived_and_restored_without_deleting_evidence(self) -> None:
         await self.login()
         page = await self.client.get("/operator/intake")
@@ -1945,6 +2741,67 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.gateway.intake_records[0]["archived"])
         visible_again = await self.client.get("/operator/intake")
         self.assertIn("manual-viejo.pdf", visible_again.text)
+
+    async def test_public_link_lifecycle_create_list_revoke_and_history(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/public-links")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("Todavía no has creado ningún link", page.text)
+        csrf = hidden_value(page.text, "csrf_token")
+
+        created = await self.client.post(
+            "/operator/public-links",
+            data={"csrf_token": csrf, "label": "Repuestos Andina"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(created.status_code, 200)
+        self.assertIn("Repuestos Andina", created.text)
+        # El link debe apuntar al generador público (proceso y puerto aparte), nunca al
+        # host/puerto propio del operador desde el que se creó (bug real: usaba request.base_url).
+        self.assertIn("http://127.0.0.1:8082/generar?ref=", created.text)
+        self.assertNotIn("http://testserver/generar", created.text)
+        link_id = next(iter(self.gateway.public_links))
+        token = self.gateway.public_links[link_id]["token"]
+        self.assertIn(token, created.text)
+
+        rejected = await self.client.post(
+            "/operator/public-links",
+            data={"csrf_token": "wrong", "label": "Otro"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(rejected.status_code, 403)
+
+        listing = await self.client.get("/operator/public-links")
+        self.assertIn("Repuestos Andina", listing.text)
+        self.assertIn("Activo", listing.text)
+        self.assertNotIn(token, listing.text)  # el token completo solo se muestra una vez, al crearlo
+        list_csrf = hidden_value(listing.text, "csrf_token")
+
+        self.gateway.public_generations[link_id].append({
+            "declared_name": "Juan Pérez", "product_count": 3, "matched_image_count": 2,
+            "unmatched_image_count": 1, "ambiguous_image_count": 0,
+            "excel_sha256": "a" * 64, "generated_at": "2026-09-03T00:00:00Z",
+        })
+        detail = await self.client.get(f"/operator/public-links/{link_id}")
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn("Juan Pérez", detail.text)
+        self.assertIn("3 producto", detail.text)
+
+        revoked = await self.client.post(
+            "/operator/public-links/revoke",
+            data={"csrf_token": list_csrf, "link_id": link_id},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(revoked.status_code, 303)
+        self.assertIn("result=revoked", revoked.headers["location"])
+        self.assertFalse(self.gateway.public_links[link_id]["active"])
+
+        double_revoke = await self.client.post(
+            "/operator/public-links/revoke",
+            data={"csrf_token": list_csrf, "link_id": link_id},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(double_revoke.status_code, 409)
 
 
 if __name__ == "__main__":
