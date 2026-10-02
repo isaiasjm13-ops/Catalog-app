@@ -62,10 +62,10 @@
 {% if unlinked_entries["items"] %}
 <section class="transition-panel unlinked-image-panel">
   <h2>Fotos sin asociar o ambiguas · {{ unlinked_entries.filtered_count }}</h2>
-  <p>Ningún archivo se pierde: estas fotos quedaron en cuarentena sin coincidencia exacta, o dos archivos del mismo ZIP tienen el mismo nombre normalizado. No se aprueban ni se rechazan aquí; revísalas y vuelve a subir con el nombre correcto si hace falta.</p>
+  <p>Ningún archivo se pierde: estas fotos quedaron en cuarentena sin coincidencia exacta, o dos archivos del mismo ZIP tienen el mismo nombre normalizado. Elige tú de qué producto es cada una con el buscador, o vuelve a subirla con el nombre correcto.</p>
   <div class="image-candidate-list">
     {% for entry in unlinked_entries["items"] %}
-    <article class="image-candidate-card unlinked-entry-card">
+    <article class="image-candidate-card unlinked-entry-card" id="e-{{ entry.image_archive_entry_id }}">
       <div class="candidate-file">
         <img class="candidate-placeholder" src="/operator/images/entries/{{ entry.image_archive_entry_id }}/preview" alt="Miniatura de {{ entry.original_filename }}" loading="lazy">
         <span class="row-label">Archivo indexado</span>
@@ -74,10 +74,43 @@
         <small>Clave: {{ entry.lookup_key }}</small>
       </div>
       {% if entry.match_status == 'ambiguous' %}
-      <div class="resolved-note"><strong>Ambigua</strong><br>{{ entry.conflict_count }} archivos de este ZIP normalizan al mismo nombre. Revisa cuál corresponde a qué referencia y vuelve a subir con nombres distintos.</div>
+      <div class="resolved-note"><strong>Ambigua</strong><br>{{ entry.conflict_count }} archivos de este ZIP normalizan al mismo nombre. Elige abajo a qué producto corresponde, o vuelve a subir con nombres distintos.</div>
       {% else %}
       <div class="resolved-note"><strong>Sin coincidencia</strong><br>Ninguna referencia aprobada corresponde a «{{ entry.lookup_key }}». Verifica que la referencia esté aprobada o que el nombre del archivo sea exacto.</div>
       {% endif %}
+      <div class="manual-assign">
+        <form method="get" action="/operator/images#e-{{ entry.image_archive_entry_id }}" class="manual-search">
+          <input type="hidden" name="find" value="{{ entry.image_archive_entry_id }}">
+          <label><span>¿De qué producto es esta foto?</span>
+            <input type="search" name="q" value="{{ search_query if search_entry_id == entry.image_archive_entry_id else '' }}" minlength="2" maxlength="80" required placeholder="Referencia o nombre del producto">
+          </label>
+          <button class="secondary-button" type="submit">Buscar</button>
+        </form>
+        {% if search_entry_id == entry.image_archive_entry_id %}
+          {% if search_error %}
+          <div class="alert alert-error" role="alert">{{ search_error }}</div>
+          {% elif search_results %}
+          <ul class="manual-results">
+            {% for product in search_results %}
+            <li>
+              <div><code>{{ product.reference }}</code> {{ product.product_name }}{% if product.has_main_photo %} <small>· ya tiene foto principal</small>{% endif %}</div>
+              <form method="post" action="/operator/images/entries/{{ entry.image_archive_entry_id }}/assign">
+                <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+                <input type="hidden" name="product_reference_id" value="{{ product.product_reference_id }}">
+                <select name="kind" aria-label="Tipo de foto">
+                  <option value="main"{% if product.has_main_photo %} disabled{% else %} selected{% endif %}>Foto principal</option>
+                  <option value="additional"{% if product.has_main_photo %} selected{% endif %}>Foto adicional</option>
+                </select>
+                <button class="primary-button" type="submit">Asignar</button>
+              </form>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p class="hint">No encontré productos aprobados con «{{ search_query }}».</p>
+          {% endif %}
+        {% endif %}
+      </div>
     </article>
     {% endfor %}
   </div>

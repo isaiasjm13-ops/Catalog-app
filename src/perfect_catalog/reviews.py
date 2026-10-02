@@ -1461,6 +1461,26 @@ class DatabaseReviewGateway:
             company_id=company_id, image_archive_index_id=image_archive_index_id,
         )
 
+    def search_product_references(
+        self, query: str, *, company_id: uuid.UUID, limit: int = 8,
+    ) -> list[dict[str, Any]]:
+        from .image_manual_selection import search_product_references
+
+        return search_product_references(
+            query, self._config, self._password, company_id=company_id, limit=limit,
+        )
+
+    def assign_image_manually(
+        self, entry_id: uuid.UUID, product_reference_id: uuid.UUID, kind: str, actor: str,
+        company_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        from .image_manual_selection import assign_image_manually
+
+        return assign_image_manually(
+            entry_id, product_reference_id, kind, actor, self._config, self._password,
+            company_id=company_id,
+        )
+
     def image_candidate_preview(
         self, candidate_id: uuid.UUID, intake_root: Path, company_id: uuid.UUID,
     ) -> bytes:

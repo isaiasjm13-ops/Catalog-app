@@ -49,6 +49,9 @@ class SyntheticReviewGateway:
         self.image_indexes: list[dict[str, Any]] = []
         self.image_candidate_data: list[dict[str, Any]] = []
         self.unlinked_image_data: list[dict[str, Any]] = []
+        self.reference_search_data: list[dict[str, Any]] = []
+        self.reference_searches: list[str] = []
+        self.manual_assignments: list[dict[str, Any]] = []
         self.catalog_exports: list[dict[str, Any]] = []
         self.release_changes: list[dict[str, Any]] = []
         self.visual_identity_records: list[dict[str, Any]] = []
@@ -414,6 +417,26 @@ class SyntheticReviewGateway:
             candidate.update({"decision": decision, "decided_by": actor, "decided_at": "2026-08-27"})
         return {"status": "bulk_approved" if decision == "approved" else "bulk_rejected",
                 "count": expected_count}
+
+    def search_product_references(
+        self, query: str, *, company_id: uuid.UUID, limit: int = 8,
+    ) -> list[dict[str, Any]]:
+        if len(query.strip()) < 2:
+            raise ValueError("Escribe al menos 2 caracteres para buscar.")
+        self.reference_searches.append(query)
+        return [item for item in self.reference_search_data if query.lower() in item["reference"].lower()]
+
+    def assign_image_manually(
+        self, entry_id: uuid.UUID, product_reference_id: uuid.UUID, kind: str, actor: str,
+        company_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        if kind not in {"main", "additional"}:
+            raise ValueError("Tipo de foto inválido.")
+        self.manual_assignments.append({
+            "entry_id": str(entry_id), "product_reference_id": str(product_reference_id),
+            "kind": kind, "actor": actor,
+        })
+        return {"status": "assigned"}
 
     def image_candidate_preview(
         self, candidate_id: uuid.UUID, intake_root: Path, company_id: uuid.UUID,
@@ -2187,6 +2210,86 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(preview.headers["content-type"], "image/jpeg")
         missing = await self.client.get(f"/operator/images/entries/{uuid.uuid4()}/preview")
         self.assertEqual(missing.status_code, 404)
+
+    async def _manual_selection_setup(self) -> tuple[uuid.UUID, uuid.UUID]:
+        await self.login()
+        entry_id, reference_id = uuid.uuid4(), uuid.uuid4()
+        self.gateway.unlinked_image_data = [
+            {"image_archive_entry_id": str(entry_id), "original_filename": "REF-999.jpg",
+             "lookup_key": "REF-999", "match_status": "unmatched", "conflict_count": 1,
+             "content_sha256": "c" * 64, "indexed_at": "2026-09-04T00:00:00+00:00"},
+        ]
+        self.gateway.reference_search_data = [
+            {"product_reference_id": str(reference_id), "reference": "CKT-507AU",
+             "product_name": "Empaque <seguro>", "has_main_photo": False},
+            {"product_reference_id": str(uuid.uuid4()), "reference": "CKT-507BU",
+             "product_name": "Otro", "has_main_photo": True},
+        ]
+        return entry_id, reference_id
+
+    async def test_unlinked_photo_offers_a_product_search_and_lists_results(self) -> None:
+        entry_id, reference_id = await self._manual_selection_setup()
+        plain = await self.client.get("/operator/images")
+        self.assertIn("¿De qué producto es esta foto?", plain.text)
+        self.assertNotIn("Asignar", plain.text)
+        found = await self.client.get("/operator/images", params={"find": str(entry_id), "q": "CKT-507"})
+        self.assertEqual(found.status_code, 200)
+        self.assertEqual(self.gateway.reference_searches, ["CKT-507"])
+        self.assertIn("CKT-507AU", found.text)
+        self.assertIn("Empaque &lt;seguro&gt;", found.text)  # escapado, no HTML crudo
+        self.assertIn("ya tiene foto principal", found.text)
+        self.assertIn(f'action="/operator/images/entries/{entry_id}/assign"', found.text)
+        self.assertIn(str(reference_id), found.text)
+
+    async def test_search_with_too_short_text_shows_an_inline_error_not_a_failed_page(self) -> None:
+        entry_id, _ = await self._manual_selection_setup()
+        found = await self.client.get("/operator/images", params={"find": str(entry_id), "q": "x"})
+        self.assertEqual(found.status_code, 200)
+        self.assertIn("al menos 2 caracteres", found.text)
+
+    async def test_assigning_a_photo_records_the_logged_in_actor_and_redirects(self) -> None:
+        entry_id, reference_id = await self._manual_selection_setup()
+        found = await self.client.get("/operator/images", params={"find": str(entry_id), "q": "CKT-507"})
+        csrf = hidden_value(found.text, "csrf_token")
+        done = await self.client.post(
+            f"/operator/images/entries/{entry_id}/assign",
+            data={"csrf_token": csrf, "product_reference_id": str(reference_id), "kind": "main"},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(done.status_code, 303)
+        self.assertIn("result=photo_assigned", done.headers["location"])
+        self.assertEqual(self.gateway.manual_assignments[0]["actor"], "web-reviewer")
+        self.assertEqual(self.gateway.manual_assignments[0]["kind"], "main")
+        page = await self.client.get(done.headers["location"])
+        self.assertIn("Foto asignada al producto", page.text)
+
+    async def test_assigning_a_photo_rejects_bad_csrf_extra_fields_and_anonymous_users(self) -> None:
+        entry_id, reference_id = await self._manual_selection_setup()
+        body = {"product_reference_id": str(reference_id), "kind": "main"}
+        bad_csrf = await self.client.post(
+            f"/operator/images/entries/{entry_id}/assign", data={"csrf_token": "wrong", **body},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertNotEqual(bad_csrf.status_code, 303)
+        extra = await self.client.post(
+            f"/operator/images/entries/{entry_id}/assign",
+            data={"csrf_token": "x", "reason": "no permitido", **body},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(extra.status_code, 409)
+        self.assertEqual(self.gateway.manual_assignments, [])
+        anonymous = httpx.AsyncClient(
+            transport=self.client._transport, base_url="http://testserver", follow_redirects=False,
+        )
+        try:
+            denied = await anonymous.post(
+                f"/operator/images/entries/{entry_id}/assign", data={"csrf_token": "x", **body},
+                headers={"Origin": "http://testserver"},
+            )
+        finally:
+            await anonymous.aclose()
+        self.assertEqual(denied.status_code, 303)
+        self.assertEqual(self.gateway.manual_assignments, [])
 
     async def test_image_candidate_generation_shows_a_previewable_thumbnail(self) -> None:
         await self.login()

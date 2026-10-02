@@ -242,6 +242,15 @@ class ReviewGateway(Protocol):
         company_id: uuid.UUID, image_archive_index_id: uuid.UUID | None = None,
     ) -> dict[str, Any]: ...
 
+    def search_product_references(
+        self, query: str, *, company_id: uuid.UUID, limit: int = 8,
+    ) -> list[dict[str, Any]]: ...
+
+    def assign_image_manually(
+        self, entry_id: uuid.UUID, product_reference_id: uuid.UUID, kind: str, actor: str,
+        company_id: uuid.UUID,
+    ) -> dict[str, Any]: ...
+
     def image_candidate_preview(
         self, candidate_id: uuid.UUID, intake_root: Path, company_id: uuid.UUID,
     ) -> bytes: ...
@@ -2343,7 +2352,25 @@ def create_operator_app(
             return _error(environment, 400, "Página inválida", str(exc), session=session_or_redirect)
         except Exception as exc:
             return _unexpected_error(environment, "Revisión de imágenes no disponible", "Verifica que la actualización del sistema esté aplicada y revisa la consola del servidor.", "image_review_read_failed", exc, session=session_or_redirect)
+        # Selección manual: ?find=<entry_id>&q=<texto> muestra productos candidatos para esa foto.
+        search_entry_id = request.query_params.get("find") or ""
+        search_query = (request.query_params.get("q") or "").strip()
+        search_results: list[dict[str, Any]] = []
+        search_error = ""
+        if search_entry_id and search_query:
+            try:
+                _uuid(search_entry_id, "find")
+                search_results = await run_in_threadpool(
+                    gateway.search_product_references, search_query,
+                    company_id=session_or_redirect.company_id,
+                )
+            except ValueError as exc:
+                search_error = str(exc)
+            except Exception:
+                LOGGER.exception("Fallo al buscar productos para asignar una foto")
+                search_error = "No se pudo buscar ahora. Intenta de nuevo."
         result_message = {
+            "photo_assigned": "Foto asignada al producto y aprobada con tu nombre. Usa «Preparar coincidencias exactas» para copiarla al catálogo.",
             "generated": "Candidatos exactos generados. Ninguno fue aprobado automáticamente.",
             "approved": "Candidato de imagen aprobado con su evidencia exacta.",
             "rejected": "Candidato de imagen rechazado; la evidencia permanece conservada.",
@@ -2361,9 +2388,37 @@ def create_operator_app(
         return _render(
             environment, "operator_images.html", candidates=candidates,
             unlinked_entries=unlinked_entries,
+            search_entry_id=search_entry_id, search_query=search_query,
+            search_results=search_results, search_error=search_error,
             message=result_message, page=page, previous_url=previous_url, next_url=next_url,
             session=session_or_redirect, version=OPERATOR_VERSION,
         )
+
+    @app.post("/operator/images/entries/{entry_id}/assign")
+    async def assign_image_route(request: Request, entry_id: str) -> Response:
+        """El operador elige a qué producto pertenece una foto ambigua o sin coincidencia."""
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "product_reference_id", "kind"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
+            await run_in_threadpool(
+                gateway.assign_image_manually,
+                _uuid(entry_id, "entry_id"), _uuid(form["product_reference_id"], "product_reference_id"),
+                form["kind"], session.actor, session.company_id,
+            )
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            return _error(environment, 409, "Foto no asignada", str(exc), session=session)
+        except Exception:
+            diagnostic_id = uuid.uuid4().hex[:12]
+            LOGGER.exception("Fallo al asignar foto manualmente; diagnostico=%s", diagnostic_id)
+            return _error(environment, 503, "Asignación no disponible", f"No se pudo asignar la foto. Diagnóstico: {diagnostic_id}.", session=session)
+        return RedirectResponse("/operator/images?result=photo_assigned", status_code=303)
 
     @app.post("/operator/images/index/{index_id}/candidates")
     async def generate_image_candidates_route(request: Request, index_id: str) -> Response:
