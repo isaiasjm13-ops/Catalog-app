@@ -8,7 +8,7 @@
 
 - Rama de trabajo: `workflow-3-etapas` (21+ commits por delante de `master`, aun sin fusionar).
 - Suite de pruebas: `.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"`
-  -> 456 pruebas OK, 6 omitidas (necesitan Postgres real con `PERFECT_CATALOG_RUN_INTEGRATION=1`).
+  -> 468 pruebas OK, 6 omitidas (necesitan Postgres real con `PERFECT_CATALOG_RUN_INTEGRATION=1`).
 - Base de datos: migraciones 0017-0028 aplicadas (log del 2026-10-02); la 0029 (seleccion manual de fotos) esta escrita y PENDIENTE de aplicar con ACTUALIZAR-SISTEMA.cmd.
 - No hay `.env`: la contrasena de Postgres se pide a mano (`--prompt-password`), nunca se guarda.
 
@@ -57,6 +57,18 @@ foto?": se busca por referencia o nombre y se asigna como foto principal o adici
 **Pendiente: aplicar la 0029 con `ACTUALIZAR-SISTEMA.cmd` (cerrar servidores; antes `RESPALDAR-BASE.cmd`) y
 probar en vivo.** El SQL de busqueda/asignacion solo esta probado con un gateway simulado, no contra Postgres.
 Sin hacer: "Descartar foto" (no hay candidato al que adjuntar un rechazo) y "Excluir referencias sin foto".
+
+## App de escritorio (Nexo ISA)
+
+`INICIAR-APP.cmd` (o el acceso directo creado con `CREAR-ACCESO-DIRECTO.cmd`) arranca consola + generador
+publico en UN proceso (`src/perfect_catalog/desktop_app.py`), pide la contrasena de PostgreSQL UNA vez en una
+ventana (no se guarda), entra solo con un boleto de un solo uso (`/operator/app-login?ticket=`, sesion de 12 h) y
+abre una ventana de Edge/Chrome en modo app (sin pestanas ni URL, perfil propio en %LOCALAPPDATA%\NexoISA).
+Al cerrar la ventana se apagan los servidores. Errores: `logs\desktop-app.log`.
+**Verificado**: servidores en hilos + login por boleto sobre TCP real y apagado limpio (script de humo).
+**Sin verificar en vivo**: el dialogo de contrasena (Tk) y la ventana de Edge; si Edge cede el control a otra
+instancia, la app cae a una ventanita "Apagar" y abre el navegador normal. Los lanzadores clasicos
+(INICIAR-REVISOR/TODO) siguen funcionando igual. Las guardas de ACTUALIZAR/LIMPIAR tambien detectan la app.
 
 ## Arquitectura en una linea
 

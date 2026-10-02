@@ -34,10 +34,10 @@ $checksum0028 = (Get-FileHash -LiteralPath $migration0028 -Algorithm SHA256).Has
 $checksum0029 = (Get-FileHash -LiteralPath $migration0029 -Algorithm SHA256).Hash.ToLowerInvariant()
 # No cambiar el esquema mientras haya servidores usando la base.
 $running = Get-CimInstance Win32_Process | Where-Object {
-    $_.Name -match '^(python|pythonw|perfect-catalog)' -and $_.CommandLine -and ($_.CommandLine -like '*perfect-catalog-operator*' -or $_.CommandLine -like '*perfect-catalog-public*' -or $_.CommandLine -like '*perfect-catalog-api*')
+    $_.Name -match '^(python|pythonw|perfect-catalog)' -and $_.CommandLine -and ($_.CommandLine -like '*perfect-catalog-operator*' -or $_.CommandLine -like '*perfect-catalog-public*' -or $_.CommandLine -like '*perfect-catalog-api*' -or $_.CommandLine -like '*perfect_catalog.desktop_app*')
 }
 if ($running) {
-    throw 'Cierra primero el revisor, el generador publico y la API: siguen corriendo y la actualizacion cambia la base.'
+    throw 'Cierra primero la app Nexo ISA, el revisor, el generador publico y la API: siguen corriendo y la actualizacion cambia la base.'
 }
 New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
 Write-Host 'ACTUALIZAR SISTEMA - Perfect Catalog'

@@ -66,6 +66,9 @@ LOGIN_COOKIE_PATH = "/operator"
 MAX_FORM_BYTES = 16_384
 MAX_REASON_LENGTH = 500
 SESSION_TTL_SECONDS = 60 * 60
+# App de escritorio: una jornada completa sin pedir el código temporal otra vez.
+APP_SESSION_TTL_SECONDS = 12 * 60 * 60
+LAUNCH_TICKET_TTL_SECONDS = 120
 LOGIN_CHALLENGE_TTL_SECONDS = 10 * 60
 PBKDF2_ITERATIONS = 310_000
 MAX_SIMPLE_IMAGE_FILES = 2000
@@ -401,6 +404,7 @@ class OperatorAuthenticator:
         self._signing_key = secrets.token_bytes(32)
         self._sessions: dict[str, OperatorSession] = {}
         self._failed_logins: list[float] = []
+        self._launch_tickets: dict[str, float] = {}
         self._lock = threading.Lock()
 
     def _derive(self, value: str) -> bytes:
@@ -472,13 +476,28 @@ class OperatorAuthenticator:
     def authenticate(self, access_code: str) -> bool:
         return self.authenticate_result(access_code) == "accepted"
 
-    def create_session(self) -> tuple[OperatorSession, str]:
+    def issue_launch_ticket(self) -> str:
+        """Boleto de un solo uso para la app de escritorio: entra sin teclear el código temporal.
+        Solo lo conoce el proceso que arrancó el servidor; vence en 2 minutos."""
+        token = secrets.token_urlsafe(24)
+        with self._lock:
+            now = self._now()
+            self._launch_tickets = {t: exp for t, exp in self._launch_tickets.items() if exp > now}
+            self._launch_tickets[token] = now + LAUNCH_TICKET_TTL_SECONDS
+        return token
+
+    def consume_launch_ticket(self, token: str | None) -> bool:
+        with self._lock:
+            expires_at = self._launch_tickets.pop(str(token or ""), None)
+            return expires_at is not None and expires_at > self._now()
+
+    def create_session(self, ttl_seconds: int | None = None) -> tuple[OperatorSession, str]:
         session_id = secrets.token_urlsafe(32)
         session = OperatorSession(
             session_id=session_id,
             actor=self.actor,
             csrf_token=secrets.token_urlsafe(32),
-            expires_at=int(self._now()) + self._ttl,
+            expires_at=int(self._now()) + (ttl_seconds or self._ttl),
         )
         with self._lock:
             self._sessions[session_id] = session
@@ -888,6 +907,49 @@ def create_operator_app(
         response.delete_cookie(LOGIN_COOKIE, path="/operator/login")
         return response
 
+    async def _complete_login(ttl_seconds: int | None = None) -> Response:
+        """Crea la sesión, elige la Company si solo hay una y fija la cookie de sesión."""
+        _, signed_session = authenticator.create_session(ttl_seconds)
+        destination = "/operator"
+        try:
+            companies = await available_companies()
+            usable = [company for company in companies if company.get("is_active", True)]
+            if len(usable) == 1:
+                company = usable[0]
+                company_id = _uuid(str(company["company_id"]), "company_id")
+                primary_color, secondary_color = await company_accent_colors(company_id)
+                authenticator.select_company(
+                    signed_session, company_id,
+                    str(company["code"]), str(company["display_name"]),
+                    primary_color=primary_color, secondary_color=secondary_color,
+                )
+            elif usable:
+                destination = "/operator/company"
+        except Exception as exc:
+            LOGGER.exception("No se pudo cargar Company durante login: %s", exc)
+            destination = "/operator/company"
+        response = RedirectResponse(destination, status_code=303)
+        response.delete_cookie(LOGIN_COOKIE, path=LOGIN_COOKIE_PATH)
+        response.delete_cookie(LOGIN_COOKIE, path="/operator/login")
+        response.set_cookie(
+            SESSION_COOKIE,
+            signed_session,
+            httponly=True,
+            samesite="strict",
+            secure=False,
+            max_age=ttl_seconds or SESSION_TTL_SECONDS,
+            path="/operator",
+        )
+        return response
+
+    @app.get("/operator/app-login")
+    async def app_login(request: Request, ticket: str = "") -> Response:
+        """Entrada de la app de escritorio: un boleto de un solo uso, generado por el mismo proceso
+        que arrancó el servidor, sustituye al código temporal. Sin boleto válido, login normal."""
+        if not authenticator.consume_launch_ticket(ticket):
+            return RedirectResponse("/operator/login", status_code=303)
+        return await _complete_login(APP_SESSION_TTL_SECONDS)
+
     @app.post("/operator/login", response_class=HTMLResponse)
     async def login(request: Request) -> Response:
         try:
@@ -939,38 +1001,7 @@ def create_operator_app(
             )
             response.delete_cookie(LOGIN_COOKIE, path="/operator/login")
             return response
-        _, signed_session = authenticator.create_session()
-        destination = "/operator"
-        try:
-            companies = await available_companies()
-            usable = [company for company in companies if company.get("is_active", True)]
-            if len(usable) == 1:
-                company = usable[0]
-                company_id = _uuid(str(company["company_id"]), "company_id")
-                primary_color, secondary_color = await company_accent_colors(company_id)
-                authenticator.select_company(
-                    signed_session, company_id,
-                    str(company["code"]), str(company["display_name"]),
-                    primary_color=primary_color, secondary_color=secondary_color,
-                )
-            elif usable:
-                destination = "/operator/company"
-        except Exception as exc:
-            LOGGER.exception("No se pudo cargar Company durante login: %s", exc)
-            destination = "/operator/company"
-        response = RedirectResponse(destination, status_code=303)
-        response.delete_cookie(LOGIN_COOKIE, path=LOGIN_COOKIE_PATH)
-        response.delete_cookie(LOGIN_COOKIE, path="/operator/login")
-        response.set_cookie(
-            SESSION_COOKIE,
-            signed_session,
-            httponly=True,
-            samesite="strict",
-            secure=False,
-            max_age=SESSION_TTL_SECONDS,
-            path="/operator",
-        )
-        return response
+        return await _complete_login()
 
     @app.get("/operator/company", response_class=HTMLResponse)
     async def company_page(request: Request) -> Response:

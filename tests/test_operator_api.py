@@ -811,6 +811,32 @@ class OperatorAuthenticatorTests(unittest.TestCase):
         clock[0] += 60
         self.assertIsNone(auth.get_session(cookie))
 
+    def test_launch_ticket_is_single_use_and_expires(self) -> None:
+        clock = [1_000.0]
+        auth = OperatorAuthenticator(
+            "qa-user", "temporary-123", now=lambda: clock[0], pbkdf2_iterations=1,
+        )
+        ticket = auth.issue_launch_ticket()
+        self.assertTrue(auth.consume_launch_ticket(ticket))
+        self.assertFalse(auth.consume_launch_ticket(ticket), "un boleto no se reutiliza")
+        self.assertFalse(auth.consume_launch_ticket("inventado"))
+        self.assertFalse(auth.consume_launch_ticket(None))
+        self.assertFalse(auth.consume_launch_ticket(""))
+        late = auth.issue_launch_ticket()
+        clock[0] += 121
+        self.assertFalse(auth.consume_launch_ticket(late), "vence a los 2 minutos")
+
+    def test_app_sessions_can_last_a_full_workday(self) -> None:
+        clock = [1_000.0]
+        auth = OperatorAuthenticator(
+            "qa-user", "temporary-123", session_ttl_seconds=60, now=lambda: clock[0], pbkdf2_iterations=1,
+        )
+        _, normal = auth.create_session()
+        _, long_lived = auth.create_session(12 * 3600)
+        clock[0] += 3600
+        self.assertIsNone(auth.get_session(normal))
+        self.assertIsNotNone(auth.get_session(long_lived))
+
     def test_company_selection_is_bound_to_existing_signed_session(self) -> None:
         auth = OperatorAuthenticator("qa-user", "temporary-123", pbkdf2_iterations=1)
         _, cookie = auth.create_session()
@@ -1360,6 +1386,31 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Tu catálogo, en tres pasos", guided.text)
         self.assertIn('aria-current="step"', guided.text)
         self.assertIn('href="/operator"', guided.text)  # salida al panel completo
+
+    async def test_desktop_app_logs_in_with_a_single_use_ticket_and_a_workday_cookie(self) -> None:
+        ticket = self.auth.issue_launch_ticket()
+        entered = await self.client.get("/operator/app-login", params={"ticket": ticket})
+        self.assertEqual(entered.status_code, 303)
+        self.assertEqual(entered.headers["location"], "/operator")
+        cookie = entered.headers["set-cookie"]
+        self.assertIn("pc_operator_session=", cookie)
+        self.assertIn(f"Max-Age={12 * 60 * 60}", cookie)
+        self.assertIn("HttpOnly", cookie)
+        dashboard = await self.client.get("/operator")
+        self.assertEqual(dashboard.status_code, 200)
+        # El mismo boleto no sirve dos veces: vuelve al login normal.
+        self.client.cookies.clear()
+        reused = await self.client.get("/operator/app-login", params={"ticket": ticket})
+        self.assertEqual(reused.status_code, 303)
+        self.assertEqual(reused.headers["location"], "/operator/login")
+        self.assertNotIn("pc_operator_session=", reused.headers.get("set-cookie", ""))
+
+    async def test_app_login_without_or_with_a_wrong_ticket_never_creates_a_session(self) -> None:
+        for params in ({}, {"ticket": "inventado"}, {"ticket": ""}):
+            denied = await self.client.get("/operator/app-login", params=params)
+            self.assertEqual(denied.status_code, 303)
+            self.assertEqual(denied.headers["location"], "/operator/login")
+        self.assertEqual((await self.client.get("/operator")).headers["location"], "/operator/login")
 
     async def test_view_toggle_is_offered_and_defaults_do_not_hide_anything(self) -> None:
         await self.login()
