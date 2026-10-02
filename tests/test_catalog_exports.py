@@ -464,6 +464,16 @@ class CatalogExportTests(unittest.TestCase):
         release, items = fixture_release()
         rows = export_rows_from_release(release, items)
         rows[0].update({"applications": ["Toyota Corolla 2014"], "engine_types": ["1.8L"], "oem_references": ["OEM-123"]})
+        # El visor (ficha + fotos) debe ser fixed y centrado: con position:relative quedaba al final
+        # de la página, fuera de pantalla, y en el móvil "no se podía abrir la foto ni la ficha".
+        viewer_html = generate_catalog_html(rows, {"title": "Visor"}, release=release).decode("utf-8")
+        self.assertIn(".photo-viewer{position:fixed;inset:0;margin:auto;", viewer_html)
+        self.assertNotIn(".photo-viewer{position:relative", viewer_html)
+        self.assertIn("100dvh", viewer_html)
+        self.assertIn("dialog.photo-viewer:not([open]){display:none}", viewer_html)
+        self.assertIn("viewer.setAttribute('open','')", viewer_html)  # navegador sin <dialog>
+        self.assertIn("event.preventDefault();if(viewer.close)", viewer_html)  # Cerrar sin enviar el formulario
+        self.assertIn(".photo-viewer-gallery{position:static;grid-column:1;grid-row:2", viewer_html)
         visual = {"primary_color": "#E30613", "secondary_color": "#12355B", "ink_color": "#111111", "paper_color": "#FFFFFF", "logo_asset_key": "brands/natsuki/logo.svg", "corner_logo_enabled": True, "watermark_enabled": True, "watermark_opacity": .05, "company": {"display_name": "Perfect Demo", "primary_color": "#086650", "secondary_color": "#C7DF54", "ink_color": "#17211D", "paper_color": "#FFFFFF"}}
         html = generate_catalog_html(rows, {"template_profile": "T4", "visual_profile": visual}).decode("utf-8")
         self.assertIn("--forest:#E30613", html)
@@ -474,6 +484,9 @@ class CatalogExportTests(unittest.TestCase):
         self.assertIn("Perfect Demo", html)
         self.assertIn("font-size:16px", html)
         self.assertIn("class=\"brand-logo\"", html)
+        # El logo de la empresa va en el flujo del encabezado, sin deformarse ni montarse con el título.
+        self.assertIn(".hero .brand-logo{position:static;order:-1;justify-self:start;", html)
+        self.assertIn("object-fit:contain", html.split(".hero .brand-logo{", 1)[1].split("}", 1)[0])
         self.assertIn("data:image/png;base64,", html)
         self.assertIn('class="contents" aria-label="Secciones del catálogo"', html)
         self.assertIn('id="seccion-01"', html)
