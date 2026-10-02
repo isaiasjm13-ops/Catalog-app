@@ -30,6 +30,13 @@ $checksum0025 = (Get-FileHash -LiteralPath $migration0025 -Algorithm SHA256).Has
 $checksum0026 = (Get-FileHash -LiteralPath $migration0026 -Algorithm SHA256).Hash.ToLowerInvariant()
 $checksum0027 = (Get-FileHash -LiteralPath $migration0027 -Algorithm SHA256).Hash.ToLowerInvariant()
 $checksum0028 = (Get-FileHash -LiteralPath $migration0028 -Algorithm SHA256).Hash.ToLowerInvariant()
+# No cambiar el esquema mientras haya servidores usando la base.
+$running = Get-CimInstance Win32_Process | Where-Object {
+    $_.CommandLine -and ($_.CommandLine -like '*perfect-catalog-operator*' -or $_.CommandLine -like '*perfect-catalog-public*' -or $_.CommandLine -like '*perfect-catalog-api*')
+}
+if ($running) {
+    throw 'Cierra primero el revisor, el generador publico y la API: siguen corriendo y la actualizacion cambia la base.'
+}
 New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
 Write-Host 'ACTUALIZAR SISTEMA - Perfect Catalog'
 Write-Host 'Detecta y aplica solamente los cambios pendientes (0007-0028).'
