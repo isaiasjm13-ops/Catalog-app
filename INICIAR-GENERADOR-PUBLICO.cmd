@@ -1,4 +1,5 @@
 @echo off
+setlocal
 cd /d "%~dp0"
-.venv\Scripts\perfect-catalog-public.exe --host 127.0.0.1 --port 8082 --prompt-password
-pause
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\iniciar-servicio.ps1" -Service public
+exit /b %ERRORLEVEL%

@@ -1,4 +1,5 @@
 @echo off
+setlocal
 cd /d "%~dp0"
-.venv\Scripts\perfect-catalog-operator.exe --host 127.0.0.1 --port 8081 --prompt-password --generate-access-code --open-browser
-pause
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\iniciar-servicio.ps1" -Service operator
+exit /b %ERRORLEVEL%
