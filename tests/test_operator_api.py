@@ -25,6 +25,8 @@ from perfect_catalog.operator_api import (
     _operator_actor,
     _safe_zip_member_name,
     _write_local_images_archive,
+    _write_images_archive,
+    _require_accepted_submission,
     build_parser,
     create_operator_app,
 )
@@ -733,6 +735,37 @@ class SimpleModeZipNamingTests(unittest.TestCase):
                 self.assertEqual(names, {"NK-001.jpg", "sub/NK-002.PNG"})
             finally:
                 destination.unlink(missing_ok=True)
+
+    def test_browser_folder_upload_ignores_non_photo_files_instead_of_poisoning_the_zip(self) -> None:
+        import io
+        from starlette.datastructures import UploadFile
+
+        uploads = [
+            UploadFile(file=io.BytesIO(b"foto"), filename="NK-001.jpg"),
+            UploadFile(file=io.BytesIO(b"pdf"), filename="ficha.pdf"),
+            UploadFile(file=io.BytesIO(b"basura"), filename="Thumbs.db"),
+            UploadFile(file=io.BytesIO(b"arte"), filename="logo.ai"),
+            UploadFile(file=io.BytesIO(b"otra"), filename="sub\\NK-002.PNG"),
+        ]
+        with tempfile.TemporaryDirectory() as folder:
+            destination = Path(folder) / "salida.zip"
+            written = _write_images_archive(uploads, destination)
+            with zipfile.ZipFile(destination) as archive:
+                names = set(archive.namelist())
+        self.assertEqual(written, 2)
+        self.assertEqual(names, {"NK-001.jpg", "sub/NK-002.PNG"})
+
+    def test_rejected_submission_explains_why_instead_of_failing_later(self) -> None:
+        _require_accepted_submission({"validation_status": "quarantined"}, "El paquete de fotos")
+        _require_accepted_submission({}, "El paquete de fotos")  # sin estado: no se inventa un rechazo
+        with self.assertRaisesRegex(ValueError, "El paquete de fotos no es válido: El ZIP no contiene imágenes"):
+            _require_accepted_submission(
+                {"validation_status": "rejected",
+                 "validation_report": {"errors": ["El ZIP no contiene imágenes con extensiones admitidas."]}},
+                "El paquete de fotos",
+            )
+        with self.assertRaisesRegex(ValueError, "no pasó la validación"):
+            _require_accepted_submission({"validation_status": "rejected"}, "El Excel de productos")
 
     def test_local_folder_archive_enforces_file_count_limit(self) -> None:
         with tempfile.TemporaryDirectory() as folder:

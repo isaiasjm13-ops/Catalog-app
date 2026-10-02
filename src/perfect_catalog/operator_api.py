@@ -18,7 +18,7 @@ import zipfile
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from importlib.resources import files
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Protocol
 from urllib.parse import parse_qs, urlencode, urlsplit
 
@@ -91,12 +91,26 @@ def _safe_zip_member_name(filename: str | None, seen: set[str]) -> str | None:
     return candidate
 
 
+def _require_accepted_submission(submission: dict[str, Any], label: str) -> None:
+    """Si el ingreso quedó rechazado, explica POR QUÉ en vez de fallar después con un mensaje genérico."""
+    status = submission.get("validation_status")
+    if status is None or status == "quarantined":
+        return
+    errors = (submission.get("validation_report") or {}).get("errors") or []
+    detail = "; ".join(str(error) for error in errors) or "no pasó la validación"
+    raise ValueError(f"{label} no es válido: {detail}")
+
+
 def _write_images_archive(uploads: list[UploadFile], destination: Path) -> int:
     """Empaqueta las fotos sueltas de una carpeta en un único ZIP determinista."""
     written = 0
     seen: set[str] = set()
     with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:
         for upload in uploads:
+            # Igual que con la ruta local: solo entran fotos de formato admitido. PDF, AI, Thumbs.db
+            # y demás se ignoran en silencio; si no, un solo archivo ajeno hacía rechazar todo el ZIP.
+            if PurePosixPath(str(upload.filename).replace("\\", "/")).suffix.lower() not in IMAGE_EXTENSIONS:
+                continue
             member = _safe_zip_member_name(upload.filename, seen)
             if member is None:
                 continue
@@ -2639,6 +2653,7 @@ def create_operator_app(
                     claimed_media_type=odoo_upload.content_type, kind="odoo_data",
                     actor=session.actor, reason=reason, company_id=session.company_id,
                 )
+                _require_accepted_submission(odoo_submission, "El Excel de productos")
 
                 with tempfile.NamedTemporaryFile(
                     dir=resolved_intake_root, prefix="simple-images-", suffix=".zip", delete=False,
@@ -2654,13 +2669,18 @@ def create_operator_app(
                 else:
                     written = await run_in_threadpool(_write_images_archive, image_uploads, zip_path)
                 if written == 0:
-                    raise ValueError("Ninguna foto de la carpeta pudo empaquetarse.")
+                    raise ValueError(
+                        "Ninguna foto de la carpeta tiene un formato admitido "
+                        "(jpg, png, webp, tif, bmp, gif, heic…). Revisa que sea la carpeta correcta."
+                    )
                 with zip_path.open("rb") as zip_stream:
                     image_submission = await run_in_threadpool(
                         intake_service.submit, zip_stream, filename="fotos-modo-simple.zip",
                         claimed_media_type="application/zip", kind="image_archive",
                         actor=session.actor, reason=reason, company_id=session.company_id,
                     )
+                # Antes de preparar nada del Excel: si el paquete de fotos fue rechazado, se dice por qué.
+                _require_accepted_submission(image_submission, "El paquete de fotos")
 
                 promotion = await run_in_threadpool(
                     gateway.promote_intake, uuid.UUID(odoo_submission["intake_submission_id"]),
