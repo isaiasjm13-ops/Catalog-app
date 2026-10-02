@@ -175,10 +175,15 @@ class CompanyMigrationTests(unittest.TestCase):
         source = (ROOT / "src/perfect_catalog/image_manual_selection.py").read_text(encoding="utf-8")
         self.assertIn('MANUAL_ALGORITHM = "operator-selected-v1"', source)
 
-    def test_company_brand_policy_reflects_natsuki_as_its_own_company(self) -> None:
+    def test_company_brand_policy_is_data_driven_and_keeps_company_separation_in_the_query(self) -> None:
+        # 2026-10-02: la politica ya no lista marcas por Company (obligaba a editar el codigo por cada
+        # marca nueva). NATSUKI sigue siendo su propia Company: lo que impide mezclar es que la
+        # consulta exige brand.company_id = Company activa, no una lista fija.
         source = (ROOT / "src/perfect_catalog/import_context.py").read_text(encoding="utf-8")
-        self.assertIn("if company == 'NATSUKI':\n        return brand == 'NATSUKI'", source)
-        self.assertNotIn("'NATSUKI', 'MASAKI'}:\n        return False", source)
+        self.assertNotIn("return brand == 'NATSUKI'", source)
+        self.assertNotIn("return brand in {", source)
+        self.assertIn("COMPANIES_WITHOUT_IMPORTS = {'MASAKI'}", source)
+        self.assertIn("JOIN perfect_catalog.brand AS b ON b.company_id=c.company_id", source)
 
 
 if __name__ == "__main__":

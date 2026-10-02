@@ -199,6 +199,15 @@ class SyntheticReviewGateway:
             raise PermissionError("Company incorrecta")
         return self.orphan_profile_data
 
+    def create_brand_profile(
+        self, values: dict[str, str], actor: str, reason: str, company_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        if company_id != COMPANY_ID:
+            raise PermissionError("Company incorrecta")
+        profile_id = uuid.uuid4()
+        self.company_changes.append({"action": "brand_profile_create", "code": values["code"], "actor": actor})
+        return {"brand_profile_id": str(profile_id), "code": values["code"]}
+
     def create_brand_for_profile(self, **kwargs: Any) -> dict[str, Any]:
         if kwargs["company_id"] != COMPANY_ID:
             raise PermissionError("Company incorrecta")
@@ -957,6 +966,40 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(refused.status_code, 409)
         self.assertIn("no esta autorizada", refused.text)
+
+    def _new_brand_form(self, csrf: str) -> dict[str, str]:
+        return {
+            "csrf_token": csrf, "code": "KAZE", "display_name": "Kaze", "tagline": "",
+            "primary_color": "#1F2937", "secondary_color": "#374151", "ink_color": "#111827",
+            "paper_color": "#FFFFFF", "public_base_url": "", "reason": "Alta de la marca Kaze", "confirm": "yes",
+        }
+
+    async def test_adding_a_brand_creates_the_profile_and_the_real_brand_in_one_step(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/brands")
+        csrf = hidden_value(page.text, "csrf_token")
+        done = await self.client.post(
+            "/operator/brands", data=self._new_brand_form(csrf), headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(done.status_code, 303)
+        actions = [change["action"] for change in self.gateway.company_changes]
+        self.assertEqual(actions[-2:], ["brand_profile_create", "brand_real_create"])
+        self.assertEqual(self.gateway.company_changes[-1]["actor"], "web-reviewer")
+        shown = await self.client.get(done.headers["location"])
+        self.assertIn("perfil visual y marca real vinculados", shown.text)
+
+    async def test_when_the_real_brand_fails_the_profile_is_kept_and_the_user_is_told_how_to_retry(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/brands")
+        csrf = hidden_value(page.text, "csrf_token")
+        self.gateway.brand_creation_error = "Ya existe una marca con el codigo KAZE."
+        failed = await self.client.post(
+            "/operator/brands", data=self._new_brand_form(csrf), headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(failed.status_code, 409)
+        self.assertIn("El perfil quedó guardado", failed.text)
+        self.assertIn("Ya existe una marca con el codigo KAZE.", failed.text)
+        self.assertEqual(self.gateway.company_changes[-1]["action"], "brand_profile_create")
 
     async def test_brands_page_hides_the_orphan_section_when_every_profile_has_a_brand(self) -> None:
         await self.login()

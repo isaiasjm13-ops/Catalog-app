@@ -1358,7 +1358,7 @@ def create_operator_app(
                 "brand_workspace_read_failed", exc, session=session_or_redirect,
             )
         message = {
-            "created": "Perfil visual creado. Para poder cargar productos de esta marca, créala también como marca real en «Perfiles sin marca real».",
+            "created": "Marca creada: perfil visual y marca real vinculados. Ya puedes cargar productos de esta marca.",
             "brand_created": "Marca real creada y vinculada a su perfil. Ya puedes cargar productos de esta marca.",
             "identity_created": "Logo y colores guardados como una nueva revisión auditada.",
             "linked": "Vínculo Brand-Perfil guardado. Ya puedes generar un dry-run para esta marca.",
@@ -1493,7 +1493,7 @@ def create_operator_app(
             if form["confirm"] != "yes":
                 raise ValueError("Debes confirmar la creacion del perfil de marca.")
             reason = _require_text(form["reason"], "reason")
-            await run_in_threadpool(
+            profile = await run_in_threadpool(
                 gateway.create_brand_profile,
                 {key: form[key] for key in profile_fields}, session.actor, reason,
                 session.company_id,
@@ -1502,6 +1502,23 @@ def create_operator_app(
             return _error(environment, 409, "Marca no creada", str(exc), session=session)
         except Exception as exc:
             return _unexpected_error(environment, "Marca no creada", "PostgreSQL no guardó el perfil. Revisa la consola.", "brand_create_failed", exc, session=session)
+        # Un perfil solo no basta para importar: se crea también la marca real en el mismo paso.
+        # Si eso falla, el perfil ya existe y queda en «Perfiles sin marca real» para reintentar.
+        try:
+            await run_in_threadpool(
+                gateway.create_brand_for_profile,
+                brand_profile_id=_uuid(str(profile["brand_profile_id"]), "brand_profile_id"),
+                actor=session.actor, company_id=session.company_id,
+            )
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            return _error(
+                environment, 409, "Perfil creado, falta la marca real",
+                f"El perfil quedó guardado, pero la marca real no se creó: {exc} "
+                "Corrígelo y pulsa «Crear marca real» en «Perfiles sin marca real».",
+                session=session,
+            )
+        except Exception as exc:
+            return _unexpected_error(environment, "Perfil creado, falta la marca real", "El perfil quedó guardado, pero PostgreSQL no creó la marca real. Reintenta desde «Perfiles sin marca real».", "brand_real_create_failed", exc, session=session)
         return RedirectResponse("/operator/brands?result=created", status_code=303)
 
     @app.get("/operator/public-links", response_class=HTMLResponse)
