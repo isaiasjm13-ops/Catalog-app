@@ -1263,6 +1263,9 @@ def create_operator_app(
             "unarchived": "Ingreso restaurado a la lista activa.",
             "already_active": "Este ingreso ya estaba activo.",
         }.get(result)
+        rejection_detail = (request.query_params.get("detail") or "").strip()[:300]
+        if message and result == "rejected" and rejection_detail:
+            message = f"{message} Motivo: {rejection_detail}"
         query_args = {"kind": kind, "status": status, "archived": archived}
         previous_url = (
             f"/operator/intake?{urlencode({**query_args, 'page': page - 1})}"
@@ -2288,8 +2291,15 @@ def create_operator_app(
         result = str(submitted["validation_status"])
         if submitted.get("duplicate_content"):
             result = "duplicate"
+        redirect_args = {"result": result}
+        if result == "rejected":
+            # El validador ya sabe por qué rechazó; antes la pantalla solo decía "rechazado".
+            errors = (submitted.get("validation_report") or {}).get("errors") or []
+            reason_text = "; ".join(str(error) for error in errors[:3])[:300]
+            if reason_text:
+                redirect_args["detail"] = reason_text
         return RedirectResponse(
-            f"/operator/intake?{urlencode({'result': result})}", status_code=303
+            f"/operator/intake?{urlencode(redirect_args)}", status_code=303
         )
 
     @app.post("/operator/intake/{submission_id}/promote")

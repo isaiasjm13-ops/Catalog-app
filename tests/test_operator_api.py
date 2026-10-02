@@ -2617,6 +2617,28 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         invalid_filter = await self.client.get("/operator/intake?kind=executable")
         self.assertEqual(invalid_filter.status_code, 400)
 
+    async def test_rejected_intake_shows_the_validator_reason_escaped(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/intake")
+        csrf = hidden_value(page.text, "csrf_token")
+        rejected = await self.client.post(
+            "/operator/intake",
+            data={"csrf_token": csrf, "kind": "manual_pdf", "reason": "Manual con problema", "confirm": "yes"},
+            files={"file": ("manual.pdf", b"not-pdf", "application/pdf")},
+            headers={"Origin": "http://testserver"},
+        )
+        self.gateway.intake_records[-1]["validation_report"] = {"errors": ["El ZIP contiene archivos no admitidos: ficha.pdf"]}
+        location = rejected.headers["location"]
+        self.assertIn("result=rejected", location)
+        # El motivo viaja en la redirección solo si el validador lo informó.
+        shown = await self.client.get("/operator/intake?result=rejected&detail=%3Cb%3Ex%3C%2Fb%3E+ficha.pdf")
+        self.assertIn("Archivo rechazado por el validador.", shown.text)
+        self.assertIn("Motivo: &lt;b&gt;x&lt;/b&gt; ficha.pdf", shown.text)
+        self.assertNotIn("<b>x</b>", shown.text)
+        # Sin detalle, el mensaje de siempre, sin "Motivo:" vacío.
+        plain = await self.client.get("/operator/intake?result=rejected")
+        self.assertNotIn("Motivo:", plain.text.split("Archivo rechazado")[1][:120])
+
     async def test_intake_submission_can_be_archived_and_restored_without_deleting_evidence(self) -> None:
         await self.login()
         page = await self.client.get("/operator/intake")
