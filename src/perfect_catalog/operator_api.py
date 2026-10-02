@@ -34,6 +34,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import DatabaseConfig, prompt_password
+from .guided_flow import next_step
 from .catalog_export_job import (
     CATALOG_THEMES,
     INDESIGN_TEMPLATE_PROFILES,
@@ -1043,26 +1044,33 @@ def create_operator_app(
         response.delete_cookie(SESSION_COOKIE, path="/operator")
         return response
 
+    async def _workflow_state(company_id: Any) -> tuple[list[Any], dict[str, int]]:
+        """Planes y conteos del flujo; los comparten el panel y el modo guiado."""
+        plans = await run_in_threadpool(gateway.plans, limit=100, company_id=company_id)
+        intakes = await run_in_threadpool(
+            gateway.intake_submissions, kind="all", status="all", limit=1, offset=0,
+            company_id=company_id,
+        )
+        image_summary = await run_in_threadpool(
+            gateway.image_candidates, limit=1, offset=0, company_id=company_id,
+        )
+        releases = await run_in_threadpool(gateway.catalog_releases, limit=100, company_id=company_id)
+        return plans, {
+            "intake_count": int(intakes["filtered_count"]),
+            "pending_review_count": sum(int(plan["pending_count"]) for plan in plans),
+            "pending_image_count": int(image_summary["pending_count"]),
+            "materialize_image_count": int(image_summary["approved_unmaterialized_count"]),
+            "draft_release_count": sum(release["status"] == "draft" for release in releases),
+            "published_release_count": sum(release["status"] == "published" for release in releases),
+        }
+
     @app.get("/operator", response_class=HTMLResponse)
     async def dashboard(request: Request) -> Response:
         session_or_redirect = require_session(request)
         if isinstance(session_or_redirect, RedirectResponse):
             return session_or_redirect
         try:
-            plans = await run_in_threadpool(
-                gateway.plans, limit=100, company_id=session_or_redirect.company_id,
-            )
-            intakes = await run_in_threadpool(
-                gateway.intake_submissions, kind="all", status="all", limit=1, offset=0,
-                company_id=session_or_redirect.company_id,
-            )
-            image_summary = await run_in_threadpool(
-                gateway.image_candidates, limit=1, offset=0,
-                company_id=session_or_redirect.company_id,
-            )
-            releases = await run_in_threadpool(
-                gateway.catalog_releases, limit=100, company_id=session_or_redirect.company_id,
-            )
+            plans, workflow = await _workflow_state(session_or_redirect.company_id)
         except Exception as exc:
             return _unexpected_error(
                 environment, "PostgreSQL no disponible",
@@ -1073,14 +1081,29 @@ def create_operator_app(
             environment,
             "operator_plans.html",
             plans=plans,
-            workflow={
-                "intake_count": int(intakes["filtered_count"]),
-                "pending_review_count": sum(int(plan["pending_count"]) for plan in plans),
-                "pending_image_count": int(image_summary["pending_count"]),
-                "materialize_image_count": int(image_summary["approved_unmaterialized_count"]),
-                "draft_release_count": sum(release["status"] == "draft" for release in releases),
-                "published_release_count": sum(release["status"] == "published" for release in releases),
-            },
+            workflow=workflow,
+            session=session_or_redirect,
+            version=OPERATOR_VERSION,
+        )
+
+    @app.get("/operator/guiado", response_class=HTMLResponse)
+    async def guided_mode(request: Request) -> Response:
+        """Modo guiado: un solo paso a la vez, en lenguaje llano, sobre el mismo flujo auditado."""
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        try:
+            plans, workflow = await _workflow_state(session_or_redirect.company_id)
+        except Exception as exc:
+            return _unexpected_error(
+                environment, "PostgreSQL no disponible",
+                "No se pudo leer el estado del flujo. Revisa la consola del servidor operador.",
+                "guided_read_failed", exc, session=session_or_redirect,
+            )
+        return _render(
+            environment,
+            "operator_guided.html",
+            guided=next_step(workflow, plans),
             session=session_or_redirect,
             version=OPERATOR_VERSION,
         )

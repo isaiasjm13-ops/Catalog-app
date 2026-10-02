@@ -8,7 +8,7 @@
 
 - Rama de trabajo: `workflow-3-etapas` (21+ commits por delante de `master`, aun sin fusionar).
 - Suite de pruebas: `.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"`
-  -> 423 pruebas OK, 6 omitidas (necesitan Postgres real con `PERFECT_CATALOG_RUN_INTEGRATION=1`).
+  -> 434 pruebas OK, 6 omitidas (necesitan Postgres real con `PERFECT_CATALOG_RUN_INTEGRATION=1`).
 - Base de datos: migraciones 0017-0028 aplicadas y validadas (log del 2026-09-07).
 - No hay `.env`: la contrasena de Postgres se pide a mano (`--prompt-password`), nunca se guarda.
 
@@ -21,11 +21,18 @@
 | `INICIAR-TODO.cmd` | Ambos; el revisor apunta al puerto real del publico | 8081 / 8082 |
 | `ACTUALIZAR-SISTEMA.cmd` | Aplica migraciones pendientes (exige cerrar los servidores) | - |
 | `LIMPIAR-IMPORTACIONES.cmd` | Borra importaciones (con respaldo; exige cerrar los servidores) | - |
+| `RESPALDAR-BASE.cmd` | Respaldo manual de la base en `backups/` (pide la contrasena) | - |
 
 Los lanzadores (`scripts/iniciar-servicio.ps1`, `scripts/iniciar-todo.ps1`) eligen puerto libre,
 muestran la URL, avisan si Postgres esta apagado, reinician una instancia vieja del mismo servicio
 y dejan rastro en `logs/operator-live.log` y `logs/public-live.log`. Los servidores mueren al
 cerrar su ventana.
+
+## Modo guiado
+
+`/operator/guiado` (boton "Paso a paso" en el panel): muestra un solo paso a la vez en lenguaje llano
+(Cargar -> Revisar -> Entregar). La logica vive en `src/perfect_catalog/guided_flow.py` (funcion pura
+sobre los mismos conteos del panel). El panel completo no cambio.
 
 ## Arquitectura en una linea
 

@@ -1187,6 +1187,22 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(REVIEW_SHA256, queue.text)
         self.assertNotIn("<script>incorrecto</script>", queue.text)
 
+    async def test_guided_mode_requires_login_and_shows_the_next_step(self) -> None:
+        anonymous = await self.client.get("/operator/guiado")
+        self.assertEqual(anonymous.status_code, 303)
+        await self.login()
+        guided = await self.client.get("/operator/guiado")
+        self.assertEqual(guided.status_code, 200)
+        self.assertIn("Tu catálogo, en tres pasos", guided.text)
+        self.assertIn('aria-current="step"', guided.text)
+        self.assertIn('href="/operator"', guided.text)  # salida al panel completo
+
+    async def test_dashboard_links_to_guided_mode_without_losing_the_upload_cta(self) -> None:
+        await self.login()
+        dashboard = await self.client.get("/operator")
+        self.assertIn('href="/operator/guiado"', dashboard.text)
+        self.assertIn("Cargar catálogo nuevo", dashboard.text)
+
     async def test_dashboard_guides_resolved_plan_to_catalog_design(self) -> None:
         await self.login()
         self.gateway.plan_data.update({

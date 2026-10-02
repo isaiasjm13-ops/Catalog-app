@@ -9,7 +9,7 @@
     ['/operator/admin', 'admin'], ['/operator/brands', 'admin'],
     ['/operator/company', 'admin'], ['/operator/public-links', 'admin']
   ];
-  var section = p === '/operator' ? 'inicio' : null;
+  var section = (p === '/operator' || p === '/operator/guiado') ? 'inicio' : null;
   for (var i = 0; i < map.length && !section; i++) {
     if (p === map[i][0] || p.indexOf(map[i][0] + '/') === 0) section = map[i][1];
   }
