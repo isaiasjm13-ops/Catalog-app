@@ -291,24 +291,32 @@ def _validate_image_archive(path: Path) -> IntakeValidation:
     ignored = 0
     images = 0
     sidecars = 0
-    unsupported: list[str] = []
+    blocked: list[str] = []
+    other_files = 0
+    other_examples: list[str] = []
     for _, member in members:
         member_name = member.name
         if "__MACOSX" in member.parts or member_name == ".DS_Store":
             ignored += 1
             continue
-        if member.suffix.lower() in IMAGE_EXTENSIONS:
+        suffix = member.suffix.lower()
+        if suffix in IMAGE_EXTENSIONS:
             images += 1
-        elif member.suffix.lower() in IMAGE_SIDECAR_EXTENSIONS:
+        elif suffix in IMAGE_SIDECAR_EXTENSIONS:
             sidecars += 1
-        elif len(unsupported) < 5:
-            unsupported.append(member.as_posix())
+        elif suffix in BLOCKED_PACKAGE_EXTENSIONS:
+            if len(blocked) < 5:
+                blocked.append(member.as_posix())
+        else:
+            # PDF, PSD, AI, Thumbs.db, desktop.ini…: nunca se extraen ni se indexan (el índice solo
+            # toma las imágenes), así que no hay razón para rechazar todo el paquete por uno.
+            other_files += 1
+            if len(other_examples) < 5:
+                other_examples.append(member.as_posix())
     if images == 0:
         raise ValueError("El ZIP no contiene imágenes con extensiones admitidas.")
-    if unsupported:
-        raise ValueError(
-            "El ZIP de imágenes contiene archivos no admitidos: " + ", ".join(unsupported)
-        )
+    if blocked:
+        raise ValueError("El ZIP de imágenes contiene ejecutables bloqueados: " + ", ".join(blocked))
     return IntakeValidation(
         True,
         "application/zip",
@@ -317,6 +325,8 @@ def _validate_image_archive(path: Path) -> IntakeValidation:
             "image_files": images,
             "sidecar_files": sidecars,
             "ignored_metadata_files": ignored,
+            "ignored_other_files": other_files,
+            "ignored_other_examples": other_examples,
         },
     )
 
