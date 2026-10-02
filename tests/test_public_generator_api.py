@@ -96,6 +96,15 @@ class PublicGeneratorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(csrf)
         self.assertIn("pc_public_ticket", self.client.cookies)
 
+    async def test_form_loads_submit_guard_script_allowed_by_csp(self) -> None:
+        html, _ = await self._get_form()
+        self.assertIn('src="/generar/envio.js"', html)
+        self.assertIn('id="generar-form"', html)
+        script = await self.client.get("/generar/envio.js")
+        self.assertEqual(script.status_code, 200)
+        self.assertIn("javascript", script.headers["content-type"])
+        self.assertIn("script-src 'self'", script.headers["content-security-policy"])
+
     async def test_full_generation_downloads_html_and_records_who_generated_it(self) -> None:
         _, csrf = await self._get_form()
         excel = _csv('REF-1001,"Bomba de agua Toyota Corolla 2015",Bombas\n')

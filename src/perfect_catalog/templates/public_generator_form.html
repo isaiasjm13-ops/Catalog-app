@@ -5,11 +5,18 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Generador de catálogos</title>
 <style>
-  :root{--ink:#17231f;--paper:#f4f1e8;--card:#fff;--line:#d9d5c9;--forest:#086650;--muted:#65716b}
+  :root{--ink:#17211d;--paper:#f2f4ef;--card:#fff;--line:#dce3dd;--forest:#0c5b48;--lime:#c7df54;--muted:#5f6b65}
   *{box-sizing:border-box}
-  body{margin:0;padding:clamp(20px,5vw,48px);color:var(--ink);background:var(--paper);font:15px/1.55 Arial,sans-serif}
+  body{margin:0;padding:clamp(20px,5vw,48px);color:var(--ink);background:var(--paper);font:15px/1.55 Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  :where(a,button,input,select,textarea):focus-visible{outline:3px solid var(--lime);outline-offset:3px}
+  .skip-link{position:fixed;left:12px;top:12px;transform:translateY(-150%);padding:10px 14px;border-radius:8px;background:var(--ink);color:#fff;font-weight:800;z-index:10}
+  .skip-link:focus{transform:translateY(0)}
+  button:disabled{opacity:.7;cursor:progress;filter:none}
+  .status{padding:10px 14px;border-radius:10px;background:#e7f4e8;color:#174f37;font-size:13px;font-weight:700}
+  .status[hidden]{display:none}
+  @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important}}
   main{max-width:640px;margin:0 auto}
-  h1{font:600 clamp(26px,4vw,34px)/1.15 Georgia,serif;margin:0 0 6px}
+  h1{font:500 clamp(26px,4vw,34px)/1.15 Georgia,"Times New Roman",serif;margin:0 0 6px}
   .kicker{color:var(--forest);font-weight:800;letter-spacing:.08em;text-transform:uppercase;font-size:12px}
   p.lede{color:var(--muted);margin-top:0}
   form{display:grid;gap:16px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;margin-top:20px}
@@ -26,12 +33,13 @@
 </style>
 </head>
 <body>
-<main>
+<a class="skip-link" href="#contenido-principal">Saltar al formulario</a>
+<main id="contenido-principal">
   <span class="access-chip">Acceso: {{ link_label }}</span>
   <span class="kicker">Catálogo self-service</span>
   <h1>Genera tu catálogo</h1>
   <p class="lede">Sube tu Excel de productos y tus fotos, elige colores, y descarga un catálogo HTML listo para compartir. No necesitas instalar nada ni crear una cuenta.</p>
-  <form method="post" action="/generar" enctype="multipart/form-data">
+  <form id="generar-form" method="post" action="/generar" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label><span>Tu nombre o el de tu empresa</span>
       <input type="text" name="declared_name" maxlength="200" required placeholder="Ej. Repuestos Andina">
@@ -60,8 +68,10 @@
       <small>El nombre de cada foto debe ser la referencia del producto (por ejemplo <code>REF-1234.jpg</code>). Hasta 500 fotos.</small>
     </label>
     <button type="submit">Generar catálogo</button>
+    <p id="generar-estado" class="status" role="status" hidden>Estamos generando tu catálogo. No cierres esta página; la descarga empieza sola al terminar.</p>
     <p class="hint">La descarga empieza automáticamente cuando termine. El proceso puede tardar unos minutos con catálogos grandes.</p>
   </form>
 </main>
+<script src="/generar/envio.js" defer></script>
 </body>
 </html>

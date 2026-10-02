@@ -159,7 +159,7 @@ def _render(environment: Environment, name: str, **context: Any) -> HTMLResponse
 def _set_security_headers(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+        "default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; "
         "form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
     )
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -206,6 +206,11 @@ def create_public_generator_app(
     @app.exception_handler(StarletteHTTPException)
     async def _http_exception_handler(_: Request, exc: StarletteHTTPException) -> HTMLResponse:
         return _error(environment, int(exc.status_code), "No disponible", str(exc.detail))
+
+    @app.get("/generar/envio.js")
+    async def generator_submit_script() -> Response:
+        script = files("perfect_catalog").joinpath("static", "public-envio.js").read_bytes()
+        return Response(script, media_type="application/javascript")
 
     @app.get("/generar", response_class=HTMLResponse)
     async def generator_form(request: Request, ref: str = "") -> Response:

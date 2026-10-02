@@ -16,7 +16,7 @@
     <a href="/operator/simple" class="workflow-status-card">
       <span class="workflow-number">01</span><div><strong>Cargar</strong><b>＋</b><small>Excel y fotos nuevos</small></div><i aria-hidden="true">→</i>
     </a>
-    <a href="/operator" class="workflow-status-card {% if workflow.pending_review_count %}needs-action{% endif %}">
+    <a href="/operator/review" class="workflow-status-card {% if workflow.pending_review_count %}needs-action{% endif %}">
       <span class="workflow-number">02</span><div><strong>Revisar</strong><b>{{ workflow.pending_review_count }}</b><small>identidades pendientes</small></div><i aria-hidden="true">→</i>
     </a>
     <a href="/operator/catalogs" class="workflow-status-card {% if workflow.draft_release_count %}needs-action{% endif %}">

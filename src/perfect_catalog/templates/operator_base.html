@@ -14,16 +14,16 @@
   <div class="app-shell">
     {% if session %}
     <header class="topbar">
-      <a class="brand" href="/operator" aria-label="Volver a planes">
+      <a class="brand" href="/operator" aria-label="Ir al inicio">
         <span class="brand-mark"><img src="/operator/static/nexo-isa-icon.png" alt="Nexo ISA"></span>
         <span><strong>{{ session.company_name if session is defined and session and session.company_name else 'Nexo ISA' }}</strong><small>Control de catálogo</small></span>
       </a>
       <nav class="operator-nav" aria-label="Navegación del operador">
-        <a href="/operator">Inicio</a>
-        <a href="/operator/simple">Cargar</a>
-        <a href="/operator/review">Revisar</a>
-        <a href="/operator/catalogs">Entregar</a>
-        <a href="/operator/admin">Administración</a>
+        <a href="/operator" data-section="inicio">Inicio</a>
+        <a href="/operator/simple" data-section="cargar">Cargar</a>
+        <a href="/operator/review" data-section="revisar">Revisar</a>
+        <a href="/operator/catalogs" data-section="entregar">Entregar</a>
+        <a href="/operator/admin" data-section="admin">Administración</a>
       </nav>
       <div class="operator-meta">
         <span class="status-dot"></span>
@@ -36,15 +36,15 @@
       </div>
     </header>
     <nav class="workflow-rail" aria-label="Flujo de creación del catálogo">
-      <a href="/operator/intake"><span>01</span><b>Ingresar</b><small>Datos e imágenes</small></a>
-      <a href="/operator"><span>02</span><b>Validar</b><small>Identidades</small></a>
-      <a href="/operator/catalogs"><span>03</span><b>Diseñar</b><small>Edición visual</small></a>
-      <a href="/operator/catalogs"><span>04</span><b>Entregar</b><small>Digital · PDF · INDD</small></a>
+      <a href="/operator/simple" data-section="cargar"><span>01</span><b>Cargar</b><small>Datos e imágenes</small></a>
+      <a href="/operator/review" data-section="revisar"><span>02</span><b>Revisar</b><small>Identidades y fotos</small></a>
+      <a href="/operator/catalogs" data-section="entregar"><span>03</span><b>Entregar</b><small>Diseño · Digital · PDF · INDD</small></a>
     </nav>
     {% endif %}
     <main id="contenido-principal" tabindex="-1">{% block content %}{% endblock %}</main>
     <footer>Consola local · v{{ version }} · Las decisiones quedan auditadas</footer>
   </div>
+  {% if session %}<script src="/operator/static/nav-active.js" defer></script>{% endif %}
   {% block scripts %}{% endblock %}
 </body>
 </html>

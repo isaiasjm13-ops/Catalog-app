@@ -50,7 +50,7 @@ code { font-family: "Cascadia Code", Consolas, monospace; overflow-wrap: anywher
 .operator-nav a { min-height: 44px; display: inline-flex; align-items: center; padding: 8px 13px; border-radius: 999px; color: var(--muted); font-size: 12px; font-weight: 700; text-decoration: none; }
 .operator-nav a:hover { color: var(--forest); background: white; }
 .operator-nav a[aria-current="page"] { color: white; background: var(--forest); box-shadow: 0 5px 14px rgba(12,91,72,.18); }
-.workflow-rail { display: grid; grid-template-columns: repeat(4, 1fr); margin: 18px 0 0; border: 1px solid rgba(12,91,72,.12); border-radius: 16px; background: rgba(255,255,255,.58); box-shadow: var(--shadow-soft); overflow: hidden; }
+.workflow-rail { display: grid; grid-template-columns: repeat(3, 1fr); margin: 18px 0 0; border: 1px solid rgba(12,91,72,.12); border-radius: 16px; background: rgba(255,255,255,.58); box-shadow: var(--shadow-soft); overflow: hidden; }
 .workflow-rail a { position: relative; display: grid; grid-template-columns: 28px 1fr; grid-template-rows: auto auto; gap: 1px 8px; min-width: 0; min-height: 54px; padding: 12px 15px; border-right: 1px solid rgba(12,91,72,.1); text-decoration: none; }
 .workflow-rail a:last-child { border-right: 0; }
 .workflow-rail a:hover { background: rgba(255,255,255,.85); }
@@ -575,9 +575,9 @@ a.brand-profile-card:hover,a.brand-profile-card:focus-visible { border-color: va
   .topbar, .page-heading, .queue-heading { align-items: start; }
   .topbar { flex-wrap: wrap; gap: 10px; padding: 14px 0; }
   .operator-nav { order: 3; width: 100%; justify-content: center; }
-  .workflow-rail { grid-template-columns: repeat(2, 1fr); }
-  .workflow-rail a:nth-child(2) { border-right: 0; }
-  .workflow-rail a:nth-child(-n+2) { border-bottom: 1px solid rgba(12,91,72,.1); }
+  .workflow-rail a { grid-template-columns: 1fr; padding: 10px 8px; text-align: center; }
+  .workflow-rail span { grid-row: auto; }
+  .workflow-rail small { display: none; }
   .page-heading, .queue-heading { display: grid; }
   .operator-meta > span:not(.status-dot) { display: none; }
   .plan-grid { grid-template-columns: 1fr; }
@@ -621,3 +621,7 @@ a.brand-profile-card:hover,a.brand-profile-card:focus-visible { border-color: va
 .company-card { background: rgba(255,255,255,.92); border: 1px solid #d7e1dc; border-radius: 18px; padding: 1.4rem; box-shadow: 0 16px 40px rgba(23,33,29,.08); }
 .company-card small { letter-spacing: .12em; color: #587068; }
 .company-card h2 { margin: .45rem 0; }
+
+/* Mejoras de diseño (2026-10-02): estado activo en la barra de pasos. */
+.workflow-rail a[aria-current="page"] { background: rgba(12,91,72,.09); box-shadow: inset 0 -3px 0 var(--forest); }
+.workflow-rail a[aria-current="page"] b { color: var(--forest-dark); }
