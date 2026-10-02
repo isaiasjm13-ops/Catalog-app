@@ -219,6 +219,19 @@ class PublicGeneratorHttpTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("demasiados catálogos", second_post.text)
 
 
+class SafeDownloadNameTests(unittest.TestCase):
+    def test_download_name_is_always_ascii_so_the_header_can_be_encoded(self) -> None:
+        from perfect_catalog.public_generator_api import _safe_download_name
+
+        for company in ("Importadora Ñandú", "Автозапчасти", "汽车配件", "Peças & Cía.", "", "   "):
+            name = _safe_download_name(company)
+            name.encode("latin-1")  # no debe lanzar
+            self.assertTrue(name.isascii(), name)
+            self.assertTrue(name.startswith("catalogo-") and name.endswith(".html"), name)
+        self.assertIn("importadora-nandu", _safe_download_name("Importadora Ñandú"))
+        self.assertIn("catalogo-catalogo-", _safe_download_name("Автозапчасти"))
+
+
 class SlidingWindowLimiterTests(unittest.TestCase):
     def test_expired_keys_are_evicted_instead_of_kept_forever(self) -> None:
         # Bug real: cada IP o token distinto dejaba una entrada permanente en el

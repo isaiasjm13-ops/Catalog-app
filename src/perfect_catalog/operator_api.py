@@ -1256,7 +1256,7 @@ def create_operator_app(
             "rejected": "Archivo rechazado por el validador. No se conservaron sus bytes.",
             "promoted": "Ingreso perfilado; el dry-run quedó pendiente de revisión.",
             "already_promoted": "Este ingreso ya tenía un dry-run enlazado.",
-            "indexed": "ZIP indexado sin extracción. Las asociaciones permanecen pendientes de revisión.",
+            "indexed": "ZIP indexado sin extracción. Siguiente paso: entra a Imágenes y pulsa «Buscar coincidencias de nuevo» para proponer a qué producto pertenece cada foto.",
             "already_indexed": "Este ZIP ya tenía un índice verificable; no se duplicó.",
             "archived": "Ingreso archivado. Deja de aparecer en la lista activa; su evidencia permanece intacta.",
             "already_archived": "Este ingreso ya estaba archivado.",

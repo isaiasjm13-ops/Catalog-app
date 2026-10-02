@@ -8,7 +8,7 @@
 
 - Rama de trabajo: `workflow-3-etapas` (21+ commits por delante de `master`, aun sin fusionar).
 - Suite de pruebas: `.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"`
-  -> 454 pruebas OK, 6 omitidas (necesitan Postgres real con `PERFECT_CATALOG_RUN_INTEGRATION=1`).
+  -> 456 pruebas OK, 6 omitidas (necesitan Postgres real con `PERFECT_CATALOG_RUN_INTEGRATION=1`).
 - Base de datos: migraciones 0017-0028 aplicadas (log del 2026-10-02); la 0029 (seleccion manual de fotos) esta escrita y PENDIENTE de aplicar con ACTUALIZAR-SISTEMA.cmd.
 - No hay `.env`: la contrasena de Postgres se pide a mano (`--prompt-password`), nunca se guarda.
 

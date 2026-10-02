@@ -97,10 +97,22 @@ class GeneratePublicCatalogTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self._call(excel, images=images)
 
-    def test_rejects_unsupported_image_extension(self) -> None:
+    def test_ignores_non_photo_files_instead_of_aborting_the_whole_catalog(self) -> None:
+        # Antes un solo PDF/Thumbs.db entre las fotos abortaba todo el catálogo.
         excel = _csv("REF-8008,Sensor,Electrico,\n")
+        result = self._call(excel, images=[
+            ("REF-8008.png", _png_bytes()), ("REF-8008.txt", b"not an image"),
+            ("ficha.pdf", b"%PDF"), ("Thumbs.db", b"db"),
+        ])
+        self.assertEqual(result.product_count, 1)
+        self.assertEqual(result.image_count, 1)
+        self.assertEqual(result.matched_image_count, 1)
+        self.assertEqual(result.unmatched_image_count, 0)
+
+    def test_still_rejects_a_corrupt_file_with_a_photo_extension(self) -> None:
+        excel = _csv("REF-8009,Sensor,Electrico,\n")
         with self.assertRaises(ValueError):
-            self._call(excel, images=[("REF-8008.txt", b"not an image")])
+            self._call(excel, images=[("REF-8009.png", b"esto no es un png")])
 
     def test_logo_is_sanitized_and_embedded(self) -> None:
         excel = _csv("REF-9009,Kit de embrague,Transmision,\n")

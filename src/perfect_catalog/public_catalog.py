@@ -276,6 +276,9 @@ def generate_public_catalog(
     extension = Path(excel_filename).suffix.lower()
     if extension not in {".xlsx", ".csv", ".tsv"}:
         raise ValueError("El archivo de productos debe ser .xlsx, .csv o .tsv.")
+    # Lo que no es una foto (PDF, Thumbs.db, .ai…) se ignora en vez de abortar todo el catálogo;
+    # una foto con extensión válida pero corrupta sí se reporta como error en _match_images.
+    images = [(name, content) for name, content in images if Path(name).suffix.lower() in IMAGE_EXTENSIONS]
     if len(images) > MAX_PUBLIC_IMAGE_FILES:
         raise ValueError(f"Se admiten como máximo {MAX_PUBLIC_IMAGE_FILES:,} fotos por catálogo.")
     if sum(len(content) for _, content in images) > MAX_PUBLIC_IMAGE_TOTAL_BYTES:

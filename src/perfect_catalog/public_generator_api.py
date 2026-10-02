@@ -18,6 +18,7 @@ import secrets
 import sys
 import threading
 import time
+import unicodedata
 import uuid
 from datetime import UTC, datetime
 from importlib.resources import files
@@ -177,7 +178,10 @@ def _error(environment: Environment, status_code: int, title: str, detail: str) 
 
 
 def _safe_download_name(company_name: str) -> str:
-    slug = "".join(char if char.isalnum() else "-" for char in company_name.strip().lower())
+    # Solo ASCII: el encabezado Content-Disposition se codifica en latin-1 y un nombre en otro
+    # alfabeto (cirílico, CJK…) provocaba un error 500 después de haber generado el catálogo.
+    ascii_name = unicodedata.normalize("NFKD", company_name.strip().lower()).encode("ascii", "ignore").decode("ascii")
+    slug = "".join(char if char.isalnum() else "-" for char in ascii_name)
     slug = "-".join(part for part in slug.split("-") if part) or "catalogo"
     return f"catalogo-{slug}-{datetime.now(UTC):%Y%m%d}.html"
 
