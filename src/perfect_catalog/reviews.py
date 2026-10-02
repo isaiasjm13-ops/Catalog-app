@@ -1172,6 +1172,16 @@ class DatabaseReviewGateway:
 
         return link_brand_profile(config=self._config, password=self._password, **kwargs)
 
+    def profiles_without_brand(self, *, company_id: uuid.UUID) -> list[dict[str, Any]]:
+        from .brand_profiles import list_profiles_without_brand
+
+        return list_profiles_without_brand(self._config, self._password, company_id=company_id)
+
+    def create_brand_for_profile(self, **kwargs: Any) -> dict[str, Any]:
+        from .brand_profiles import create_brand_for_profile
+
+        return create_brand_for_profile(config=self._config, password=self._password, **kwargs)
+
     def create_brand_profile(
         self, values: dict[str, str], actor: str, reason: str, company_id: uuid.UUID,
     ) -> dict[str, Any]:

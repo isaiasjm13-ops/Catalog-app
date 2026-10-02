@@ -18,7 +18,7 @@ def is_company_brand_allowed(company_code: str, brand_code: str) -> bool:
         return brand == 'A1'
     if company == 'PDM':
         return bool(brand)
-    return brand in {'PERFECT', 'MASAKI', 'EXACTCARS'}
+    return brand in {'PERFECT', 'MASAKI', 'EXACTCARS', 'KAZE'}
 
 
 def resolve_import_context(

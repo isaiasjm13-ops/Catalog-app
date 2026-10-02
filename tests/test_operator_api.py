@@ -49,6 +49,8 @@ class SyntheticReviewGateway:
         self.image_indexes: list[dict[str, Any]] = []
         self.image_candidate_data: list[dict[str, Any]] = []
         self.unlinked_image_data: list[dict[str, Any]] = []
+        self.orphan_profile_data: list[dict[str, Any]] = []
+        self.brand_creation_error = ""
         self.reference_search_data: list[dict[str, Any]] = []
         self.reference_searches: list[str] = []
         self.manual_assignments: list[dict[str, Any]] = []
@@ -191,6 +193,19 @@ class SyntheticReviewGateway:
         if company_id != COMPANY_ID:
             raise PermissionError("Company incorrecta")
         return [{"brand_id": str(uuid.uuid4()), "code": "NATSUKI", "name": "Natsuki", "is_active": True, "brand_profile_id": None, "linked_profile_code": None, "linked_profile_name": None}]
+
+    def profiles_without_brand(self, *, company_id: uuid.UUID) -> list[dict[str, Any]]:
+        if company_id != COMPANY_ID:
+            raise PermissionError("Company incorrecta")
+        return self.orphan_profile_data
+
+    def create_brand_for_profile(self, **kwargs: Any) -> dict[str, Any]:
+        if kwargs["company_id"] != COMPANY_ID:
+            raise PermissionError("Company incorrecta")
+        if self.brand_creation_error:
+            raise ValueError(self.brand_creation_error)
+        self.company_changes.append({"action": "brand_real_create", **kwargs})
+        return {"status": "created"}
 
     def link_brand_profile(self, **kwargs: Any) -> dict[str, Any]:
         self.company_changes.append({"action": "brand_profile_link", **kwargs})
@@ -907,6 +922,46 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(deactivated.status_code, 303)
         self.assertFalse(self.gateway.company_changes[-1]["active"])
+
+    async def test_profile_without_real_brand_offers_creating_it_and_records_the_actor(self) -> None:
+        await self.login()
+        profile_id = uuid.uuid4()
+        self.gateway.orphan_profile_data = [
+            {"brand_profile_id": str(profile_id), "code": "KAZE", "display_name": "Kaze"},
+        ]
+        page = await self.client.get("/operator/brands")
+        self.assertIn("Perfiles sin marca real", page.text)
+        self.assertIn("Crear marca real KAZE", page.text)
+        csrf = hidden_value(page.text, "csrf_token")
+        done = await self.client.post(
+            "/operator/brands/create-real",
+            data={"csrf_token": csrf, "brand_profile_id": str(profile_id)},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(done.status_code, 303)
+        self.assertIn("result=brand_created", done.headers["location"])
+        change = self.gateway.company_changes[-1]
+        self.assertEqual(change["action"], "brand_real_create")
+        self.assertEqual(change["actor"], "web-reviewer")
+        self.assertEqual(str(change["brand_profile_id"]), str(profile_id))
+
+    async def test_creating_the_real_brand_shows_the_policy_error_instead_of_failing_silently(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/brands")
+        csrf = hidden_value(page.text, "csrf_token")
+        self.gateway.brand_creation_error = "La marca XYZ no esta autorizada para la Company PERFECT."
+        refused = await self.client.post(
+            "/operator/brands/create-real",
+            data={"csrf_token": csrf, "brand_profile_id": str(uuid.uuid4())},
+            headers={"Origin": "http://testserver"},
+        )
+        self.assertEqual(refused.status_code, 409)
+        self.assertIn("no esta autorizada", refused.text)
+
+    async def test_brands_page_hides_the_orphan_section_when_every_profile_has_a_brand(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/brands")
+        self.assertNotIn("Perfiles sin marca real", page.text)
 
     async def test_brands_page_offers_linking_unlinked_brand_to_a_profile(self) -> None:
         await self.login()

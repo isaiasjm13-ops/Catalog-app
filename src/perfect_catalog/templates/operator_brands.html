@@ -39,6 +39,22 @@
   </article>
 {% else %}<p>No hay perfiles de marca. Aplica la migración 0013.</p>{% endfor %}
 </section>
+{% if orphan_profiles %}
+<section class="transition-panel brand-profile-builder">
+  <h2>Perfiles sin marca real</h2>
+  <p>Estos perfiles visuales todavía no tienen su marca real, y sin ella no se pueden cargar productos (el dry-run fallaría con «La Brand no existe»). Crearla toma el nombre y el código del perfil y queda vinculada y auditada.</p>
+  {% for orphan in orphan_profiles %}
+  <article class="brand-profile-card">
+    <small>{{ orphan.code }}</small><h2>{{ orphan.display_name }}</h2>
+    <form method="post" action="/operator/brands/create-real">
+      <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+      <input type="hidden" name="brand_profile_id" value="{{ orphan.brand_profile_id }}">
+      <button class="primary-button" type="submit">Crear marca real {{ orphan.code }}</button>
+    </form>
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
 <section class="transition-panel brand-profile-builder">
   <h2>Vincular marca con su perfil visual</h2>
   <p>Un dry-run solo puede aprobarse cuando su marca tiene un perfil vinculado. Las marcas nuevas (por ejemplo, al dar de alta una Company) no quedan vinculadas automáticamente: elige aquí el perfil correcto para cada una.</p>

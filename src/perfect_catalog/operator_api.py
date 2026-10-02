@@ -269,6 +269,10 @@ class ReviewGateway(Protocol):
 
     def link_brand_profile(self, **kwargs: Any) -> dict[str, Any]: ...
 
+    def profiles_without_brand(self, *, company_id: uuid.UUID) -> list[dict[str, Any]]: ...
+
+    def create_brand_for_profile(self, **kwargs: Any) -> dict[str, Any]: ...
+
     def create_brand_profile(
         self, values: dict[str, str], actor: str, reason: str, company_id: uuid.UUID,
     ) -> dict[str, Any]: ...
@@ -1341,6 +1345,9 @@ def create_operator_app(
             brands = await run_in_threadpool(
                 gateway.brands, company_id=session_or_redirect.company_id,
             )
+            orphan_profiles = await run_in_threadpool(
+                gateway.profiles_without_brand, company_id=session_or_redirect.company_id,
+            )
             identities = await run_in_threadpool(
                 gateway.visual_identities, company_id=session_or_redirect.company_id,
             )
@@ -1351,14 +1358,40 @@ def create_operator_app(
                 "brand_workspace_read_failed", exc, session=session_or_redirect,
             )
         message = {
-            "created": "Marca creada. Ya está disponible como perfil visual.",
+            "created": "Perfil visual creado. Para poder cargar productos de esta marca, créala también como marca real en «Perfiles sin marca real».",
+            "brand_created": "Marca real creada y vinculada a su perfil. Ya puedes cargar productos de esta marca.",
             "identity_created": "Logo y colores guardados como una nueva revisión auditada.",
             "linked": "Vínculo Brand-Perfil guardado. Ya puedes generar un dry-run para esta marca.",
         }.get(request.query_params.get("result"))
         return _render(
             environment, "operator_brands.html", profiles=profiles, brands=brands, identities=identities,
+            orphan_profiles=orphan_profiles,
             message=message, session=session_or_redirect, version=OPERATOR_VERSION,
         )
+
+    @app.post("/operator/brands/create-real")
+    async def create_real_brand_route(request: Request) -> Response:
+        """Crea la marca real (Brand) de un perfil visual que aún no la tiene."""
+        session_or_redirect = require_session(request)
+        if isinstance(session_or_redirect, RedirectResponse):
+            return session_or_redirect
+        session = session_or_redirect
+        try:
+            form = await _parse_form(request)
+            if set(form) != {"csrf_token", "brand_profile_id"}:
+                raise ValueError("El formulario contiene campos ausentes o desconocidos.")
+            if (rejection := _csrf_rejection(request, form, session, environment)) is not None:
+                return rejection
+            await run_in_threadpool(
+                gateway.create_brand_for_profile,
+                brand_profile_id=_uuid(form["brand_profile_id"], "brand_profile_id"),
+                actor=session.actor, company_id=session.company_id,
+            )
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            return _error(environment, 409, "Marca no creada", str(exc), session=session)
+        except Exception as exc:
+            return _unexpected_error(environment, "Marca no creada", "PostgreSQL no guardó la marca. Revisa la consola.", "brand_real_create_failed", exc, session=session)
+        return RedirectResponse("/operator/brands?result=brand_created", status_code=303)
 
     @app.post("/operator/brands/link")
     async def link_brand_profile_route(request: Request) -> Response:
