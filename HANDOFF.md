@@ -8,8 +8,8 @@
 
 - Rama de trabajo: `workflow-3-etapas` (21+ commits por delante de `master`, aun sin fusionar).
 - Suite de pruebas: `.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"`
-  -> 436 pruebas OK, 6 omitidas (necesitan Postgres real con `PERFECT_CATALOG_RUN_INTEGRATION=1`).
-- Base de datos: migraciones 0017-0028 aplicadas y validadas (log del 2026-09-07).
+  -> 441 pruebas OK, 6 omitidas (necesitan Postgres real con `PERFECT_CATALOG_RUN_INTEGRATION=1`).
+- Base de datos: migraciones 0017-0028 aplicadas (log del 2026-10-02); la 0029 (seleccion manual de fotos) esta escrita y PENDIENTE de aplicar con ACTUALIZAR-SISTEMA.cmd.
 - No hay `.env`: la contrasena de Postgres se pide a mano (`--prompt-password`), nunca se guarda.
 
 ## Como arrancar
@@ -47,6 +47,16 @@ con codigos distintos, referencias sin foto), boton "Eliminar referencias sin fo
 plantilla de encabezado con `{marca}` `{empresa}` `{total}`, campo WhatsApp para pedidos, salida PDF
 para imprimir, interruptor de marca de agua con logo propio por marca, PWA instalable, visibilidad de
 funciones configurable por administrador.
+
+## Seleccion manual de fotos (idea de Kairo, migracion 0029)
+
+En `/operator/images`, cada foto "sin asociar o ambigua" tiene un buscador "¿De que producto es esta
+foto?": se busca por referencia o nombre y se asigna como foto principal o adicional. Crea un candidato
+`operator-selected-v1` + su decision `approved` (append-only, con el actor) en una transaccion
+(`src/perfect_catalog/image_manual_selection.py`); despues se copia con "Preparar coincidencias exactas".
+**Pendiente: aplicar la 0029 con `ACTUALIZAR-SISTEMA.cmd` (cerrar servidores; antes `RESPALDAR-BASE.cmd`) y
+probar en vivo.** El SQL de busqueda/asignacion solo esta probado con un gateway simulado, no contra Postgres.
+Sin hacer: "Descartar foto" (no hay candidato al que adjuntar un rechazo) y "Excluir referencias sin foto".
 
 ## Arquitectura en una linea
 

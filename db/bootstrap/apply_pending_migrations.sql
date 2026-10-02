@@ -299,7 +299,29 @@ SELECT checksum_sha256 <> :'checksum_0028' AS mismatch_0028 FROM perfect_catalog
 \ir ../migrations/0028_public_catalog_links.sql
 \endif
 
-\echo 'Validando ledger 0017-0028 y contexto Company'
+SELECT NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname='ck_image_product_candidate_algorithm'
+      AND conrelid='perfect_catalog.image_product_candidate'::regclass
+      AND pg_get_constraintdef(oid) LIKE '%operator-selected-v1%'
+) AS need_0029 \gset
+SELECT EXISTS (SELECT 1 FROM perfect_catalog.schema_migration WHERE migration_id='0029_manual_image_selection') AS ledger_0029 \gset
+\if :ledger_0029
+SELECT checksum_sha256 <> :'checksum_0029' AS mismatch_0029 FROM perfect_catalog.schema_migration WHERE migration_id='0029_manual_image_selection' \gset
+\if :mismatch_0029
+\echo 'CHECKSUM_MISMATCH: 0029_manual_image_selection.'
+\quit 3
+\endif
+\else
+\if :need_0029
+\echo 'MIGRATION_PENDING: 0029 - seleccion manual de fotos'
+\else
+\echo 'SCHEMA_AHEAD_OF_LEDGER: 0029; validando postcondiciones.'
+\endif
+\ir ../migrations/0029_manual_image_selection.sql
+\endif
+
+\echo 'Validando ledger 0017-0029 y contexto Company'
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -338,8 +360,11 @@ BEGIN
     ) OR NOT EXISTS (
         SELECT 1 FROM perfect_catalog.schema_migration
         WHERE migration_id = '0028_public_catalog_links'
+    ) OR NOT EXISTS (
+        SELECT 1 FROM perfect_catalog.schema_migration
+        WHERE migration_id = '0029_manual_image_selection'
     ) THEN
-        RAISE EXCEPTION 'Validacion del sistema: faltan entradas 0017-0028 en el ledger';
+        RAISE EXCEPTION 'Validacion del sistema: faltan entradas 0017-0029 en el ledger';
     END IF;
 
     IF EXISTS (
@@ -497,6 +522,15 @@ BEGIN
           AND indexname = 'ux_public_catalog_link_revocation_event_link'
     ) THEN
         RAISE EXCEPTION 'Validacion del generador publico: falta indice unico de revocacion 0028';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname='ck_image_product_candidate_algorithm'
+          AND conrelid='perfect_catalog.image_product_candidate'::regclass
+          AND pg_get_constraintdef(oid) LIKE '%operator-selected-v1%'
+    ) THEN
+        RAISE EXCEPTION 'Validacion de seleccion manual de fotos: falta algoritmo operator-selected-v1 0029';
     END IF;
 END
 $$;
