@@ -3,9 +3,11 @@ from __future__ import annotations
 import io
 import csv
 import base64
+import re
 import uuid
 from collections import defaultdict
 from html import escape
+from urllib.parse import quote
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Iterable
@@ -601,6 +603,12 @@ def generate_catalog_pptx(
     return output.getvalue()
 
 
+def normalize_whatsapp_number(value: Any) -> str:
+    """Solo dígitos con código de país (p. ej. «507 6123 4567» -> «50761234567»); '' si no es válido."""
+    digits = re.sub(r"\D", "", str(value or ""))
+    return digits if 7 <= len(digits) <= 15 else ""
+
+
 def generate_catalog_html(
     rows: list[dict[str, Any]], config: dict[str, Any] | None = None,
     *, release: dict[str, Any] | None = None, bundle_dir: Path | None = None,
@@ -674,6 +682,22 @@ def generate_catalog_html(
         for make in row_vehicle_makes(row)
         if str(make).strip()
     })
+    whatsapp_digits = normalize_whatsapp_number(config.get("whatsapp_number"))
+
+    def whatsapp_order_link(row: dict[str, Any]) -> str:
+        """Botón «Pedir por WhatsApp» con la referencia y el nombre ya escritos en el mensaje.
+        Solo aparece si el catálogo tiene un número configurado."""
+        if not whatsapp_digits:
+            return ""
+        reference = str(row.get("internal_reference_original") or "").strip()
+        name = str(row.get("name_original") or "").strip()
+        message = f"Hola, quiero pedir: {reference} - {name}".strip(" -")
+        url = f"https://wa.me/{whatsapp_digits}?text={quote(message)}"
+        return (
+            f'<a class="wa-order" href="{escape(url, quote=True)}" target="_blank" rel="noopener noreferrer">'
+            "Pedir por WhatsApp</a>"
+        )
+
     navigation: list[str] = []
     for section_index, (section, section_rows) in enumerate(grouped_rows, 1):
         section_id = f"seccion-{section_index:02d}"
@@ -731,7 +755,8 @@ def generate_catalog_html(
                 + reference_markup
                 + f'<h3>{escape(str(row.get("name_original") or "Sin nombre"))}</h3>'
                 + (f'<p class="meta">{visible_category}{" · " if visible_category and visible_brand else ""}{visible_brand}</p>' if visible_category or visible_brand else "")
-                + (f'<dl class="specifications">{specifications}</dl>' if specifications else "") + "</article>"
+                + (f'<dl class="specifications">{specifications}</dl>' if specifications else "")
+                + whatsapp_order_link(row) + "</article>"
             )
         section_logo = vehicle_logo_source(section) if str(config.get("group_by") or "") == "vehicle_make" else ""
         sections.append(
@@ -815,6 +840,9 @@ def generate_catalog_html(
     # ahora ocupan su propia fila bajo la foto y, en escritorio, quedan sobre la foto sin invadir la ficha.
     gallery_css = """@media(max-width:819px){.photo-viewer[open]{grid-template-rows:minmax(26vh,1fr) auto minmax(0,auto) auto}.photo-viewer-gallery{position:static;grid-column:1;grid-row:2;padding:2px 0;background:none}.photo-viewer-details{grid-row:3}.photo-viewer form{grid-row:4}.photo-viewer-close{width:100%}}@media(min-width:820px){.photo-viewer-gallery{right:auto;max-width:calc(72% - 48px)}}"""
     html = html.replace("</style>", gallery_css + "</style>", 1)
+    if whatsapp_digits:
+        whatsapp_css = """.wa-order{display:inline-flex;align-items:center;justify-content:center;min-height:44px;margin-top:12px;padding:8px 16px;border-radius:999px;background:#128c7e;color:#fff;font-weight:800;text-decoration:none}.wa-order:hover,.wa-order:focus-visible{background:#0e6f64}.photo-viewer-details .wa-order{width:100%}@media print{.wa-order{display:none}}"""
+        html = html.replace("</style>", whatsapp_css + "</style>", 1)
     detail_script = """<script>(()=>{const viewer=document.querySelector('#photo-viewer'),caption=viewer.querySelector('p'),details=document.createElement('div'),mainImage=viewer.querySelector('img'),gallery=document.createElement('div');details.className='photo-viewer-details';details.setAttribute('aria-live','polite');caption.replaceWith(details);gallery.className='photo-viewer-gallery';gallery.hidden=true;mainImage.insertAdjacentElement('afterend',gallery);for(const trigger of document.querySelectorAll('.photo'))trigger.addEventListener('click',()=>{const card=trigger.closest('.product');details.replaceChildren(...[...card.children].filter(node=>!node.classList.contains('photo')).map(node=>node.cloneNode(true)));const sources=(trigger.dataset.gallery||'').split('|').filter(Boolean);gallery.replaceChildren();gallery.hidden=sources.length<2;sources.forEach((source,index)=>{const thumb=document.createElement('button');thumb.type='button';thumb.className='photo-viewer-thumb'+(index===0?' active':'');thumb.innerHTML=`<img src="${source}" alt="">`;thumb.addEventListener('click',()=>{mainImage.src=source;gallery.querySelectorAll('.photo-viewer-thumb').forEach(node=>node.classList.remove('active'));thumb.classList.add('active')});gallery.appendChild(thumb)})})})();</script>"""
     html = html.replace("</body>", detail_script + "</body>", 1)
     # Navegadores sin <dialog> (iPhone/Android antiguos, visores de adjuntos): "Cerrar" no debe

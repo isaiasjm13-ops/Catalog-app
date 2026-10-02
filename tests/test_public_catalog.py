@@ -97,6 +97,34 @@ class GeneratePublicCatalogTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self._call(excel, images=images)
 
+    def test_whatsapp_number_adds_an_order_button_with_the_reference_prefilled(self) -> None:
+        excel = _csv("REF-4040,Bomba de agua,Motor,\n")
+        result = self._call(excel, whatsapp_number="507 6123-4567")
+        html = result.html.decode("utf-8")
+        self.assertIn('class="wa-order"', html)
+        self.assertIn("https://wa.me/50761234567?text=Hola%2C%20quiero%20pedir%3A%20REF-4040%20-%20Bomba%20de%20agua", html)
+        self.assertIn('rel="noopener noreferrer"', html)
+        self.assertIn("@media print{.wa-order{display:none}}", html)
+
+    def test_no_whatsapp_number_means_no_order_button_at_all(self) -> None:
+        html = self._call(_csv("REF-4041,Filtro,Motor,\n")).html.decode("utf-8")
+        self.assertNotIn("wa-order", html)
+        self.assertNotIn("wa.me", html)
+
+    def test_invalid_whatsapp_number_is_rejected_with_an_example(self) -> None:
+        for bad in ("12", "abc", "1" * 16):
+            with self.assertRaisesRegex(ValueError, "WhatsApp"):
+                self._call(_csv("REF-4042,Filtro,Motor,\n"), whatsapp_number=bad)
+
+    def test_whatsapp_message_is_escaped_so_a_product_name_cannot_break_the_link(self) -> None:
+        html = self._call(
+            _csv('REF-4043,"Kit ""A"" & <b>x</b>",Motor,\n'), whatsapp_number="50761234567",
+        ).html.decode("utf-8")
+        link = re.search(r'<a class="wa-order" href="([^"]+)"', html)
+        self.assertIsNotNone(link)
+        self.assertNotIn("<b>", link.group(1))
+        self.assertNotIn(" ", link.group(1))
+
     def test_ignores_non_photo_files_instead_of_aborting_the_whole_catalog(self) -> None:
         # Antes un solo PDF/Thumbs.db entre las fotos abortaba todo el catálogo.
         excel = _csv("REF-8008,Sensor,Electrico,\n")

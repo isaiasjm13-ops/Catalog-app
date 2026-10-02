@@ -76,7 +76,12 @@ class ServerThread(threading.Thread):
         super().__init__(daemon=True, name=f"uvicorn-{port}")
         self.port = port
         self.server = uvicorn.Server(
-            uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", access_log=False)
+            # log_config=None: sin consola (pythonw) uvicorn no puede armar su formato de log
+            # ("Unable to configure formatter 'default'"); los avisos van al logging normal.
+            uvicorn.Config(
+                app, host="127.0.0.1", port=port, log_level="warning", access_log=False,
+                log_config=None,
+            )
         )
 
     def run(self) -> None:
@@ -97,6 +102,14 @@ class ServerThread(threading.Thread):
 
     def stop(self) -> None:
         self.server.should_exit = True
+
+
+def _ensure_std_streams() -> None:
+    """pythonw no tiene consola: sys.stdout/stderr son None y cualquier librería que escriba o
+    pregunte isatty() falla. Se reemplazan por un destino nulo."""
+    for name in ("stdout", "stderr"):
+        if getattr(sys, name) is None:
+            setattr(sys, name, open(os.devnull, "w", encoding="utf-8"))  # noqa: SIM115
 
 
 def _setup_logging() -> None:
@@ -193,6 +206,7 @@ def _control_window(url: str) -> None:
 
 
 def main() -> int:
+    _ensure_std_streams()
     os.chdir(PROJECT_ROOT)
     _setup_logging()
     try:

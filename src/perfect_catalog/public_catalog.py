@@ -24,7 +24,7 @@ from PIL import Image as PILImage
 from tools.odoo_profiler import read_tabular_source
 
 from .brand_profiles import COLOR_PATTERN
-from .catalog_exports import generate_catalog_html
+from .catalog_exports import generate_catalog_html, normalize_whatsapp_number
 from .image_archive_index import normalize_image_key
 from .image_match_review import exact_image_candidates
 from .importer import (
@@ -264,6 +264,7 @@ def generate_public_catalog(
     paper_color: str = "#FFFFFF",
     logo: tuple[str, bytes] | None = None,
     max_rows: int = DEFAULT_MAX_PILOT_ROWS,
+    whatsapp_number: str = "",
 ) -> PublicCatalogResult:
     company_name = _require_text(company_name, "company_name")
     brand_name = _require_text(brand_name, "brand_name", max_length=120)
@@ -271,6 +272,9 @@ def generate_public_catalog(
     secondary_color = _require_color(secondary_color, "secondary_color")
     ink_color = _require_color(ink_color, "ink_color")
     paper_color = _require_color(paper_color, "paper_color")
+    whatsapp_number = str(whatsapp_number or "").strip()
+    if whatsapp_number and not normalize_whatsapp_number(whatsapp_number):
+        raise ValueError("El número de WhatsApp no es válido: escríbelo con código de país, por ejemplo 507 6123 4567.")
     if not excel_bytes or len(excel_bytes) > MAX_PUBLIC_EXCEL_BYTES:
         raise ValueError("El Excel está vacío o supera el límite de tamaño permitido.")
     extension = Path(excel_filename).suffix.lower()
@@ -322,6 +326,7 @@ def generate_public_catalog(
         config = {
             "template_profile": "T4",
             "title": f"Catálogo · {company_name}",
+            "whatsapp_number": whatsapp_number,
             "visual_profile": {
                 "primary_color": primary_color,
                 "secondary_color": secondary_color,

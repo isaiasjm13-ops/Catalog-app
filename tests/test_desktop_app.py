@@ -61,6 +61,28 @@ class BuildAppCommandTests(unittest.TestCase):
         self.assertIn("--no-first-run", command)
 
 
+class NoConsoleTests(unittest.TestCase):
+    def test_streams_are_replaced_when_there_is_no_console_like_pythonw(self) -> None:
+        import sys
+        from unittest import mock
+
+        from perfect_catalog.desktop_app import _ensure_std_streams
+
+        with mock.patch.object(sys, "stdout", None), mock.patch.object(sys, "stderr", None):
+            _ensure_std_streams()
+            self.assertIsNotNone(sys.stdout)
+            self.assertIsNotNone(sys.stderr)
+            sys.stderr.write("texto que antes habría fallado")  # escribir no debe lanzar
+            sys.stdout.flush()
+
+    def test_uvicorn_does_not_configure_its_own_logging_formatter(self) -> None:
+        # Sin consola, uvicorn fallaba con "Unable to configure formatter 'default'".
+        from perfect_catalog.desktop_app import ServerThread
+
+        thread = ServerThread(lambda scope, receive, send: None, 0)
+        self.assertIsNone(thread.server.config.log_config)
+
+
 class DesktopAppWiringTests(unittest.TestCase):
     def test_launcher_and_guards_know_about_the_desktop_app(self) -> None:
         launcher = (ROOT / "INICIAR-APP.cmd").read_text(encoding="utf-8")
