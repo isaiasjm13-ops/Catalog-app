@@ -111,17 +111,6 @@ def _is_empty(value: Any) -> bool:
     return value is None or (isinstance(value, str) and value.strip() == "")
 
 
-def _as_bool(value: Any) -> bool | None:
-    if isinstance(value, bool):
-        return value
-    key = _header_key(value)
-    if key in {"true", "verdadero", "si", "1"}:
-        return True
-    if key in {"false", "falso", "no", "0"}:
-        return False
-    return None
-
-
 def reference_candidates(enrichment: dict[str, Any]) -> list[dict[str, Any]]:
     """Convierte inferencias del parser en candidatos tipados; nunca los aprueba."""
     candidates: list[dict[str, Any]] = []
@@ -431,9 +420,6 @@ def _existing_reference_owners(
 
 
 IMPORTABLE_FROM_SOURCE = frozenset({"name_original", "name_normalized", "category_path", "variant_count_observed"})
-LOCAL_PROTECTED = frozenset({"catalog_status", "name_enrichment", "reference_candidates"})
-
-
 def build_product_diff(existing: dict[str, Any], incoming: dict[str, Any]) -> list[dict[str, Any]]:
     diffs = []
     for field in sorted(IMPORTABLE_FROM_SOURCE):

@@ -8,7 +8,7 @@
 
 - Rama de trabajo: `workflow-3-etapas` (21+ commits por delante de `master`, aun sin fusionar).
 - Suite de pruebas: `.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"`
-  -> 474 pruebas OK, 6 omitidas (necesitan Postgres real con `PERFECT_CATALOG_RUN_INTEGRATION=1`).
+  -> 471 pruebas OK, 6 omitidas (necesitan Postgres real con `PERFECT_CATALOG_RUN_INTEGRATION=1`).
 - Base de datos: migraciones 0017-0028 aplicadas (log del 2026-10-02); la 0029 (seleccion manual de fotos) esta escrita y PENDIENTE de aplicar con ACTUALIZAR-SISTEMA.cmd.
 - No hay `.env`: la contrasena de Postgres se pide a mano (`--prompt-password`), nunca se guarda.
 
@@ -69,6 +69,16 @@ Al cerrar la ventana se apagan los servidores. Errores: `logs\desktop-app.log`.
 **Sin verificar en vivo**: el dialogo de contrasena (Tk) y la ventana de Edge; si Edge cede el control a otra
 instancia, la app cae a una ventanita "Apagar" y abre el navegador normal. Los lanzadores clasicos
 (INICIAR-REVISOR/TODO) siguen funcionando igual. Las guardas de ACTUALIZAR/LIMPIAR tambien detectan la app.
+
+## Limpieza 2026-10-02
+
+Retirado por obsoleto (sigue en el historial de git): `PREPARAR-MULTIEMPRESA.cmd` y `AUDITAR-EMPRESAS-MARCAS.cmd`
+(trabajos de una sola vez ya hechos) con sus scripts, SQL de auditoria y pruebas; codigo muerto
+(`_detail`, `_as_bool`, `LOCAL_PROTECTED`, `_resolve_brand`, 2 constantes y 3 imports sin usar); carpetas vacias
+`scratch/` y `tmp/`. Archivados en `docs/archivo/`: 4 documentos de instalacion de PostgreSQL, 2 auditorias
+previas y el diseno de migracion multiempresa. Dudosos, **no tocados** (decidir): `VALIDAR-BLOQUE.cmd` (corre las
+pruebas con Postgres real, pero su 2.º paso usa un Excel piloto que ya no existe) y el visor de solo lectura
+`INICIAR-CATALOGO-PUBLICADO.cmd` (puerto 8080, `api.py`/`web.py`).
 
 ## Arquitectura en una linea
 

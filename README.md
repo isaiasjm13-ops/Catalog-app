@@ -65,17 +65,10 @@ muestran y procesan únicamente dentro de ese contexto.
 La pantalla **Empresa** permite crear, desactivar y reactivar empresas. Desactivar conserva el
 historial y sustituye el borrado destructivo. Natsuki, Masaki y Exact Cars se administran como
 marcas dentro de Perfect Trading; PDM es una empresa independiente y no hereda identidad de Perfect.
-Úsalo después de recibir una actualización que incluya cambios de base de datos o cuando la consola
-lo indique. Para el trabajo normal abre únicamente `INICIAR-REVISOR.cmd`.
-
-### Preparación multiempresa - Fase 0
-
-Antes de cualquier migración multiempresa ejecuta una sola vez `PREPARAR-MULTIEMPRESA.cmd`.
-Solicita la contraseña de `postgres` de forma oculta, crea un backup lógico completo bajo
-`backups/phase0-multicompany/`, comprueba que `pg_restore` pueda leerlo y genera allí un informe
-de sólo lectura con esquema, marcas, productos, releases, referencias, identidades y permisos.
-No modifica PostgreSQL ni aplica migraciones. El informe se usa para completar y aprobar
-[`docs/MAPPING-COMPANY-BRAND-INICIAL.md`](docs/MAPPING-COMPANY-BRAND-INICIAL.md).
+`ACTUALIZAR-SISTEMA.cmd` se usa después de recibir una actualización que incluya cambios de base de
+datos o cuando la consola lo indique (antes conviene `RESPALDAR-BASE.cmd`). Para el trabajo normal
+abre únicamente **`INICIAR-APP.cmd`** (app de escritorio: una contraseña y ventana propia), o
+`INICIAR-REVISOR.cmd` / `INICIAR-TODO.cmd` si prefieres el navegador.
 
 Para consultar el último release publicado e inmutable desde PostgreSQL, usa
 `INICIAR-CATALOGO-PUBLICADO.cmd`. Solicita la contraseña de forma oculta y conserva el servidor en

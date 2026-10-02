@@ -183,21 +183,6 @@ def _groups(
     return list(grouped.items())
 
 
-def _detail(row: dict[str, Any]) -> str:
-    parts = [escape(str(row.get("name_original") or "")), f"Ref. {escape(str(row.get('internal_reference_original') or ''))}"]
-    if row.get("piece_type") or row.get("category_path"):
-        parts.append("Tipo: " + escape(str(row.get("piece_type") or row["category_path"])))
-    if row.get("brand"):
-        parts.append("Marca: " + escape(str(row["brand"])))
-    if row.get("oem_references"):
-        parts.append("OEM: " + escape(", ".join(map(str, row["oem_references"]))))
-    if row.get("applications"):
-        parts.append("Aplicaciones: " + escape("; ".join(str(value) for value in row["applications"])))
-    if row.get("engine_types"):
-        parts.append("Motor: " + escape(", ".join(map(str, row["engine_types"]))))
-    return "<br/>".join(parts)
-
-
 def _safe_bundle_path(bundle_dir: Path | None, filename: str | None) -> Path | None:
     if bundle_dir is None or not filename:
         return None
