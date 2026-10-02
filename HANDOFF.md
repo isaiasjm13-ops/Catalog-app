@@ -8,7 +8,7 @@
 
 - Rama de trabajo: `workflow-3-etapas` (21+ commits por delante de `master`, aun sin fusionar).
 - Suite de pruebas: `.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"`
-  -> 434 pruebas OK, 6 omitidas (necesitan Postgres real con `PERFECT_CATALOG_RUN_INTEGRATION=1`).
+  -> 436 pruebas OK, 6 omitidas (necesitan Postgres real con `PERFECT_CATALOG_RUN_INTEGRATION=1`).
 - Base de datos: migraciones 0017-0028 aplicadas y validadas (log del 2026-09-07).
 - No hay `.env`: la contrasena de Postgres se pide a mano (`--prompt-password`), nunca se guarda.
 
@@ -33,6 +33,20 @@ cerrar su ventana.
 `/operator/guiado` (boton "Paso a paso" en el panel): muestra un solo paso a la vez en lenguaje llano
 (Cargar -> Revisar -> Entregar). La logica vive en `src/perfect_catalog/guided_flow.py` (funcion pura
 sobre los mismos conteos del panel). El panel completo no cambio.
+
+## Vista Simple / Completa (idea tomada de Kairo OmegaCreator V3.0)
+
+Boton "Vista: Completa/Simple" en la barra superior (`static/view-mode.js`, preferencia solo en el
+navegador, por defecto Completa = comportamiento de siempre). Lo marcado `data-advanced` se oculta en
+vista Simple (menu Administracion, franja de administracion del panel, pie tecnico) y "Inicio" lleva a
+`/operator/guiado`. Las explicaciones largas van plegadas en "¿Como funciona?".
+
+Ideas de Kairo evaluadas y aun no aplicadas (Kairo solo trae la interfaz; su servidor esta compilado):
+revision de calidad de datos antes de generar (codigos repetidos, filas sin codigo, nombres repetidos
+con codigos distintos, referencias sin foto), boton "Eliminar referencias sin foto" en bloque,
+plantilla de encabezado con `{marca}` `{empresa}` `{total}`, campo WhatsApp para pedidos, salida PDF
+para imprimir, interruptor de marca de agua con logo propio por marca, PWA instalable, visibilidad de
+funciones configurable por administrador.
 
 ## Arquitectura en una linea
 

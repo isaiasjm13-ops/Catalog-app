@@ -1197,6 +1197,24 @@ class OperatorHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('aria-current="step"', guided.text)
         self.assertIn('href="/operator"', guided.text)  # salida al panel completo
 
+    async def test_view_toggle_is_offered_and_defaults_do_not_hide_anything(self) -> None:
+        await self.login()
+        dashboard = await self.client.get("/operator")
+        self.assertIn('id="view-toggle"', dashboard.text)
+        self.assertIn("/operator/static/view-mode.js", dashboard.text)
+        # La vista completa es la de siempre: el panel de administración sigue en el HTML.
+        self.assertIn('href="/operator/admin"', dashboard.text)
+        script = await self.client.get("/operator/static/view-mode.js")
+        self.assertEqual(script.status_code, 200)
+        self.assertIn("pc_view", script.text)
+
+    async def test_simple_mode_explanation_is_collapsed_but_still_present(self) -> None:
+        await self.login()
+        page = await self.client.get("/operator/simple")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn('<details class="how-it-works">', page.text)
+        self.assertIn("Qué hace este modo automáticamente", page.text)
+
     async def test_dashboard_links_to_guided_mode_without_losing_the_upload_cta(self) -> None:
         await self.login()
         dashboard = await self.client.get("/operator")

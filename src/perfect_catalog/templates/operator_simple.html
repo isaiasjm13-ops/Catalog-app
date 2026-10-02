@@ -6,7 +6,8 @@
   <span class="safety-chip"><span>●</span> Mismo motor auditado</span>
 </section>
 {% if error_message %}<div class="alert alert-error" role="alert">{{ error_message }}</div>{% endif %}
-<section class="transition-panel brand-profile-builder">
+<details class="how-it-works">
+  <summary>¿Cómo funciona?</summary>
   <h2>Qué hace este modo automáticamente</h2>
   <ol>
     <li>Ingresa el Excel y la carpeta de fotos a cuarentena, igual que en Ingresos.</li>
@@ -15,7 +16,7 @@
     <li>Te lleva directo a revisar las identidades nuevas. Las fotos de productos nuevos se vinculan solas recién cuando los apruebes ahí — después vuelve a <a href="/operator/images">Imágenes</a> para completarlas.</li>
   </ol>
   <p>Nada se publica en el catálogo todavía: seguís necesitando aprobar cada identidad y, más adelante, construir y publicar una versión desde Catálogos.</p>
-</section>
+</details>
 <section class="transition-panel brand-profile-builder">
   <h2>Excel y fotos</h2>
   <form method="post" action="/operator/simple" enctype="multipart/form-data">

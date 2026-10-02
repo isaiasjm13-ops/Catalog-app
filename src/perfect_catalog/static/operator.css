@@ -638,3 +638,14 @@ a.brand-profile-card:hover,a.brand-profile-card:focus-visible { border-color: va
 .guided-card p { max-width: 60ch; margin: 0 0 20px; color: var(--muted); font-size: 15px; line-height: 1.55; }
 .guided-actions { display: flex; gap: 12px; flex-wrap: wrap; }
 .heading-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+/* Vista Simple / Completa (idea de Kairo): lo marcado data-advanced se oculta en vista simple. */
+html[data-view="simple"] [data-advanced] { display: none !important; }
+.view-toggle { min-height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.7); color: var(--muted); font-size: 12px; font-weight: 700; }
+.view-toggle:hover { color: var(--forest); background: white; }
+html[data-view="simple"] .view-toggle { border-color: var(--forest); color: var(--forest-dark); }
+/* "¿Cómo funciona?": explicación técnica plegada por defecto. */
+.how-it-works { margin: 0 0 18px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.6); }
+.how-it-works > summary { cursor: pointer; padding: 12px 16px; font-size: 13px; font-weight: 800; color: var(--forest-dark); }
+.how-it-works > :not(summary) { margin-left: 16px; margin-right: 16px; }
+.how-it-works[open] { padding-bottom: 12px; }
